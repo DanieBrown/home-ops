@@ -1,0 +1,85 @@
+# Home-Ops Profile Configuration
+# Copy this file to config/profile.yml and fill in your details.
+# This is the single source of truth for your buyer identity and search criteria.
+
+buyer:
+  full_name: "Jane Smith"
+  email: "jane@example.com"
+  phone: "+1-555-0123"
+  location: "Raleigh, NC"
+  timezone: "ET"
+
+search:
+  areas:
+    - name: "Holly Springs"
+      state: "NC"
+      county: "Wake"
+      rank: 1
+    - name: "Fuquay-Varina"
+      state: "NC"
+      county: "Wake"
+      rank: 1
+    # Add more areas as needed:
+    # - name: "Apex"
+    #   state: "NC"
+    #   county: "Wake"
+    #   rank: 2
+
+  hard_requirements:
+    price_min: 400000
+    price_max: 600000
+    beds_min: 3
+    garage_min: 2
+    sqft_min: 2000
+    yard: "Fenced backyard suitable for pets and children"
+    schools_min_rating: 6
+    max_listing_age_days: 14
+    home_type_preference: "resale_preferred"   # resale_preferred | new_ok | resale_only
+
+  soft_preferences:
+    home_style: "single-family detached"
+    fenced_yard: true
+    floor_plan: "open"
+    updated_kitchen: true
+    flooring: ["hardwood", "LVP"]
+    street_type: "cul-de-sac or low-traffic"
+    stories_preferred: null                     # null = no preference
+    hoa_max_monthly: 150
+    pool: null                                  # null = no preference
+    year_built_min: null
+    year_built_max: null
+
+  deal_breakers:
+    - "Flood zone"
+    - "Major structural issues"
+
+sentiment:
+  weights:
+    crime_safety: 0.25
+    traffic_commute: 0.15
+    community: 0.25
+    school_quality: 0.20
+    livability: 0.15
+
+school_sentiment:
+  weights:
+    academic_performance: 0.25
+    parent_community_sentiment: 0.25
+    teacher_staff_quality: 0.15
+    safety_environment: 0.20
+    extracurriculars_resources: 0.15
+
+commute:
+  destinations:
+    - name: "Downtown Raleigh"
+      address: "Downtown Raleigh, NC"
+      priority: "daily"
+    - name: "Research Triangle Park"
+      address: "Research Triangle Park, NC"
+      priority: "occasional"
+
+financial:
+  down_payment_pct: 20
+  loan_type: "30-year fixed"
+  closing_cost_pct_min: 2
+  closing_cost_pct_max: 3

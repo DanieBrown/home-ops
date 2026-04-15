@@ -1,0 +1,85 @@
+# Home-Ops -- Example Portal Configuration
+# Copy this file to portals.yml and replace the example values with your market.
+
+platforms:
+  zillow:
+    name: Zillow
+    base_url: https://www.zillow.com
+    login_required: true
+    login_prompt: "I need a Zillow login session to gather full listing details. Please log in and confirm."
+    search_urls:
+      - area: "Example Town"
+        url: "https://www.zillow.com/example-town-state/"
+
+  redfin:
+    name: Redfin
+    base_url: https://www.redfin.com
+    login_required: true
+    login_prompt: "I need a Redfin login session to gather detailed listing data. Please log in and confirm."
+    search_urls:
+      - area: "Example Town"
+        url: "https://www.redfin.com/city/example"
+
+  realtor:
+    name: Realtor.com
+    base_url: https://www.realtor.com
+    login_required: true
+    login_prompt: "I need a Realtor.com login session to gather detailed listing data. Please log in and confirm."
+    search_urls:
+      - area: "Example Town"
+        url: "https://www.realtor.com/realestateandhomes-search/Example-Town_ST"
+
+sentiment_sources:
+  reddit:
+    subreddits: ["r/YourMetro", "r/YourState"]
+    login_required: false
+
+  google_maps:
+    login_required: false
+    note: "Use local review patterns for subdivisions, schools, parks, and anchor businesses."
+
+  facebook:
+    login_required: true
+    login_prompt: "I need Facebook login to search for local neighborhood groups. Please log in and confirm."
+
+  nextdoor:
+    login_required: true
+    login_prompt: "I need Nextdoor login to view neighborhood discussion. Please log in and confirm."
+
+school_sources:
+  greatschools:
+    url: "https://www.greatschools.org"
+    login_required: false
+  niche:
+    url: "https://www.niche.com"
+    login_required: false
+  state_report_cards:
+    url: "https://www.example-state-report-cards.gov"
+    login_required: false
+  schooldigger:
+    url: "https://www.schooldigger.com"
+    login_required: false
+
+development_sources:
+  county:
+    - name: "Example County Planning"
+      url: "https://www.examplecounty.gov/planning"
+  municipality:
+    - name: "Example City Development"
+      url: "https://www.examplecity.gov/development"
+  transportation:
+    - name: "Example DOT Projects"
+      url: "https://www.exampledot.gov/projects"
+
+search_queries:
+  - name: "Zillow -- Example Town"
+    query: 'site:zillow.com "Example Town" house 4 bed $500,000 $800,000'
+    enabled: true
+
+  - name: "Redfin -- Example Town"
+    query: 'site:redfin.com "Example Town" house 4 bed $500,000 $800,000'
+    enabled: true
+
+  - name: "Realtor.com -- Example Town"
+    query: 'site:realtor.com "Example Town" house 4 bed $500,000 $800,000'
+    enabled: true

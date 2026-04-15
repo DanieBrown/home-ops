@@ -1,0 +1,74 @@
+# Home-Ops — Canonical States
+# Source of truth for home-ops (writer) and dashboard (reader).
+# Both systems MUST use these exact states.
+#
+# Rule: The status field in listings.md must contain EXACTLY
+# one of these values (case-insensitive). No markdown bold (**),
+# no dates, no extra text. Dates go in the date column.
+
+states:
+  - id: new
+    label: New
+    aliases: [discovered, scraped]
+    description: Just discovered or scraped from a platform
+    dashboard_group: new
+
+  - id: evaluated
+    label: Evaluated
+    aliases: []
+    description: Full evaluation completed with report
+    dashboard_group: evaluated
+
+  - id: interested
+    label: Interested
+    aliases: [shortlisted, favorite]
+    description: User wants more detail or financial breakdown
+    dashboard_group: interested
+
+  - id: tour_scheduled
+    label: Tour Scheduled
+    aliases: [showing, scheduled]
+    description: Home tour or showing scheduled
+    dashboard_group: touring
+
+  - id: toured
+    label: Toured
+    aliases: [visited, seen]
+    description: Property has been visited in person
+    dashboard_group: touring
+
+  - id: offer_submitted
+    label: Offer Submitted
+    aliases: [offered, bid]
+    description: Purchase offer submitted
+    dashboard_group: offer
+
+  - id: under_contract
+    label: Under Contract
+    aliases: [pending, contract]
+    description: Offer accepted, under contract
+    dashboard_group: offer
+
+  - id: closed
+    label: Closed
+    aliases: [purchased, bought]
+    description: Purchase completed
+    dashboard_group: closed
+
+  - id: passed
+    label: Passed
+    aliases: [declined, not_interested]
+    description: User decided not to pursue this property
+    dashboard_group: passed
+
+  - id: sold
+    label: Sold
+    aliases: [off_market, unavailable]
+    description: Sold to another buyer or taken off market
+    dashboard_group: sold
+
+  - id: skip
+    label: SKIP
+    aliases: [skip, no_fit, filtered]
+    description: Does not meet criteria
+    dashboard_group: skip
