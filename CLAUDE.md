@@ -41,9 +41,11 @@ Rule:
 | Command | Purpose |
 |---------|---------|
 | `/home-ops` | Show the menu or route from a listing URL |
-| `/home-ops-evaluate` | Evaluate one listing |
+| `/home-ops-init` | Launch or confirm the hosted browser session for portal login |
+| `/home-ops-evaluate` | Evaluate one listing or batch-evaluate pending pipeline homes |
 | `/home-ops-compare` | Compare multiple homes |
 | `/home-ops-scan` | Scan configured portal searches |
+| `/home-ops-reset` | Clear generated reports, tracker rows, pipeline items, and scan history |
 | `/home-ops-tracker` | Show or update listing status |
 | `/home-ops-deep` | Deep dive on a property or area |
 
@@ -115,8 +117,11 @@ Store that in `buyer-profile.md`, `config/profile.yml`, or `modes/_profile.md`.
 ### Step 6: Ready
 
 Once the basics are in place, the user can:
+- run `/home-ops init`
 - paste a listing URL to evaluate it
+- run `/home-ops evaluate` to process the pending pipeline in batch mode
 - run `/home-ops scan`
+- run `/home-ops reset` to clear generated search state without changing profiles
 - run `/home-ops tracker`
 - ask for a deeper neighborhood or school dive
 
@@ -130,9 +135,11 @@ When the user asks to change priorities, weights, or scan coverage:
 
 | If the user... | Mode |
 |----------------|------|
-| pastes a listing URL | `evaluate` |
+| wants to set up or refresh portal login sessions | `init` |
+| pastes a listing URL or asks to process pending listings | `evaluate` |
 | asks to compare homes | `compare` |
 | wants fresh listings | `scan` |
+| wants to clear generated search state but keep profiles | `reset` |
 | asks for tracker status | `tracker` |
 | wants deeper area research | `deep` |
 

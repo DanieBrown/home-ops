@@ -6,7 +6,7 @@ platforms:
     name: Zillow
     base_url: https://www.zillow.com
     login_required: true
-    login_prompt: "I need a Zillow login session to gather full listing details. Please log in and confirm."
+    login_prompt: "I need the saved Zillow browser session. Run /home-ops init --zillow if needed, sign in manually in the hosted Chrome window, then confirm."
     search_urls:
       - area: "Example Town"
         url: "https://www.zillow.com/example-town-state/"
@@ -15,7 +15,7 @@ platforms:
     name: Redfin
     base_url: https://www.redfin.com
     login_required: true
-    login_prompt: "I need a Redfin login session to gather detailed listing data. Please log in and confirm."
+    login_prompt: "I need the saved Redfin browser session. Run /home-ops init --redfin if needed, sign in manually in the hosted Chrome window, then confirm."
     search_urls:
       - area: "Example Town"
         url: "https://www.redfin.com/city/example"
@@ -24,7 +24,7 @@ platforms:
     name: Realtor.com
     base_url: https://www.realtor.com
     login_required: true
-    login_prompt: "I need a Realtor.com login session to gather detailed listing data. Please log in and confirm."
+    login_prompt: "I need the saved Realtor.com browser session. Run /home-ops init --relator if needed, sign in manually in the hosted Chrome window, then confirm."
     search_urls:
       - area: "Example Town"
         url: "https://www.realtor.com/realestateandhomes-search/Example-Town_ST"

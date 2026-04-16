@@ -351,7 +351,6 @@ console.log(`📥 Found ${additionFiles.length} pending additions`);
 let added = 0;
 let updated = 0;
 let skipped = 0;
-const newLines = [];
 
 for (const file of additionFiles) {
   const addition = parseAddition(readFileSync(join(ADDITIONS_DIR, file), 'utf-8'), file);
@@ -384,16 +383,28 @@ for (const file of additionFiles) {
     num: nextNumber,
     status: canonicalizeStatus(addition.status),
   };
-  newLines.push(serializeListing(row));
   entries.push({ ...row, lineIndex: -1 });
   added += 1;
   console.log(`➕ Add #${nextNumber}: ${row.address}, ${row.city}`);
 }
 
-if (newLines.length > 0) {
+if (added > 0 || updated > 0) {
   const headerIndex = listingLines.findIndex((line) => line.startsWith('|---'));
-  const insertIndex = headerIndex >= 0 ? headerIndex + 1 : listingLines.length;
-  listingLines.splice(insertIndex, 0, ...newLines);
+  const tableStart = headerIndex >= 0 ? headerIndex + 1 : listingLines.length;
+  let tableEnd = tableStart;
+  while (tableEnd < listingLines.length && parseListingRow(listingLines[tableEnd], tableEnd)) {
+    tableEnd += 1;
+  }
+
+  const sortedRows = entries
+    .map((entry) => ({
+      ...entry,
+      status: canonicalizeStatus(entry.status),
+    }))
+    .sort((left, right) => left.num - right.num)
+    .map(serializeListing);
+
+  listingLines.splice(tableStart, tableEnd - tableStart, ...sortedRows);
 }
 
 if (!DRY_RUN) {

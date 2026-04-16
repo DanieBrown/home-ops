@@ -16,6 +16,40 @@ npm install
 npx playwright install chromium
 ```
 
+Create the reusable repo-local hosted browser session after you configure `portals.yml`:
+
+```bash
+/home-ops init
+
+# low-level terminal equivalent
+npm run browser:setup
+```
+
+This command reads the login-required platforms from `portals.yml`, launches a real local Chrome window with CDP enabled and a separate repo-local user-data-dir under `output/browser-sessions/chrome-host`, opens the platform base pages, writes status to `output/browser-sessions/chrome-host/session-state.json`, and appends lifecycle events to `batch/logs/browser-sessions.tsv`.
+
+For a targeted refresh instead of the full configured set:
+
+```bash
+/home-ops init --zillow --redfin --relator
+
+# low-level terminal equivalents
+npm run browser:session -- --hosted --zillow --channel chrome
+npm run browser:session -- --hosted --redfin --channel chrome
+npm run browser:session -- --hosted --relator --channel chrome
+```
+
+Sign in manually in the opened browser window, complete any captcha or anti-bot challenge yourself, and keep the browser running while Home-Ops attaches to it for scanning or verification. Check the repo-local hosted browser status with:
+
+```bash
+npm run browser:status
+```
+
+Realtor.com may still return a request-processing block page even with a real browser session. Treat that as blocked and retry later rather than assuming the session is valid.
+
+Google explicitly blocks sign-in from browsers controlled through software automation, so Google-based sign-in should be attempted in the hosted real Chrome window, not inside a Playwright-launched browser. If a portal still rejects Google or Apple sign-in, try the site's direct email/password login form instead of federated OAuth.
+
+On Windows PowerShell, use `npm.cmd` instead of `npm` if execution policy blocks `npm.ps1`.
+
 ### 2. Run the repo health check
 
 ```bash
@@ -46,10 +80,27 @@ node verify-pipeline.mjs
 
 Typical entry points:
 
+- Run `/home-ops init` before the first scan or whenever the portal login session needs to be refreshed.
 - Paste a listing URL to evaluate a single home.
+- Run `/home-ops evaluate` with no arguments to process the unchecked entries in `data/pipeline.md`.
 - Run `/home-ops-scan` to look for new listings from configured portal searches.
+- Run `/home-ops reset` when you want to clear generated reports, tracker rows, pipeline items, and scan history without touching profiles or browser sessions.
 - Run `/home-ops-tracker` to review or update tracker status.
 - Run `/home-ops-deep` for school, neighborhood, and development research.
+
+When `/home-ops compare` ranks evaluated homes, it should update `data/shortlist.md` with up to the top ten viable tags and open those home listing pages in individual browser tabs for review. When `/home-ops deep` is then asked to work on the shortlist, it should batch-research those tagged homes, save the batch brief to `reports/deep-shortlist-{YYYY-MM-DD}.md`, update `data/shortlist.md` with a refined post-deep top three, and open those finalist listing pages in individual tabs as well.
+
+When `/home-ops evaluate` runs without a target, Home-Ops should deduplicate the pending pipeline by property, split the canonical set into 5-property worker batches, assign one subagent per batch, stage tracker additions under `batch/tracker-additions/`, merge them into `data/listings.md`, and move handled items into the `Processed` section of `data/pipeline.md`. The main agent should keep dispatching those batches until the full pending set has been attempted.
+
+When `/home-ops scan` runs, Home-Ops should keep at most 3 unchecked pending listings per source per configured area. If a Zillow, Redfin, or Realtor.com area bucket already has 3 or more pending entries, Home-Ops should clear that source-area bucket first and then refresh it with up to 3 current homes from that source and area.
+The pending list may contain the same home from multiple sources at once, but it should not keep duplicate URLs or same-source duplicate homes. `data/scan-history.tsv` should continue to log scan outcomes, but it should not block later area-bucket refills.
+If Zillow blocks on sign-in or human verification during scan mode, Home-Ops should pause immediately, request manual sign-in confirmation, and stop before moving on to later areas or other platforms.
+
+When you need a saved browser session for Playwright-backed checks, reuse it with:
+
+```bash
+node check-liveness.mjs --profile chrome-host <listing-url>
+```
 
 ## Buyer Files
 
@@ -64,7 +115,21 @@ Do not put buyer-specific rules into `modes/_shared.md`.
 
 ## Dashboard Build
 
-If Go is installed, build the terminal dashboard with:
+If Go is installed, the simplest repo-level launcher is:
+
+```bash
+npm run dashboard
+```
+
+This command resolves Go from PATH or common Windows install locations, then runs the dashboard against the current repository.
+
+To build a standalone dashboard binary, run:
+
+```bash
+npm run dashboard:build
+```
+
+If you prefer the direct Go commands, build the terminal dashboard with:
 
 ```bash
 cd dashboard
@@ -85,3 +150,17 @@ node profile-sync-check.mjs
 node verify-pipeline.mjs
 node test-all.mjs --quick
 ```
+
+## Reset Generated State
+
+If you want a clean slate while keeping buyer-specific setup and portal sessions:
+
+```bash
+/home-ops reset
+
+# low-level terminal equivalents
+npm run reset:data
+npm run reset:data -- --dry-run
+```
+
+On Windows PowerShell, use `npm.cmd` instead of `npm` if needed.

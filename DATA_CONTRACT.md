@@ -16,6 +16,7 @@ System-layer files hold prompts, scripts, dashboards, templates, and repo instru
 | `portals.yml` | User-customized search URLs and platform settings |
 | `data/listings.md` | Canonical listing tracker |
 | `data/pipeline.md` | Pending listing inbox |
+| `data/shortlist.md` | Latest compare top-three tags and deep handoff state |
 | `data/scan-history.tsv` | Scan dedup and history log |
 | `reports/*` | Saved listing evaluation reports |
 | `output/*` | Generated exports or temporary artifacts |

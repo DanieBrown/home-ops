@@ -35,6 +35,14 @@ Rules:
 - Read `modes/_profile.md` after this file. User-specific guidance overrides shared defaults.
 - If evidence conflicts across sources, surface the conflict and lower confidence.
 
+## Batch Evaluation Safety
+
+When processing more than one listing:
+- Deduplicate the same property across Zillow, Redfin, and Realtor.com URLs by normalized address + city before researching.
+- Treat one property as one evaluation even when multiple source URLs exist.
+- Keep Playwright-backed listing verification serialized against the hosted browser session. Do not drive multiple portal/browser checks in parallel.
+- The main agent owns final writes to `data/listings.md` and `data/pipeline.md`. Subagents may return structured results, but the main agent should merge tracker updates and processed-pipeline edits.
+
 ---
 
 ## Core Workflow

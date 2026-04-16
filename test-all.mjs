@@ -115,6 +115,7 @@ for (const file of mjsFiles) {
 console.log('\n2. Script execution');
 
 const scripts = [
+  'browser-session.mjs --status',
   'doctor.mjs',
   'profile-sync-check.mjs',
   'verify-pipeline.mjs',
@@ -159,6 +160,7 @@ const systemFiles = [
   'DATA_CONTRACT.md',
   'modes/_shared.md',
   'modes/_profile.template.md',
+  'modes/init.md',
   'modes/evaluate.md',
   'modes/compare.md',
   'modes/scan.md',
@@ -254,6 +256,7 @@ console.log('\n7. Mode file integrity');
 const expectedModes = [
   '_shared.md',
   '_profile.template.md',
+  'init.md',
   'evaluate.md',
   'compare.md',
   'scan.md',

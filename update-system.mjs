@@ -16,6 +16,7 @@ const ROOT = __dirname;
 const SYSTEM_PATHS = [
   'modes/_shared.md',
   'modes/_profile.template.md',
+  'modes/init.md',
   'modes/evaluate.md',
   'modes/compare.md',
   'modes/scan.md',

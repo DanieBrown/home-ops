@@ -97,6 +97,7 @@ async function main() {
     checkFile('templates/states.yml', 'templates/states.yml found', 'Restore templates/states.yml with the canonical listing states.'),
     checkFile('modes/_shared.md', 'modes/_shared.md found', 'Restore the shared mode instructions.'),
     checkFile('modes/_profile.md', 'modes/_profile.md found', 'Create modes/_profile.md with buyer-specific overrides.'),
+    checkFile('modes/init.md', 'modes/init.md found', 'Create the browser-session initialization mode.'),
     checkFile('modes/evaluate.md', 'modes/evaluate.md found', 'Create the single-listing evaluation mode.'),
     checkFile('modes/compare.md', 'modes/compare.md found', 'Create the comparison mode.'),
     checkFile('modes/scan.md', 'modes/scan.md found', 'Restore the listing scan mode.'),
@@ -105,6 +106,8 @@ async function main() {
     ensureDir('data'),
     ensureDir('reports'),
     ensureDir('output'),
+    ensureDir('output/browser-sessions'),
+    ensureDir('batch/logs'),
     ensureDir('batch/tracker-additions'),
     ensureDir('batch/tracker-additions/merged'),
   ];

@@ -38,4 +38,6 @@ node_modules/
 .claude/settings.local.json
 .claude/memory/
 career-dashboard
+dashboard/home-ops-dashboard
+dashboard/home-ops-dashboard.exe
 package-lock.json

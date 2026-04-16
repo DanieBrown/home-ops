@@ -3,6 +3,14 @@
   "version": "2.0.0",
   "description": "AI-powered home search pipeline built on Claude Code",
   "scripts": {
+    "browser:setup": "node browser-session.mjs configured --caller setup --hosted --channel chrome",
+    "browser:setup:edge": "node browser-session.mjs configured --caller setup --hosted --channel msedge --profile edge-host",
+    "browser:status": "node browser-session.mjs --status --profile chrome-host",
+    "browser:session": "node browser-session.mjs",
+    "dashboard": "node run-dashboard.mjs",
+    "dashboard:build": "node run-dashboard.mjs --build",
+    "reset:data": "node reset-search-state.mjs",
+    "scan": "node scan-listings.mjs",
     "doctor": "node doctor.mjs",
     "verify": "node verify-pipeline.mjs",
     "normalize": "node normalize-statuses.mjs",
@@ -15,9 +23,16 @@
     "liveness": "node check-liveness.mjs",
     "test": "node test-all.mjs"
   },
-  "keywords": ["ai", "home-search", "real-estate", "claude-code", "automation"],
+  "keywords": [
+    "ai",
+    "home-search",
+    "real-estate",
+    "claude-code",
+    "automation"
+  ],
   "license": "MIT",
   "dependencies": {
-    "playwright": "^1.58.1"
+    "playwright": "^1.58.1",
+    "yaml": "^2.8.3"
   }
 }

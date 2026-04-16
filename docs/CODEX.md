@@ -20,8 +20,11 @@ npx playwright install chromium
 
 ## Recommended Starting Prompts
 
+- `Initialize the portal browser session with Home-Ops.`
 - `Evaluate this listing URL with Home-Ops.`
+- `Evaluate the pending pipeline with Home-Ops.`
 - `Scan my configured portals for new listings.`
+- `Reset the generated Home-Ops scan data but keep my profiles.`
 - `Compare these three homes.`
 - `Do a deep dive on this neighborhood.`
 
@@ -29,10 +32,13 @@ npx playwright install chromium
 
 | User intent | Files Codex should read |
 |-------------|-------------------------|
+| Portal login setup or refresh | `modes/_shared.md` + `modes/init.md` |
 | Raw listing URL | `modes/_shared.md` + `modes/evaluate.md` |
 | Single evaluation | `modes/_shared.md` + `modes/evaluate.md` |
+| Evaluate with no explicit target | `modes/_shared.md` + `modes/evaluate.md` + `data/pipeline.md` |
 | Multiple homes | `modes/_shared.md` + `modes/compare.md` |
 | Portal scan | `modes/_shared.md` + `modes/scan.md` |
+| Reset generated working state | `modes/_shared.md` + `modes/reset.md` |
 | Tracker summary or updates | `modes/_shared.md` + `modes/tracker.md` |
 | Deep property or area research | `modes/_shared.md` + `modes/deep.md` |
 
@@ -49,6 +55,7 @@ npx playwright install chromium
 npm run doctor
 npm run sync-check
 npm run verify
+npm run dashboard:build
 
 # optional dashboard build
 cd dashboard && go build ./...
