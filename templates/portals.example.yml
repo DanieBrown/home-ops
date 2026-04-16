@@ -1,5 +1,7 @@
 # Home-Ops -- Example Portal Configuration
 # Copy this file to portals.yml and replace the example values with your market.
+# Scan syncs price, beds, garage, square footage, listing age, and HOA filters from config/profile.yml at runtime.
+# Keep this file focused on the right area paths, base URLs, and source settings.
 
 platforms:
   zillow:

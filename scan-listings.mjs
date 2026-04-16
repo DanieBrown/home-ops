@@ -849,7 +849,172 @@ function appendScanHistory(rows) {
   appendFileSync(SCAN_HISTORY_PATH, `${lines}\n`, 'utf8');
 }
 
-function loadPortalsConfig(selectedPlatforms) {
+function formatCompactThousands(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric) || numeric <= 0) {
+    return null;
+  }
+
+  if (numeric % 1000 === 0) {
+    return String(Math.round(numeric / 1000));
+  }
+
+  return Number((numeric / 1000).toFixed(1)).toString();
+}
+
+function syncZillowSearchUrl(rawUrl, requirements) {
+  try {
+    const parsed = new URL(String(rawUrl).trim());
+    const rawState = parsed.searchParams.get('searchQueryState');
+    const state = rawState
+      ? JSON.parse(rawState)
+      : { pagination: {}, filterState: {} };
+    const filterState = state.filterState ?? {};
+
+    if (requirements.priceMin > 0 || requirements.priceMax < Number.MAX_SAFE_INTEGER) {
+      filterState.price = {
+        ...(filterState.price ?? {}),
+        ...(requirements.priceMin > 0 ? { min: requirements.priceMin } : {}),
+        ...(requirements.priceMax < Number.MAX_SAFE_INTEGER ? { max: requirements.priceMax } : {}),
+      };
+    }
+
+    if (requirements.bedsMin > 0) {
+      filterState.beds = {
+        ...(filterState.beds ?? {}),
+        min: requirements.bedsMin,
+      };
+    }
+
+    if (requirements.sqftMin > 0) {
+      filterState.sqft = {
+        ...(filterState.sqft ?? {}),
+        min: requirements.sqftMin,
+      };
+    }
+
+    if (requirements.garageMin > 0) {
+      filterState.garSp = {
+        ...(filterState.garSp ?? {}),
+        min: requirements.garageMin,
+      };
+    }
+
+    if (requirements.maxListingAgeDays < Number.MAX_SAFE_INTEGER) {
+      filterState.doz = {
+        ...(filterState.doz ?? {}),
+        value: String(requirements.maxListingAgeDays),
+      };
+    }
+
+    state.filterState = filterState;
+    parsed.searchParams.set('searchQueryState', JSON.stringify(state));
+    return parsed.toString();
+  } catch {
+    return rawUrl;
+  }
+}
+
+function syncRedfinSearchUrl(rawUrl, requirements) {
+  try {
+    const parsed = new URL(String(rawUrl).trim());
+    const [pathnameRoot, rawFilterSegment] = parsed.pathname.split('/filter/');
+    const existingTokens = rawFilterSegment ? rawFilterSegment.split(',').filter(Boolean) : [];
+    const managedPrefixes = ['min-price=', 'max-price=', 'min-beds=', 'min-sqft=', 'hoa='];
+    const unmanagedTokens = existingTokens.filter((token) => !managedPrefixes.some((prefix) => token.startsWith(prefix)));
+    const syncedTokens = [...unmanagedTokens];
+    const minPrice = formatCompactThousands(requirements.priceMin);
+    const maxPrice = formatCompactThousands(requirements.priceMax);
+    const minSqft = formatCompactThousands(requirements.sqftMin);
+
+    if (minPrice) {
+      syncedTokens.push(`min-price=${minPrice}k`);
+    }
+
+    if (maxPrice && requirements.priceMax < Number.MAX_SAFE_INTEGER) {
+      syncedTokens.push(`max-price=${maxPrice}k`);
+    }
+
+    if (requirements.bedsMin > 0) {
+      syncedTokens.push(`min-beds=${Math.ceil(requirements.bedsMin)}`);
+    }
+
+    if (minSqft) {
+      syncedTokens.push(`min-sqft=${minSqft}k-sqft`);
+    }
+
+    if (requirements.hoaMaxMonthly > 0) {
+      syncedTokens.push(`hoa=${requirements.hoaMaxMonthly}`);
+    }
+
+    parsed.pathname = syncedTokens.length > 0
+      ? `${pathnameRoot.replace(/\/+$/, '')}/filter/${syncedTokens.join(',')}`
+      : pathnameRoot;
+    return parsed.toString();
+  } catch {
+    return rawUrl;
+  }
+}
+
+function syncRealtorSearchUrl(rawUrl, requirements) {
+  try {
+    const parsed = new URL(String(rawUrl).trim());
+    const segments = parsed.pathname.split('/').filter(Boolean);
+    if (segments.length < 2) {
+      return rawUrl;
+    }
+
+    const [searchRoot, areaSegment, ...existingSegments] = segments;
+    const managedPrefixes = ['beds-', 'price-', 'sqft-', 'garage-', 'age-'];
+    const unmanagedSegments = existingSegments.filter((segment) => !managedPrefixes.some((prefix) => segment.startsWith(prefix)));
+    const syncedSegments = [...unmanagedSegments];
+
+    if (requirements.bedsMin > 0) {
+      syncedSegments.push(`beds-${Math.ceil(requirements.bedsMin)}`);
+    }
+
+    if (requirements.priceMin > 0 || requirements.priceMax < Number.MAX_SAFE_INTEGER) {
+      const priceMin = requirements.priceMin > 0 ? requirements.priceMin : 0;
+      const priceMax = requirements.priceMax < Number.MAX_SAFE_INTEGER ? requirements.priceMax : requirements.priceMin;
+      syncedSegments.push(`price-${priceMin}-${priceMax}`);
+    }
+
+    if (requirements.sqftMin > 0) {
+      syncedSegments.push(`sqft-${requirements.sqftMin}`);
+    }
+
+    if (requirements.garageMin > 0) {
+      syncedSegments.push(`garage-${requirements.garageMin}`);
+    }
+
+    if (requirements.maxListingAgeDays < Number.MAX_SAFE_INTEGER) {
+      syncedSegments.push(`age-${requirements.maxListingAgeDays}`);
+    }
+
+    parsed.pathname = `/${[searchRoot, areaSegment, ...syncedSegments].join('/')}`;
+    return parsed.toString();
+  } catch {
+    return rawUrl;
+  }
+}
+
+function syncPlatformSearchUrl(platform, rawUrl, requirements) {
+  if (platform === 'zillow') {
+    return syncZillowSearchUrl(rawUrl, requirements);
+  }
+
+  if (platform === 'redfin') {
+    return syncRedfinSearchUrl(rawUrl, requirements);
+  }
+
+  if (platform === 'realtor') {
+    return syncRealtorSearchUrl(rawUrl, requirements);
+  }
+
+  return rawUrl;
+}
+
+function loadPortalsConfig(selectedPlatforms, requirements) {
   const parsed = readYamlFile(PORTALS_PATH);
   const platformsNode = parsed.platforms ?? {};
   const configured = {};
@@ -868,7 +1033,7 @@ function loadPortalsConfig(selectedPlatforms) {
       ? rawValue.search_urls
         .map((entry) => ({
           area: String(entry?.area ?? '').trim(),
-          url: String(entry?.url ?? '').trim(),
+          url: syncPlatformSearchUrl(key, String(entry?.url ?? '').trim(), requirements),
         }))
         .filter((entry) => entry.url)
       : [];
@@ -888,16 +1053,18 @@ function loadPortalsConfig(selectedPlatforms) {
   return configured;
 }
 
-function loadRequirements() {
-  const parsed = readYamlFile(PROFILE_PATH);
+function loadRequirements(parsed = readYamlFile(PROFILE_PATH)) {
   const hard = parsed.search?.hard_requirements ?? {};
+  const soft = parsed.search?.soft_preferences ?? {};
 
   return {
     priceMin: Number.parseInt(hard.price_min ?? 0, 10),
     priceMax: Number.parseInt(hard.price_max ?? Number.MAX_SAFE_INTEGER, 10),
     bedsMin: Number.parseFloat(hard.beds_min ?? 0),
+    garageMin: Number.parseInt(hard.garage_min ?? 0, 10),
     sqftMin: Number.parseInt(hard.sqft_min ?? 0, 10),
     maxListingAgeDays: Number.parseInt(hard.max_listing_age_days ?? Number.MAX_SAFE_INTEGER, 10),
+    hoaMaxMonthly: Number.parseInt(soft.hoa_max_monthly ?? 0, 10),
   };
 }
 
@@ -1184,8 +1351,9 @@ async function main() {
   }
 
   const session = await ensureHostedSession(options.profileName);
-  const requirements = loadRequirements();
-  const portals = loadPortalsConfig(options.selectedPlatforms);
+  const profile = readYamlFile(PROFILE_PATH);
+  const requirements = loadRequirements(profile);
+  const portals = loadPortalsConfig(options.selectedPlatforms, requirements);
   const selectedPlatforms = Object.keys(portals);
 
   if (selectedPlatforms.length === 0) {
@@ -1195,6 +1363,7 @@ async function main() {
 
   console.log(`Reusing hosted Chrome session: ${options.profileName}`);
   console.log(`Platforms requested: ${selectedPlatforms.map((platform) => portals[platform].name).join(', ')}`);
+  console.log('Portal search filters synced from config/profile.yml before scanning each configured area.');
 
   const targetBuckets = collectConfiguredBuckets(portals);
   const refreshResult = refreshPendingBuckets(targetBuckets, DEFAULT_MAX_PENDING_PER_SOURCE_AREA, new Set());

@@ -2,6 +2,7 @@
 buyer-profile.md
 data/listings.md
 data/pipeline.md
+data/shortlist.md
 data/scan-history.tsv
 reports/*.md
 !reports/.gitkeep

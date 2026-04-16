@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 
-import { existsSync, readdirSync, rmSync, writeFileSync } from 'fs';
+import { existsSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'fs';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
+import YAML from 'yaml';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const REPORTS_DIR = join(ROOT, 'reports');
@@ -12,6 +13,7 @@ const LISTINGS_PATH = join(ROOT, 'data', 'listings.md');
 const PIPELINE_PATH = join(ROOT, 'data', 'pipeline.md');
 const SHORTLIST_PATH = join(ROOT, 'data', 'shortlist.md');
 const SCAN_HISTORY_PATH = join(ROOT, 'data', 'scan-history.tsv');
+const PROFILE_PATH = join(ROOT, 'config', 'profile.yml');
 
 const HISTORY_HEADER = 'url\tfirst_seen\tplatform\tarea\taddress\tstatus\n';
 const LISTINGS_TEMPLATE = [
@@ -87,7 +89,7 @@ Clears:
   - batch/tracker-additions/merged/*.tsv
   - data/listings.md (back to header only)
   - data/pipeline.md (back to an empty template)
-  - data/shortlist.md (back to an empty shortlist template)
+  - data/shortlist.md (back to an empty shortlist template unless workflow.shortlist.preserve_on_reset is true)
   - data/scan-history.tsv (back to header only)
 
 Preserves:
@@ -133,6 +135,25 @@ function listResettableFiles(dirPath, matcher) {
     .map((name) => join(dirPath, name));
 }
 
+function loadResetPolicy() {
+  if (!existsSync(PROFILE_PATH)) {
+    return {
+      preserveShortlistOnReset: false,
+    };
+  }
+
+  try {
+    const parsed = YAML.parse(readFileSync(PROFILE_PATH, 'utf8')) ?? {};
+    return {
+      preserveShortlistOnReset: parsed.workflow?.shortlist?.preserve_on_reset === true,
+    };
+  } catch {
+    return {
+      preserveShortlistOnReset: false,
+    };
+  }
+}
+
 function main() {
   let options;
   try {
@@ -152,13 +173,16 @@ function main() {
   const reportFiles = listResettableFiles(REPORTS_DIR, () => true);
   const trackerAdditionFiles = listResettableFiles(TRACKER_ADDITIONS_DIR, (name) => name.endsWith('.tsv'));
   const trackerMergedFiles = listResettableFiles(TRACKER_MERGED_DIR, (name) => name.endsWith('.tsv'));
+  const resetPolicy = loadResetPolicy();
 
   console.log(`Reports to remove: ${reportFiles.length}`);
   console.log(`Tracker TSVs to remove: ${trackerAdditionFiles.length + trackerMergedFiles.length}`);
   console.log('Files to reset:');
   console.log('- data/listings.md');
   console.log('- data/pipeline.md');
-  console.log('- data/shortlist.md');
+  console.log(resetPolicy.preserveShortlistOnReset
+    ? '- data/shortlist.md (preserved by workflow.shortlist.preserve_on_reset=true)'
+    : '- data/shortlist.md');
   console.log('- data/scan-history.tsv');
 
   if (options.dryRun) {
@@ -172,10 +196,15 @@ function main() {
 
   writeFileSync(LISTINGS_PATH, LISTINGS_TEMPLATE, 'utf8');
   writeFileSync(PIPELINE_PATH, PIPELINE_TEMPLATE, 'utf8');
-  writeFileSync(SHORTLIST_PATH, SHORTLIST_TEMPLATE, 'utf8');
+  if (!resetPolicy.preserveShortlistOnReset) {
+    writeFileSync(SHORTLIST_PATH, SHORTLIST_TEMPLATE, 'utf8');
+  }
   writeFileSync(SCAN_HISTORY_PATH, HISTORY_HEADER, 'utf8');
 
   console.log('\nReset complete. Buyer profiles, portal config, and browser sessions were preserved.');
+  if (resetPolicy.preserveShortlistOnReset) {
+    console.log('Shortlist preserved via config/profile.yml workflow.shortlist.preserve_on_reset=true.');
+  }
 }
 
 main();

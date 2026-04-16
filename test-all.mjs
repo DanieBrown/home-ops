@@ -187,6 +187,7 @@ const userFiles = [
   'modes/_profile.md',
   'portals.yml',
   'data/listings.md',
+  'data/shortlist.md',
 ];
 
 const gitAvailable = run('git --version').ok;

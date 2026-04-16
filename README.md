@@ -95,7 +95,7 @@ The main command surface is:
 
 `/home-ops {listing-url}` or `/home-ops evaluate {listing-url-or-address}` evaluates one property.
 
-`/home-ops profile` asks a guided series of questions, accepts bulleted-list answers for grouped preferences, converts the 0-100 importance answers into normalized weighting values, and updates `buyer-profile.md`, `config/profile.yml`, and `modes/_profile.md`. If the resulting search coverage changes materially, revisit `portals.yml` so scan mode stays aligned.
+`/home-ops profile` asks a guided series of questions, accepts bulleted-list answers for grouped preferences, converts the 0-100 importance answers into normalized weighting values, and updates `buyer-profile.md`, `config/profile.yml`, and `modes/_profile.md`. Scan now syncs the portal filter ranges from `config/profile.yml` at runtime, so `portals.yml` mainly needs to keep the right area paths, source settings, and login prompts.
 
 `/home-ops hunt` runs `reset`, then `scan`, then `evaluate` in sequence. It requires that `/home-ops init` has already been run and that the hosted browser session is still open. Hunt is intentionally opinionated and destructive to generated state because it starts with reset; use the separate commands when you want finer control.
 
@@ -110,7 +110,7 @@ Scan mode keeps at most 3 unchecked pending homes per source per configured area
 Bucket refill uses the current search results instead of suppressing older URLs from `data/scan-history.tsv`, so each engine can repopulate its own area buckets on later scans.
 If Zillow hits a sign-in, press-and-hold, or similar human-verification blocker during scan mode, Home-Ops pauses immediately and requires the user to restore the Zillow session before continuing the scan.
 
-`/home-ops reset` clears generated reports, tracker rows, staged tracker TSVs, pipeline items, and scan history while keeping buyer profiles, portal configuration, and browser session data. The low-level terminal equivalent is `npm run reset:data` or `npm.cmd run reset:data` on Windows PowerShell.
+`/home-ops reset` clears generated reports, tracker rows, staged tracker TSVs, pipeline items, and scan history while keeping buyer profiles, portal configuration, and browser session data. If `config/profile.yml` sets `workflow.shortlist.preserve_on_reset: true`, reset also leaves `data/shortlist.md` alone so recurring hunt runs do not churn shortlist state. The low-level terminal equivalent is `npm run reset:data` or `npm.cmd run reset:data` on Windows PowerShell.
 
 Batch evaluation should stage tracker additions through `batch/tracker-additions/` and merge them with `merge-tracker.mjs` instead of having multiple workers edit `data/listings.md` directly. Browser-backed listing verification should remain serialized even when the workload is divided into 5-property worker batches.
 

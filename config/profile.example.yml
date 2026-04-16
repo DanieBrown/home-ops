@@ -83,3 +83,7 @@ financial:
   loan_type: "30-year fixed"
   closing_cost_pct_min: 2
   closing_cost_pct_max: 3
+
+workflow:
+  shortlist:
+    preserve_on_reset: true                  # keep data/shortlist.md during recurring reset/hunt runs

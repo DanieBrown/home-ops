@@ -24,6 +24,7 @@ Key sections to tune:
 - `sentiment.weights`: neighborhood weighting model
 - `school_sentiment.weights`: school weighting model
 - `financial`: down payment, closing cost, and payment assumptions
+- `workflow.shortlist.preserve_on_reset`: keep `data/shortlist.md` stable during recurring reset and hunt runs
 
 ## buyer-profile.md
 
@@ -41,13 +42,13 @@ Use this file for the context that is hard to express in YAML, such as:
 
 Customize:
 
-- portal search URLs
+- portal search area paths and base URLs
 - login prompts for each platform
-- search areas and query ranges
+- search areas and source coverage
 - sentiment, school, and development sources
 - fallback `search_queries` used when direct browsing is blocked
 
-Keep this file aligned with the current buyer brief and hard requirements.
+Scan syncs the numeric portal filters from `config/profile.yml` at runtime, so `portals.yml` does not need to mirror every price, bed, garage, and square-foot threshold by hand.
 
 ## Prompt Overrides
 

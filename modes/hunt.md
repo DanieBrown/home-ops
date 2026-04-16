@@ -49,6 +49,7 @@ apply those flags only to the `scan` phase.
 
 Rules:
 - `reset` still clears the generated working state.
+- `reset` should preserve `data/shortlist.md` when `config/profile.yml` sets `workflow.shortlist.preserve_on_reset: true`.
 - `evaluate` still runs with no explicit listing target against the pipeline created by the scan phase.
 
 ## Execution Order

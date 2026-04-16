@@ -24,8 +24,10 @@ Clear or reset these generated artifacts:
 - `data/scan-history.tsv`
 - unchecked and processed items in `data/pipeline.md`
 - `data/listings.md`
+- `data/shortlist.md` only when `config/profile.yml` does not set `workflow.shortlist.preserve_on_reset: true`
 
 Resetting `data/listings.md` is required when reports are deleted, otherwise the tracker would keep broken report links.
+If shortlist preservation is enabled in the profile, keep `data/shortlist.md` untouched during reset and say so in the summary.
 
 ## Execution
 
