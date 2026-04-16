@@ -9,6 +9,8 @@ These files are the intended place for buyer-specific configuration:
 - `modes/_profile.md`: buyer-specific prompt behavior and decision heuristics
 - `portals.yml`: live search URLs and source preferences
 
+If you want guided setup instead of manual editing, use `/home-ops profile` to interview the buyer and write the answers back into the buyer-layer files.
+
 If priorities change, update one of these files instead of hard-coding new criteria into `modes/_shared.md`.
 
 ## config/profile.yml

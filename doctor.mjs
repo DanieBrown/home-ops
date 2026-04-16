@@ -98,6 +98,8 @@ async function main() {
     checkFile('modes/_shared.md', 'modes/_shared.md found', 'Restore the shared mode instructions.'),
     checkFile('modes/_profile.md', 'modes/_profile.md found', 'Create modes/_profile.md with buyer-specific overrides.'),
     checkFile('modes/init.md', 'modes/init.md found', 'Create the browser-session initialization mode.'),
+    checkFile('modes/profile.md', 'modes/profile.md found', 'Create the interactive buyer-profile mode.'),
+    checkFile('modes/hunt.md', 'modes/hunt.md found', 'Create the sequential hunt mode.'),
     checkFile('modes/evaluate.md', 'modes/evaluate.md found', 'Create the single-listing evaluation mode.'),
     checkFile('modes/compare.md', 'modes/compare.md found', 'Create the comparison mode.'),
     checkFile('modes/scan.md', 'modes/scan.md found', 'Restore the listing scan mode.'),

@@ -131,13 +131,15 @@ Preferred sources:
 - Reddit communities focused on the Triangle and Raleigh area
 - Google Maps and Google Reviews for subdivision or nearby anchor businesses
 - Local news outlets such as WRAL, ABC11, and News & Observer
-- Facebook and Nextdoor when logged in and accessible
+- Facebook neighborhood groups and Nextdoor feeds when logged in and accessible through the hosted browser session
 - Municipal pages and public comment records when available
 
 Rules:
 - Prefer repeated themes over one-off complaints.
 - Separate subdivision-specific sentiment from city-wide reputation.
 - If you only have city-level evidence, say so explicitly.
+- For Facebook and Nextdoor, prioritize the most recent 7 days of posts or comments and extract recurring themes rather than isolated anecdotes.
+- Treat Facebook group access as a manual, user-authenticated browser workflow. Nextdoor has approved developer APIs for public `anyone` content, but private neighborhood-feed access still needs manual browser research unless an approved integration is added later.
 
 ---
 

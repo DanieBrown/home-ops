@@ -39,7 +39,7 @@ When the user asks for a batch deep dive on the shortlist, or when the latest co
 	- deep batch report path
 	- refined top 3 after deeper research
 6. End by rerunning the compare framework across that same shortlist using the new deep findings and narrow it to the best three homes, not just the original evaluation summaries.
-7. Open the direct listing URL for each home in the refined top 3 in its own browser tab so the user can review the finalists immediately. Prefer the listing URL from the underlying report. If a direct listing URL is unavailable, open the report file instead.
+7. Close the remaining non-finalist tabs in the hosted Chrome session and leave only the refined top 3 in individual browser tabs so the user can review the finalists immediately. Prefer the direct listing URL from the underlying report. If a direct listing URL is unavailable, open the report file instead. Use `node review-tabs.mjs shortlist-top3 --replace` or `npm.cmd run browser:review -- shortlist-top3 --replace` on Windows PowerShell. If the hosted Chrome session is closed, reopen it and restore the three finalist links into fresh tabs.
 
 If any tagged shortlist home has not been fully evaluated yet, run the evaluate workflow first before doing the deep batch. If the shortlist contains fewer than ten populated viable homes, research only the populated rows and say that the current shortlist is smaller than ten.
 
@@ -113,4 +113,4 @@ When deep mode is operating on the current compare shortlist, the final brief sh
 - If the user explicitly asks for a reusable prompt, provide one tailored to the address or area.
 - Distinguish clearly between evidence, inference, and unresolved questions.
 - When running the shortlist batch branch, persist the refined top 3 back into `data/shortlist.md` after writing the batch brief.
-- When the shortlist batch branch finishes, the refined top 3 should also be open in separate browser tabs for review.
+- When the shortlist batch branch finishes, the refined top 3 should be the only remaining home tabs left open in the hosted Chrome window for review.

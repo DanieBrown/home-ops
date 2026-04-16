@@ -3,7 +3,9 @@
 Home-Ops is an AI-assisted home search pipeline for evaluating listings, comparing tradeoffs, scanning portals, tracking decisions, and researching neighborhoods.
 
 Phase 1 is intentionally lean:
+- guided buyer-profile setup and weighting refresh
 - evaluate one listing or batch-evaluate the pending pipeline
+- run the full hunt workflow as one reset-scan-evaluate sequence
 - compare multiple homes
 - scan configured portals
 - track listing status
@@ -13,8 +15,10 @@ The system is built for decision quality, not volume. It should help the buyer r
 
 ## Core Features
 
+- Interactive buyer-profile capture that updates the buyer-layer files
 - Listing evaluation with hard-requirement gating and 1.0 to 5.0 scoring
 - Batch evaluation of pending pipeline homes with dedupe and safe tracker merges
+- One-command hunt workflow for reset, scan, and evaluate
 - Neighborhood, school, and development-risk research
 - Portal scanning through saved Zillow, Redfin, and Realtor.com searches
 - Markdown tracker with status normalization, deduplication, and verification scripts
@@ -41,17 +45,19 @@ If Zillow, Redfin, or Realtor.com reject the default Playwright browser during s
 npm run browser:setup
 ```
 
-`browser:setup` reads `portals.yml`, launches a real local Chrome window with a separate repo-local user-data-dir under `output/browser-sessions/chrome-host`, opens the configured login-required platform home pages, writes session state to `output/browser-sessions/chrome-host/session-state.json`, and appends lifecycle entries to `batch/logs/browser-sessions.tsv`. Playwright can later attach to that running browser over CDP instead of forcing login to happen inside an automated browser instance.
+`browser:setup` reads `portals.yml`, launches a real local Chrome window with a separate repo-local user-data-dir under `output/browser-sessions/chrome-host`, opens the configured login-required browser targets such as Zillow, Redfin, Realtor.com, Facebook, and Nextdoor, writes session state to `output/browser-sessions/chrome-host/session-state.json`, and appends lifecycle entries to `batch/logs/browser-sessions.tsv`. Playwright can later attach to that running browser over CDP instead of forcing login to happen inside an automated browser instance.
 
 If you only need to refresh one platform, run a targeted bootstrap such as:
 
 ```bash
 /home-ops init --zillow --redfin --relator
+/home-ops init --facebook --nextdoor
 
 # low-level terminal equivalents
 npm run browser:session -- --hosted --zillow --channel chrome
 npm run browser:session -- --hosted --redfin --channel chrome
 npm run browser:session -- --hosted --relator --channel chrome
+npm run browser:session -- --hosted --facebook --nextdoor --channel chrome
 ```
 
 Leave the hosted browser running while you scan or verify listings. Check the current repo-local session status with `npm run browser:status`. Reuse that session in Playwright-backed checks with `node check-liveness.mjs --profile chrome-host <listing-url>`. Realtor.com may still return a block page even with a real browser session; treat that as blocked rather than active.
@@ -65,13 +71,17 @@ Then create or customize:
 - `config/profile.yml`
 - `portals.yml`
 
+If you want guided setup instead of manual edits, run `/home-ops profile` and let Home-Ops interview you and map the answers back into the buyer files.
+
 ## Commands
 
 The main command surface is:
 
 ```text
 /home-ops {listing-url}
+/home-ops profile
 /home-ops init
+/home-ops hunt
 /home-ops init --zillow --redfin --relator
 /home-ops evaluate
 /home-ops evaluate {listing-url-or-address}
@@ -85,7 +95,13 @@ The main command surface is:
 
 `/home-ops {listing-url}` or `/home-ops evaluate {listing-url-or-address}` evaluates one property.
 
+`/home-ops profile` asks a guided series of questions, accepts bulleted-list answers for grouped preferences, converts the 0-100 importance answers into normalized weighting values, and updates `buyer-profile.md`, `config/profile.yml`, and `modes/_profile.md`. If the resulting search coverage changes materially, revisit `portals.yml` so scan mode stays aligned.
+
+`/home-ops hunt` runs `reset`, then `scan`, then `evaluate` in sequence. It requires that `/home-ops init` has already been run and that the hosted browser session is still open. Hunt is intentionally opinionated and destructive to generated state because it starts with reset; use the separate commands when you want finer control.
+
 `/home-ops evaluate` with no explicit target reads unchecked entries from `data/pipeline.md`, deduplicates the same property across Zillow, Redfin, and Realtor.com links, splits the canonical set into 5-property worker batches, assigns one subagent per batch, and merges the results into `data/listings.md`. The run should keep dispatching those batches until the full pending set has been attempted, and it should clearly report any backlog left behind by blockers or runtime limits.
+
+After a no-target evaluate batch finishes, Home-Ops should rank up to ten viable review candidates from that completed batch and open them in the hosted Chrome session inside one tab group named `Top 10`. Use `npm run browser:review -- reports <report-paths...> --group "Top 10"` or `npm.cmd run browser:review -- reports <report-paths...> --group "Top 10"` on Windows PowerShell.
 
 Use `/home-ops init` to create or refresh the hosted browser session first. Scan flags now narrow the scan scope only; they no longer bootstrap login sessions. `--relator` is the preferred flag for Realtor.com.
 For portals that reject automated sign-in, prefer the hosted real-Chrome setup path over the Playwright-managed login path.
@@ -100,7 +116,7 @@ Batch evaluation should stage tracker additions through `batch/tracker-additions
 
 The same modes are available through the OpenCode command wrappers in `.opencode/commands/`.
 
-`/home-ops compare` should write up to the latest top ten viable ranked homes to `data/shortlist.md` using persistent compare tags and open those shortlisted listing pages in separate browser tabs for review. `/home-ops deep` can then use that shortlist file to run a batch deep dive on those tagged homes, save the batch brief to `reports/deep-shortlist-{date}.md`, rerank that same shortlist down to a refined top three with the deeper research folded in, and open the finalist listing pages in separate tabs.
+`/home-ops compare` should write up to the latest top ten viable ranked homes to `data/shortlist.md` using persistent compare tags and open those shortlisted listing pages in separate browser tabs for review. `/home-ops deep` can then use that shortlist file to run a batch deep dive on those tagged homes, save the batch brief to `reports/deep-shortlist-{date}.md`, rerank that same shortlist down to a refined top three with the deeper research folded in, and replace the remaining Chrome home tabs with only those finalist tabs.
 
 ## Data Files
 
@@ -116,6 +132,8 @@ The same modes are available through the OpenCode command wrappers in `.opencode
 ## Verification Model
 
 Home-Ops uses Playwright to verify whether a listing is still active. Listing facts come from the platform page first. Neighborhood, school, and development context come from public sources such as GreatSchools, Niche, local government sites, local news, and community discussion where available.
+
+For Facebook groups, assume this workflow depends on the hosted Chrome session for manual, user-authenticated lookups. Nextdoor does offer approved developer APIs for public `anyone` content, trending posts, and public-agency feeds, but private neighborhood-feed sentiment still depends on manual, user-authenticated browsing unless an approved integration is added later. In both cases, prioritize the most recent 7 days of posts and comments when the goal is current neighborhood sentiment.
 
 For portal logins and captcha prompts, Home-Ops expects manual completion inside a persistent local browser profile. It does not try to bypass platform bot checks automatically.
 

@@ -14,8 +14,12 @@ const DEFAULT_HOSTED_PROFILE = 'chrome-host';
 const DEFAULT_CHANNELS = ['chrome', 'msedge', 'chromium'];
 const DEFAULT_TIMEOUT_MS = 30000;
 const DEFAULT_CDP_PORT = 9222;
+const REVIEW_EXTENSION_RELATIVE_DIR = ['tools', 'chrome', 'home-ops-review-tabs'];
+const REVIEW_EXTENSION_NAME = 'home-ops-review-tabs';
 
 const PORTAL_ALIASES = {
+  facebook: 'facebook',
+  nextdoor: 'nextdoor',
   relator: 'realtor',
   'realtor.com': 'realtor',
 };
@@ -39,9 +43,23 @@ const FALLBACK_PORTAL_TARGETS = {
     searchUrls: ['https://www.realtor.com/'],
     loginRequired: true,
   },
+  facebook: {
+    name: 'Facebook',
+    baseUrl: 'https://www.facebook.com/',
+    searchUrls: ['https://www.facebook.com/'],
+    loginRequired: true,
+  },
+  nextdoor: {
+    name: 'Nextdoor',
+    baseUrl: 'https://nextdoor.com/',
+    searchUrls: ['https://nextdoor.com/'],
+    loginRequired: true,
+  },
 };
 
 const PLATFORM_FLAG_MAP = {
+  '--facebook': 'facebook',
+  '--nextdoor': 'nextdoor',
   '--zillow': 'zillow',
   '--redfin': 'redfin',
   '--realtor': 'realtor',
@@ -53,7 +71,7 @@ const LOG_FILE_HEADER = 'opened_at\tclosed_at\tcaller\tprofile\tchannel\tplatfor
 
 const HELP_TEXT = `Usage:
   node browser-session.mjs [portal|configured|all|url] [--profile NAME] [--channel CHANNEL]
-  node browser-session.mjs --zillow --redfin --relator [--searches] [--caller scan]
+  node browser-session.mjs --zillow --redfin --relator --facebook --nextdoor [--searches] [--caller scan]
   node browser-session.mjs configured --hosted --channel chrome [--caller setup]
   node browser-session.mjs --status [--profile NAME]
 
@@ -63,6 +81,7 @@ Examples:
   node browser-session.mjs --zillow --redfin --searches --caller scan
   node browser-session.mjs configured --hosted --channel chrome
   node browser-session.mjs --platform realtor --searches
+  node browser-session.mjs --facebook --nextdoor --hosted --caller init
   node browser-session.mjs --status --profile chrome-host
   node browser-session.mjs https://www.zillow.com/
 
@@ -70,7 +89,7 @@ Notes:
   - This opens a headed persistent browser profile stored under output/browser-sessions/.
   - Chrome is preferred by default when it is installed locally.
   - Use --hosted to launch a real local Chrome window with a separate user-data-dir and CDP enabled.
-  - When portals.yml is present, configured targets come from its platforms section.
+  - When portals.yml is present, configured targets come from its login-required platforms and sentiment sources.
   - Use --searches to open the configured search URLs instead of just the platform home pages.
   - Sign in manually, complete any captcha or anti-bot checks yourself, then close the browser.
   - The saved profile can be reused by other Playwright scripts in this repo.`;
@@ -83,11 +102,15 @@ export function resolveBrowserProfileDir(projectRoot, profileName = DEFAULT_PROF
   return join(projectRoot, 'output', 'browser-sessions', profileName);
 }
 
+export function resolveReviewExtensionDir(projectRoot) {
+  return join(projectRoot, ...REVIEW_EXTENSION_RELATIVE_DIR);
+}
+
 function resolveBrowserSessionLogPath(projectRoot) {
   return join(projectRoot, 'batch', 'logs', 'browser-sessions.tsv');
 }
 
-function resolveBrowserSessionStatePath(projectRoot, profileName = DEFAULT_PROFILE) {
+export function resolveBrowserSessionStatePath(projectRoot, profileName = DEFAULT_PROFILE) {
   return join(resolveBrowserProfileDir(projectRoot, profileName), 'session-state.json');
 }
 
@@ -106,7 +129,7 @@ function simplifyPlatformKey(value) {
 
 function buildPortalTargets(platformsNode) {
   if (!platformsNode || typeof platformsNode !== 'object') {
-    return { ...FALLBACK_PORTAL_TARGETS };
+    return {};
   }
 
   const portalTargets = {};
@@ -138,16 +161,62 @@ function buildPortalTargets(platformsNode) {
     };
   }
 
-  return Object.keys(portalTargets).length > 0 ? portalTargets : { ...FALLBACK_PORTAL_TARGETS };
+  return portalTargets;
 }
 
-async function loadPortalTargets(projectRoot) {
+function buildSupplementalTargets(sourceNode) {
+  if (!sourceNode || typeof sourceNode !== 'object') {
+    return {};
+  }
+
+  const targets = {};
+
+  for (const [rawKey, rawValue] of Object.entries(sourceNode)) {
+    if (!rawValue || typeof rawValue !== 'object') {
+      continue;
+    }
+
+    const key = canonicalPlatformKey(rawKey);
+    const searchUrls = Array.isArray(rawValue.search_urls)
+      ? rawValue.search_urls
+        .map((entry) => (typeof entry?.url === 'string' ? entry.url.trim() : ''))
+        .filter(Boolean)
+      : [];
+    const baseUrl = typeof rawValue.base_url === 'string' && rawValue.base_url.trim()
+      ? rawValue.base_url.trim()
+      : typeof rawValue.url === 'string' && rawValue.url.trim()
+        ? rawValue.url.trim()
+        : searchUrls[0] ?? FALLBACK_PORTAL_TARGETS[key]?.baseUrl ?? null;
+
+    if (!baseUrl && searchUrls.length === 0) {
+      continue;
+    }
+
+    targets[key] = {
+      name: typeof rawValue.name === 'string' && rawValue.name.trim()
+        ? rawValue.name.trim()
+        : FALLBACK_PORTAL_TARGETS[key]?.name ?? rawKey,
+      baseUrl: baseUrl ?? searchUrls[0],
+      searchUrls: searchUrls.length > 0 ? searchUrls : [baseUrl ?? ''].filter(Boolean),
+      loginRequired: rawValue.login_required !== false,
+    };
+  }
+
+  return targets;
+}
+
+export async function loadBrowserTargets(projectRoot) {
   const portalsPath = join(projectRoot, 'portals.yml');
 
   try {
     const content = await readFile(portalsPath, 'utf8');
     const parsed = YAML.parse(content) ?? {};
-    return buildPortalTargets(parsed.platforms);
+    const browserTargets = {
+      ...buildPortalTargets(parsed.platforms),
+      ...buildSupplementalTargets(parsed.sentiment_sources),
+    };
+
+    return Object.keys(browserTargets).length > 0 ? browserTargets : { ...FALLBACK_PORTAL_TARGETS };
   } catch {
     return { ...FALLBACK_PORTAL_TARGETS };
   }
@@ -224,7 +293,7 @@ function normalizeTargetSelection({ target, selectedPlatforms, useSearchUrls, po
   return { urls, labels };
 }
 
-async function appendSessionLog(projectRoot, row) {
+export async function appendSessionLog(projectRoot, row) {
   const logPath = resolveBrowserSessionLogPath(projectRoot);
   await mkdir(dirname(logPath), { recursive: true });
 
@@ -237,7 +306,7 @@ async function appendSessionLog(projectRoot, row) {
   await appendFile(logPath, `${row}\n`, 'utf8');
 }
 
-async function writeSessionState(projectRoot, profileName, state) {
+export async function writeSessionState(projectRoot, profileName, state) {
   const statePath = resolveBrowserSessionStatePath(projectRoot, profileName);
   await mkdir(dirname(statePath), { recursive: true });
   await writeFile(statePath, `${JSON.stringify(state, null, 2)}\n`, 'utf8');
@@ -334,11 +403,14 @@ export async function launchHostedBrowserSession({
 
   const executablePath = resolveBrowserExecutable(channel);
   const endpointURL = `http://127.0.0.1:${cdpPort}`;
+  const reviewExtensionDir = resolveReviewExtensionDir(projectRoot);
   const args = [
     `--remote-debugging-port=${cdpPort}`,
     `--user-data-dir=${effectiveUserDataDir}`,
     '--no-first-run',
     '--no-default-browser-check',
+    `--disable-extensions-except=${reviewExtensionDir}`,
+    `--load-extension=${reviewExtensionDir}`,
     ...targets,
   ];
 
@@ -662,7 +734,7 @@ async function main() {
     return;
   }
 
-  const portalTargets = await loadPortalTargets(projectRoot);
+  const portalTargets = await loadBrowserTargets(projectRoot);
   const targetSelection = normalizeTargetSelection({
     target: config.target,
     selectedPlatforms: [...config.selectedPlatforms],
@@ -691,6 +763,7 @@ async function main() {
       targets: targetSelection.urls,
       userDataDir: launched.userDataDir,
       executablePath: launched.executablePath,
+      extensions: [REVIEW_EXTENSION_NAME],
       cdpUrl: launched.cdpUrl,
       wsEndpoint: launched.wsEndpoint,
       pid: launched.pid,

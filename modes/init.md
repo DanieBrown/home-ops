@@ -1,6 +1,6 @@
 # Mode: init -- Browser Session Setup
 
-Launch or confirm the repo-local hosted browser session that Home-Ops will reuse for portal scans and listing verification.
+Launch or confirm the repo-local hosted browser session that Home-Ops will reuse for portal scans, listing verification, and gated neighborhood research.
 
 ## Read First
 
@@ -13,7 +13,7 @@ Launch or confirm the repo-local hosted browser session that Home-Ops will reuse
 
 ## Goal
 
-Prepare a reusable hosted Chrome session for Zillow, Redfin, and Realtor.com so the user can sign in once and then run `/home-ops scan` separately.
+Prepare a reusable hosted Chrome session for the login-required browser targets in `portals.yml` so the user can sign in once and then run `/home-ops hunt`, `/home-ops scan`, `/home-ops evaluate`, or `/home-ops deep` without repeating portal login.
 
 ## Platform Flags
 
@@ -22,11 +22,13 @@ If the command arguments include any of these flags, treat them as a platform fi
 - `--zillow`
 - `--redfin`
 - `--relator`
+- `--facebook`
+- `--nextdoor`
 
 Treat `--realtor` as a backward-compatible alias, but prefer `--relator` in commands and documentation.
 
 When no platform flags are present:
-- Initialize all login-required platforms from `portals.yml`.
+- Initialize all login-required browser targets from `portals.yml`, including Facebook and Nextdoor when they are configured as login-required sentiment sources.
 
 ## Behavior
 
@@ -41,8 +43,8 @@ When no platform flags are present:
 
 Return a concise summary with:
 - whether an existing hosted session was reused or a new one was launched
-- platforms covered by the session
+- browser targets covered by the session
 - browser profile path
 - CDP endpoint if available
 - state/log files updated
-- the next step: run `/home-ops scan`
+- the next step: run `/home-ops hunt`, `/home-ops scan`, `/home-ops evaluate`, or `/home-ops deep`

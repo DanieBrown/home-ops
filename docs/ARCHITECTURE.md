@@ -2,9 +2,11 @@
 
 ## System Overview
 
-Home-ops is a local decision-support system for home search. The active workflow has six modes:
+Home-ops is a local decision-support system for home search. The active workflow has eight modes:
 
+- `profile`: interview the buyer and update the buyer-layer files
 - `init`: launch or confirm the hosted browser session for portal login
+- `hunt`: run reset, then scan, then evaluate in one sequential workflow
 - `evaluate`: review one listing against buyer requirements, or batch-evaluate pending pipeline homes when no target is supplied
 - `compare`: rank several homes side by side
 - `scan`: collect new listings from configured portal URLs
@@ -12,6 +14,30 @@ Home-ops is a local decision-support system for home search. The active workflow
 - `deep`: research schools, neighborhood sentiment, and development risk
 
 All modes read the shared operating rules from `modes/_shared.md`, then apply buyer-specific guidance from `modes/_profile.md` and `config/profile.yml`.
+
+## Profile Flow
+
+The profile mode uses an interactive questionnaire to refresh the buyer-layer files.
+
+Expected behavior:
+
+1. Ask the buyer for identity, areas, hard requirements, soft preferences, deal-breakers, commute, and financial assumptions.
+2. Ask 0-100 importance questions for the neighborhood and school weighting factors.
+3. Normalize those raw scores into `config/profile.yml` weights.
+4. Update `buyer-profile.md`, `config/profile.yml`, and `modes/_profile.md`.
+5. Run `profile-sync-check.mjs`.
+
+## Hunt Flow
+
+The hunt mode is a sequential orchestrator around the existing workflows.
+
+Expected behavior:
+
+1. Confirm that the hosted browser session from `init` is already open and reusable.
+2. Run `reset` to clear generated state while preserving buyer files and browser sessions.
+3. Run `scan` to refill the pipeline with fresh candidates.
+4. Run `evaluate` with no explicit target against that refreshed pipeline.
+5. Report the combined outcome.
 
 ## Core Data Flow
 

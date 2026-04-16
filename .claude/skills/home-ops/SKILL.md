@@ -17,8 +17,12 @@ If `{{mode}}` contains multiple tokens, use the first token as the sub-command a
 |-------|------|
 | (empty / no args) | `discovery` -- Show command menu |
 | Listing URL or pasted property details (no sub-command) | `evaluate` |
+| `profile` | `profile` |
+| `profile ...args` | `profile` |
 | `init` | `init` |
 | `init ...args` | `init` |
+| `hunt` | `hunt` |
+| `hunt ...args` | `hunt` |
 | `evaluate` | `evaluate` |
 | `evaluate ...args` | `evaluate` |
 | `compare` | `compare` |
@@ -47,7 +51,9 @@ home-ops -- Command Center
 
 Available commands:
   /home-ops {listing-url}   -> Evaluate a single listing and update the tracker
+  /home-ops profile         -> Interview the buyer and update the profile files
   /home-ops init            -> Launch or confirm the hosted browser session for portal logins
+  /home-ops hunt            -> Reset generated state, scan fresh listings, and batch-evaluate the refreshed pipeline
   /home-ops init --zillow --redfin --relator -> Initialize only those platform sessions in the hosted browser
   /home-ops evaluate        -> Evaluate one address or listing URL, or batch-evaluate pending pipeline homes when no target is supplied
   /home-ops compare         -> Compare and rank multiple homes
@@ -71,7 +77,9 @@ For all active modes, read:
 - `modes/_profile.md`
 
 Then read the mode file:
+- `modes/profile.md`
 - `modes/init.md`
+- `modes/hunt.md`
 - `modes/evaluate.md`
 - `modes/compare.md`
 - `modes/scan.md`
@@ -91,6 +99,10 @@ Also read the relevant data files before acting:
 Prefer a subagent for `scan` because it can involve multiple pages and platform-specific extraction.
 
 `evaluate` with no explicit listing target should split the deduplicated pending pipeline into worker slices of up to 5 canonical properties and use one subagent per slice.
+
+`profile` should use the interactive question flow from `modes/profile.md` and keep the buyer-layer writes in the main agent.
+
+`hunt` should orchestrate `reset`, then `scan`, then `evaluate` sequentially. Do not overlap those three phases. If subagents are used, keep them inside the scan or evaluate phases rather than across the full hunt flow.
 
 When multiple listings are being evaluated, the main agent should own the final tracker merge, pipeline edits, and summary. Workers should return structured evaluation results or other staged output rather than racing to edit `data/listings.md` directly, and browser-backed verification should stay serialized across the run.
 

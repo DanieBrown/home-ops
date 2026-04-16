@@ -72,12 +72,13 @@ When `evaluate` is invoked with no explicit listing target:
 8. The main agent owns report numbering, tracker staging, merge operations, and final pipeline edits. Workers should return structured results rather than editing `data/listings.md` directly.
 9. After each worker returns, stage one tracker addition per handled property under `batch/tracker-additions/` using the canonical 11-column home-ops TSV order. Then merge with `node merge-tracker.mjs --verify` or `npm.cmd run merge -- --verify` on Windows PowerShell.
 10. Update `data/pipeline.md` as work completes. Move handled items from `Pending` to `Processed` and keep a concise outcome summary that includes report number, score, and final recommendation.
-11. Suggested tracker statuses in batch mode:
+11. Rank the viable homes from the just-completed batch by final recommendation and score, keep up to ten direct-review candidates, and open their listing URLs in the hosted Chrome session inside one tab group named `Top 10`. Prefer each report's `**URL:**` field and fall back to the report file only when a direct listing URL is missing. Use `node review-tabs.mjs reports <report-paths...> --group "Top 10"` or `npm.cmd run browser:review -- reports <report-paths...> --group "Top 10"` on Windows PowerShell. If the hosted Chrome session is closed, reopen it before opening the review group.
+12. Suggested tracker statuses in batch mode:
    - `Sold` for clearly inactive or unavailable listings
    - `SKIP` for obvious no-fit listings or major hard-requirement failures
    - `Evaluated` for completed reviews with a report
    - Reserve `Interested`, `Tour Scheduled`, `Toured`, `Offer Submitted`, and `Under Contract` for explicit user workflow decisions unless the user asks for automatic shortlisting behavior
-12. Keep dispatching 5-property worker slices until the full deduplicated pending pipeline has been attempted. Only leave backlog behind when a hard blocker, runtime ceiling, or explicit user stop prevents completion, and clearly report what remains pending.
+13. Keep dispatching 5-property worker slices until the full deduplicated pending pipeline has been attempted. Only leave backlog behind when a hard blocker, runtime ceiling, or explicit user stop prevents completion, and clearly report what remains pending.
 
 ## Tracker Row Format
 
@@ -123,6 +124,7 @@ Always say why in plain language.
 - If the schools are weak or unclear, say that directly.
 - If the listing looks attractive but sits on a noisy road or risky lot, that must be prominent in the recommendation.
 - If verification fails, keep the report conservative and mark confidence accordingly.
+- When Facebook or Nextdoor are available in the hosted browser session, check the most recent 7 days of neighborhood-group or feed discussions for recurring traffic, construction, accident, safety, or noise signals. If those portals are not accessible, say so and rely on public sources instead.
 
 ## Batch Output Summary
 

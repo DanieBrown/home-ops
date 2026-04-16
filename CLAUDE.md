@@ -5,6 +5,7 @@
 Home-Ops is a local home-search command center built around Claude Code, OpenCode, and Codex-friendly prompt files.
 
 It helps the user:
+- capture or revise the buyer profile and scoring preferences
 - evaluate one listing against hard requirements
 - compare multiple homes
 - scan portal search URLs for new listings
@@ -41,7 +42,9 @@ Rule:
 | Command | Purpose |
 |---------|---------|
 | `/home-ops` | Show the menu or route from a listing URL |
+| `/home-ops-profile` | Interview the buyer and update buyer profile files |
 | `/home-ops-init` | Launch or confirm the hosted browser session for portal login |
+| `/home-ops-hunt` | Run reset, scan, and evaluate sequentially against a live hosted session |
 | `/home-ops-evaluate` | Evaluate one listing or batch-evaluate pending pipeline homes |
 | `/home-ops-compare` | Compare multiple homes |
 | `/home-ops-scan` | Scan configured portal searches |
@@ -117,7 +120,9 @@ Store that in `buyer-profile.md`, `config/profile.yml`, or `modes/_profile.md`.
 ### Step 6: Ready
 
 Once the basics are in place, the user can:
+- run `/home-ops profile` to refresh buyer criteria interactively
 - run `/home-ops init`
+- run `/home-ops hunt` to clear generated state, scan fresh listings, and batch-evaluate them in one pass
 - paste a listing URL to evaluate it
 - run `/home-ops evaluate` to process the pending pipeline in batch mode
 - run `/home-ops scan`
@@ -135,7 +140,9 @@ When the user asks to change priorities, weights, or scan coverage:
 
 | If the user... | Mode |
 |----------------|------|
+| wants to set up or revise the buyer profile interactively | `profile` |
 | wants to set up or refresh portal login sessions | `init` |
+| wants the full reset-scan-evaluate intake flow | `hunt` |
 | pastes a listing URL or asks to process pending listings | `evaluate` |
 | asks to compare homes | `compare` |
 | wants fresh listings | `scan` |

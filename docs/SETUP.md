@@ -25,17 +25,19 @@ Create the reusable repo-local hosted browser session after you configure `porta
 npm run browser:setup
 ```
 
-This command reads the login-required platforms from `portals.yml`, launches a real local Chrome window with CDP enabled and a separate repo-local user-data-dir under `output/browser-sessions/chrome-host`, opens the platform base pages, writes status to `output/browser-sessions/chrome-host/session-state.json`, and appends lifecycle events to `batch/logs/browser-sessions.tsv`.
+This command reads the login-required browser targets from `portals.yml`, launches a real local Chrome window with CDP enabled and a separate repo-local user-data-dir under `output/browser-sessions/chrome-host`, opens the configured base pages for sites such as Zillow, Redfin, Realtor.com, Facebook, and Nextdoor, writes status to `output/browser-sessions/chrome-host/session-state.json`, and appends lifecycle events to `batch/logs/browser-sessions.tsv`.
 
 For a targeted refresh instead of the full configured set:
 
 ```bash
 /home-ops init --zillow --redfin --relator
+/home-ops init --facebook --nextdoor
 
 # low-level terminal equivalents
 npm run browser:session -- --hosted --zillow --channel chrome
 npm run browser:session -- --hosted --redfin --channel chrome
 npm run browser:session -- --hosted --relator --channel chrome
+npm run browser:session -- --hosted --facebook --nextdoor --channel chrome
 ```
 
 Sign in manually in the opened browser window, complete any captcha or anti-bot challenge yourself, and keep the browser running while Home-Ops attaches to it for scanning or verification. Check the repo-local hosted browser status with:
@@ -69,6 +71,8 @@ Home-ops expects these files:
 
 If a file is missing, use the matching template or let the agent walk through onboarding.
 
+If you want guided setup instead of manual editing, run `/home-ops profile` and let Home-Ops collect the buyer criteria interactively.
+
 ### 4. Verify the buyer configuration
 
 ```bash
@@ -80,7 +84,9 @@ node verify-pipeline.mjs
 
 Typical entry points:
 
+- Run `/home-ops profile` when you want to create or refresh the buyer-layer files interactively.
 - Run `/home-ops init` before the first scan or whenever the portal login session needs to be refreshed.
+- Run `/home-ops hunt` when you want one command to reset generated state, scan fresh listings, and batch-evaluate them. Keep the hosted browser session open first.
 - Paste a listing URL to evaluate a single home.
 - Run `/home-ops evaluate` with no arguments to process the unchecked entries in `data/pipeline.md`.
 - Run `/home-ops-scan` to look for new listings from configured portal searches.
@@ -88,7 +94,9 @@ Typical entry points:
 - Run `/home-ops-tracker` to review or update tracker status.
 - Run `/home-ops-deep` for school, neighborhood, and development research.
 
-When `/home-ops compare` ranks evaluated homes, it should update `data/shortlist.md` with up to the top ten viable tags and open those home listing pages in individual browser tabs for review. When `/home-ops deep` is then asked to work on the shortlist, it should batch-research those tagged homes, save the batch brief to `reports/deep-shortlist-{YYYY-MM-DD}.md`, update `data/shortlist.md` with a refined post-deep top three, and open those finalist listing pages in individual tabs as well.
+When `/home-ops compare` ranks evaluated homes, it should update `data/shortlist.md` with up to the top ten viable tags and open those home listing pages in individual browser tabs for review. When `/home-ops evaluate` runs without an explicit target, it should also open up to ten viable newly evaluated homes in one hosted-Chrome tab group titled `Top 10`. When `/home-ops deep` is then asked to work on the shortlist, it should batch-research those tagged homes, save the batch brief to `reports/deep-shortlist-{YYYY-MM-DD}.md`, update `data/shortlist.md` with a refined post-deep top three, and replace the remaining Chrome home tabs with only those finalist listing pages.
+
+Use `npm run browser:review` or `npm.cmd run browser:review` on Windows PowerShell when you need the low-level review-tab helper directly.
 
 When `/home-ops evaluate` runs without a target, Home-Ops should deduplicate the pending pipeline by property, split the canonical set into 5-property worker batches, assign one subagent per batch, stage tracker additions under `batch/tracker-additions/`, merge them into `data/listings.md`, and move handled items into the `Processed` section of `data/pipeline.md`. The main agent should keep dispatching those batches until the full pending set has been attempted.
 

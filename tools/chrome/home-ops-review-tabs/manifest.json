@@ -1,0 +1,11 @@
+{
+  "manifest_version": 3,
+  "name": "Home-Ops Review Tabs",
+  "version": "1.0.0",
+  "description": "Groups and manages Home-Ops review tabs inside the hosted Chrome session.",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAzgBM1UqdpIqBTuEejts5U3JFBoGCD9OhFRQ/IMpR2Ch/S66EjrP+GY9mI6iZQEJRqt842Xmt+lN0OX1dVgLISjxitnX15IK6CUvn2xE+FgPcv2acenQbwLjUuibE8gXqe2FgPhxYaWeYtIGV6qWtjMeCw6le+neANEjtkhwpSNm/s4skd/asMS5TcO/TRQUe4d1H5+prwo6tFhYBd7UUV4Isp5uixDpc8C7ky2x+b7bFTOW5I9pDoWnLz4vHBxtNHQGhXKOKRx6X9yEcFn/S9hpjnwUZwQ9C0zw4Vu2ulj6OhnZ1NzB6zcnzyEGjH3qngbIKJqU11Gb7EImdNmDZkQIDAQAB",
+  "permissions": [
+    "tabs",
+    "tabGroups"
+  ]
+}

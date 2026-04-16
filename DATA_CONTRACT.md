@@ -26,6 +26,10 @@ System-layer files hold prompts, scripts, dashboards, templates, and repo instru
 | File | Purpose |
 |------|---------|
 | `modes/_shared.md` | Shared scoring logic and global rules |
+| `modes/init.md` | Browser session setup mode |
+| `modes/reset.md` | Generated-state reset mode |
+| `modes/profile.md` | Interactive buyer-profile setup mode |
+| `modes/hunt.md` | Sequential reset-scan-evaluate orchestration mode |
 | `modes/evaluate.md` | Single-listing evaluation mode |
 | `modes/compare.md` | Multi-listing comparison mode |
 | `modes/scan.md` | Listing scanner mode |
