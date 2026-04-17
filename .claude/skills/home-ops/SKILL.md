@@ -98,13 +98,13 @@ Also read the relevant data files before acting:
 
 Prefer a subagent for `scan` because it can involve multiple pages and platform-specific extraction.
 
-`evaluate` with no explicit listing target should split the deduplicated pending pipeline into worker slices of up to 5 canonical properties and use one subagent per slice.
+`evaluate` with no explicit listing target should deduplicate the pending pipeline into canonical properties, keep browser-backed verification and normalized fact extraction in the main agent, and then create one report-writing subagent per property. If the queue is large, dispatch those per-property workers in waves of up to 5, but keep the unit of work at one home per agent.
 
 `profile` should use the interactive question flow from `modes/profile.md` and keep the buyer-layer writes in the main agent.
 
 `hunt` should orchestrate `reset`, then `scan`, then `evaluate` sequentially. Do not overlap those three phases. If subagents are used, keep them inside the scan or evaluate phases rather than across the full hunt flow.
 
-When multiple listings are being evaluated, the main agent should own the final tracker merge, pipeline edits, and summary. Workers should return structured evaluation results or other staged output rather than racing to edit `data/listings.md` directly, and browser-backed verification should stay serialized across the run.
+When multiple listings are being evaluated, the main agent should own the final tracker merge, pipeline edits, and summary. Workers should return full report drafts plus structured evaluation results or other staged output rather than racing to edit `data/listings.md` directly, and browser-backed verification should stay serialized across the run.
 
 `deep` with a populated top-10 shortlist in `data/shortlist.md` should launch one subagent per shortlisted home. Each worker should return structured deep-dive findings and a tentative verdict for one home, while the main agent owns the combined batch brief, shortlist rewrite, final top-3 rerank, and finalist-tab replacement in the hosted browser.
 

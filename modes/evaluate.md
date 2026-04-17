@@ -68,23 +68,24 @@ When `evaluate` is invoked with no explicit listing target:
 2. Normalize and deduplicate the pending items by address + city when available. If address data is missing, fall back to canonical URL deduplication.
 3. Treat one physical property as one evaluation even when the pipeline contains Zillow, Redfin, and Realtor.com variants.
 4. Choose one primary listing source per property for the first pass. Prefer `Zillow`, then `Redfin`, then `Realtor.com`, but keep alternate URLs available as verification fallbacks.
-5. Partition the deduplicated canonical properties into worker slices of up to 5 properties each.
-6. Launch one subagent per 5-property slice. Each worker should process its assigned slice and return a structured result for every handled property to the main agent.
-7. Keep Playwright-backed listing verification serialized. Do not run multiple portal/browser checks in parallel against the same hosted browser session. If needed, serialize the browser verification step across the worker slices instead of running those checks concurrently.
-8. The main agent owns report numbering, tracker staging, merge operations, and final pipeline edits. Workers should return structured results rather than editing `data/listings.md` directly.
-9. After each worker returns, stage one tracker addition per handled property under `batch/tracker-additions/` using the canonical 11-column home-ops TSV order. Then merge with `node merge-tracker.mjs --verify` or `npm.cmd run merge -- --verify` on Windows PowerShell.
-10. Update `data/pipeline.md` as work completes. Move handled items from `Pending` to `Processed` and keep a concise outcome summary that includes report number, score, and final recommendation.
-11. Rank the viable homes from the just-completed batch by final recommendation and score, and keep up to ten direct-review candidates.
-12. Persist those homes to `data/shortlist.md` as the latest top-10 cohort so deep mode can pick them up immediately. Set `Source Mode: evaluate`, overwrite any older cohort, use tags like `Evaluate Top 10 - Rank N`, and include tracker row numbers, report links, current score, current status, and a one-line reason each home made the top 10. If fewer than ten viable homes exist, persist only the populated rows and say so clearly.
-13. Open that saved top-10 cohort in the hosted Chrome session inside one tab group named `Top 10`. Prefer each report's `**URL:**` field and fall back to the report file only when a direct listing URL is missing. Use `node review-tabs.mjs shortlist-top10 --group "Top 10"` or `npm.cmd run browser:review -- shortlist-top10 --group "Top 10"` on Windows PowerShell. If the hosted Chrome session is closed, reopen it before opening the review group.
-14. Suggested tracker statuses in batch mode:
+5. Build one canonical work item per deduplicated property and keep the alternate URLs attached as fallbacks.
+6. Keep Playwright-backed listing verification serialized. Do not run multiple portal/browser checks in parallel against the same hosted browser session. The main agent should own the browser pass, extract normalized facts, and run `research-source-plan.mjs` as needed so each property has a concrete evidence packet before report drafting starts.
+7. After each property's evidence packet is ready, create one report-writing subagent for that property. Each worker should turn the supplied facts, source plan, and fallback URLs into a report draft, score, status, tracker note, and shortlist rationale. If runtime is tight, dispatch these per-home workers in waves of up to 5, but do not bundle multiple homes into one worker.
+8. Do not require a separate user-facing `/create-agent` step. `evaluate` should create and coordinate these report workers internally.
+9. The main agent owns report numbering, tracker staging, merge operations, and final pipeline edits. Workers should return report drafts and structured results rather than editing `data/listings.md` directly.
+10. After each worker returns, stage one tracker addition per handled property under `batch/tracker-additions/` using the canonical 11-column home-ops TSV order. Then merge with `node merge-tracker.mjs --verify` or `npm.cmd run merge -- --verify` on Windows PowerShell.
+11. Update `data/pipeline.md` as work completes. Move handled items from `Pending` to `Processed` and keep a concise outcome summary that includes report number, score, and final recommendation.
+12. Rank the viable homes from the just-completed batch by final recommendation and score, and keep up to ten direct-review candidates.
+13. Persist those homes to `data/shortlist.md` as the latest top-10 cohort so deep mode can pick them up immediately. Set `Source Mode: evaluate`, overwrite any older cohort, use tags like `Evaluate Top 10 - Rank N`, and include tracker row numbers, report links, current score, current status, and a one-line reason each home made the top 10. If fewer than ten viable homes exist, persist only the populated rows and say so clearly.
+14. Open that saved top-10 cohort in the hosted Chrome session inside one tab group named `Top 10`. Prefer each report's `**URL:**` field and fall back to the report file only when a direct listing URL is missing. Use `node review-tabs.mjs shortlist-top10 --group "Top 10"` or `npm.cmd run browser:review -- shortlist-top10 --group "Top 10"` on Windows PowerShell. If the hosted Chrome session is closed, reopen it before opening the review group.
+15. Suggested tracker statuses in batch mode:
    - `Sold` for clearly inactive or unavailable listings
    - `SKIP` for obvious no-fit listings or major hard-requirement failures
    - `Evaluated` for completed reviews with a report
    - Reserve `Interested`, `Tour Scheduled`, `Toured`, `Offer Submitted`, and `Under Contract` for explicit user workflow decisions unless the user asks for automatic shortlisting behavior
-15. Keep dispatching 5-property worker slices until the full deduplicated pending pipeline has been attempted. Only leave backlog behind when a hard blocker, runtime ceiling, or explicit user stop prevents completion, and clearly report what remains pending.
-16. After the reports are written, run `research-coverage-audit.mjs` against the just-generated report set and report whether neighborhood, school, and development coverage was explicit, weak, or missing.
-17. When the audit flags school or development gaps, run `research-source-plan.mjs` on the affected reports so the next pass uses the exact `portals.yml` sources and suggested lookup targets rather than ad hoc searching.
+16. Keep dispatching per-home report workers until the full deduplicated pending pipeline has been attempted. Only leave backlog behind when a hard blocker, runtime ceiling, or explicit user stop prevents completion, and clearly report what remains pending.
+17. After the reports are written, run `research-coverage-audit.mjs` against the just-generated report set and report whether neighborhood, school, and development coverage was explicit, weak, or missing.
+18. When the audit flags school or development gaps, run `research-source-plan.mjs` on the affected reports so the next pass uses the exact `portals.yml` sources and suggested lookup targets rather than ad hoc searching.
 
 ## Tracker Row Format
 
@@ -138,7 +139,7 @@ Always say why in plain language.
 When running the pending-pipeline workflow, return a concise summary with:
 - pending pipeline entries read
 - canonical properties deduplicated
-- 5-property worker slices dispatched
+- per-home report workers dispatched
 - reports written
 - tracker rows added or updated
 - shortlist cohort updated

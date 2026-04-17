@@ -29,7 +29,8 @@ If any of those files are missing, create them from the checked-in example or te
 - For single-value fields that map cleanly into YAML, present roughly 4 generic default options plus a `Custom` option.
 - For refresh flows, include a `Keep current` option when a meaningful current value already exists.
 - For multi-value sections such as features, deal-breakers, and lifestyle preferences, prefer curated multi-select lists with optional freeform additions.
-- For grouped criteria such as areas, features, deal-breakers, or commute destinations, ask the user for a bulleted list and map the bullets back to the correct fields.
+- For grouped criteria such as areas, features, deal-breakers, or commute destinations, ask the user for a bulleted list and map the entries back to the correct fields.
+- For search areas specifically, also accept one comma-delimited free-text reply containing multiple area names, then convert that one answer into the structured `search.areas` list.
 - Preserve any current value the user explicitly says to keep.
 - Do not write buyer-specific criteria into `modes/_shared.md`.
 
@@ -80,7 +81,7 @@ Collect:
 ### 2. Search Areas And Hard Requirements
 
 Collect:
-- target areas as a bulleted list
+- target areas as a bulleted list or comma-delimited list
 - price minimum and maximum
 - minimum beds
 - minimum garage spaces
@@ -100,10 +101,16 @@ Ask the hard requirements using structured defaults first. Example:
 - listing-age maximum from a short default list plus `Custom`
 - home-type preference from a short default list
 
-For search areas, ask for a bulleted list in a format such as:
+For search areas, accept either a structured bulleted list or a single comma-delimited reply.
+
+Structured example:
 
 - `Holly Springs | NC | Wake | 1`
 - `Apex | NC | Wake | 2`
+
+Comma-delimited shorthand example:
+
+- `Holly Springs, Cary, Apex, Willow Springs`
 
 Interpret the columns as:
 - area name
@@ -111,7 +118,9 @@ Interpret the columns as:
 - county
 - rank
 
-If county or rank is omitted, ask a short follow-up instead of inventing it.
+If the user provides multiple areas in one answer, keep them in one batch.
+If county or rank is omitted, ask one consolidated follow-up that covers all missing values instead of asking one area at a time.
+If Willow Springs is selected, a multi-county value such as `Wake, Harnett` is acceptable.
 
 ### 3. Soft Preferences And Features
 
@@ -279,6 +288,7 @@ Rules:
 - Do not anchor the option sets around the current buyer's exact values; use generic defaults that work for many buyers, with `Custom` available.
 - Keep each batch small enough that the user can answer quickly.
 - If the user chooses multiple features or deal-breakers, reflect the whole set back into the written profile instead of collapsing it down to one headline preference.
+- When the user supplies multiple search areas in one reply, preserve that batch and ask at most one grouped follow-up for any missing county or rank fields.
 
 ## Validation
 
@@ -296,3 +306,4 @@ Return a concise summary with:
 - whether the weight scores were re-normalized
 - whether `profile-sync-check.mjs` passed
 - whether `portals.yml` now looks out of sync with the new profile
+- and an explicit next-step line telling the user to run `/home-ops init` next

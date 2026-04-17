@@ -73,11 +73,12 @@ When `evaluate` is invoked with no explicit listing target, the mode should swit
 
 1. Read unchecked entries from `data/pipeline.md`.
 2. Deduplicate the same property across portal URLs by normalized address + city.
-3. Split the canonical property set into worker slices of up to 5 properties each.
-4. Assign one subagent per 5-property slice, while keeping browser-backed verification serialized across the run.
-5. Stage tracker additions in `batch/tracker-additions/`.
-6. Merge the staged results into `data/listings.md` with `merge-tracker.mjs`.
-7. Move handled items to the `Processed` section of `data/pipeline.md`.
+3. Build one canonical work item per deduplicated property and attach alternate listing URLs as fallbacks.
+4. Keep browser-backed verification and normalized fact extraction serialized in the main agent across the run.
+5. Create one report-writing subagent per canonical property. If there are many homes, dispatch those workers in waves of up to 5, but keep the unit of work at one home per agent.
+6. Stage tracker additions in `batch/tracker-additions/`.
+7. Merge the staged results into `data/listings.md` with `merge-tracker.mjs`.
+8. Move handled items to the `Processed` section of `data/pipeline.md`.
 
 ## Scan Flow
 

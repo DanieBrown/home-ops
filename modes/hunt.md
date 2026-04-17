@@ -76,7 +76,7 @@ Rules:
 ### 4. Evaluate Phase
 
 - Run the evaluate workflow with no explicit target against the refreshed pipeline.
-- Reuse the existing batch-evaluate rules, including canonical-property dedupe, 5-property worker slices, staged tracker additions, and serialized browser-backed verification.
+- Reuse the existing batch-evaluate rules, including canonical-property dedupe, one report-writing worker per property, staged tracker additions, and serialized browser-backed verification.
 - Let evaluate handle the top-10 review tab behavior at the end of the batch.
 - If every selected platform blocked and the pipeline stayed empty, evaluate may complete as a no-op. Report that clearly.
 

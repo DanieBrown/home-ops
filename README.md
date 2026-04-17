@@ -103,7 +103,7 @@ The main command surface is:
 
 `/home-ops hunt` runs `reset`, then `scan`, then `evaluate` in sequence. It requires that `/home-ops init` has already been run and that the hosted browser session is still open. Hunt is intentionally opinionated and destructive to generated state because it starts with reset; use the separate commands when you want finer control.
 
-`/home-ops evaluate` with no explicit target reads unchecked entries from `data/pipeline.md`, deduplicates the same property across Zillow, Redfin, and Realtor.com links, splits the canonical set into 5-property worker batches, assigns one subagent per batch, and merges the results into `data/listings.md`. The run should keep dispatching those batches until the full pending set has been attempted, and it should clearly report any backlog left behind by blockers or runtime limits.
+`/home-ops evaluate` with no explicit target reads unchecked entries from `data/pipeline.md`, deduplicates the same property across Zillow, Redfin, and Realtor.com links, keeps browser-backed verification and normalized fact extraction serialized in the main agent, and then assigns one report-writing subagent per canonical property. If the queue is large, those per-home workers can be dispatched in waves of up to five. The main agent then merges the results into `data/listings.md`, updates the pipeline, and clearly reports any backlog left behind by blockers or runtime limits.
 
 After a no-target evaluate batch finishes, Home-Ops should rank up to ten viable review candidates from that completed batch and open them in the hosted Chrome session inside one tab group named `Top 10`. Use `npm run browser:review -- reports <report-paths...> --group "Top 10"` or `npm.cmd run browser:review -- reports <report-paths...> --group "Top 10"` on Windows PowerShell.
 
@@ -116,7 +116,7 @@ If Zillow hits a sign-in, press-and-hold, or similar human-verification blocker 
 
 `/home-ops reset` clears generated reports, tracker rows, staged tracker TSVs, pipeline items, and scan history while keeping buyer profiles, portal configuration, and browser session data. If `config/profile.yml` sets `workflow.shortlist.preserve_on_reset: true`, reset also leaves `data/shortlist.md` alone so recurring hunt runs do not churn shortlist state. The low-level terminal equivalent is `npm run reset:data` or `npm.cmd run reset:data` on Windows PowerShell.
 
-Batch evaluation should stage tracker additions through `batch/tracker-additions/` and merge them with `merge-tracker.mjs` instead of having multiple workers edit `data/listings.md` directly. Browser-backed listing verification should remain serialized even when the workload is divided into 5-property worker batches. `merge-tracker.mjs` now accepts either one staged row per TSV or multiple staged rows in the same TSV file so recovery workflows do not need one file per home.
+Batch evaluation should stage tracker additions through `batch/tracker-additions/` and merge them with `merge-tracker.mjs` instead of having multiple workers edit `data/listings.md` directly. Browser-backed listing verification should remain serialized even when report drafting fans out across multiple per-home workers. `merge-tracker.mjs` now accepts either one staged row per TSV or multiple staged rows in the same TSV file so recovery workflows do not need one file per home.
 
 The same modes are available through the OpenCode command wrappers in `.opencode/commands/`.
 

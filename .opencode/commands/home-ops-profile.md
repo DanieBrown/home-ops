@@ -8,7 +8,8 @@ Examples:
 - `/home-ops profile`
 - `/home-ops profile refresh`
 
-This command should ask guided questions, accept bulleted-list answers when that is easier, normalize the weighting scores, and update the buyer-layer files.
+This command should ask guided questions, accept bulleted-list answers when that is easier, accept comma-delimited area lists in a single reply, normalize the weighting scores, and update the buyer-layer files.
+When the profile flow finishes, explicitly tell the user to run `/home-ops init` next.
 
 Additional context:
 $ARGUMENTS
