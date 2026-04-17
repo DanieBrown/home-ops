@@ -116,6 +116,12 @@ console.log('\n2. Script execution');
 
 const scripts = [
   'browser-session.mjs --status',
+  'review-tabs.mjs --help',
+  'research-coverage-audit.mjs',
+  'research-source-plan.mjs --top3 --type development',
+  'research-source-plan.mjs --top3 --type sentiment',
+  'sentiment-browser-extract.mjs --help',
+  'shortlist-finalist-gate.mjs --help',
   'doctor.mjs',
   'profile-sync-check.mjs',
   'verify-pipeline.mjs',
@@ -202,6 +208,15 @@ for (const file of userFiles) {
     pass(`User file gitignored: ${file}`);
   } else {
     fail(`User file is tracked but should be ignored: ${file}`);
+  }
+}
+
+if (fileExists('data/shortlist.md')) {
+  const shortlist = readFile('data/shortlist.md');
+  if (shortlist.includes('## Top 10 Homes') && shortlist.includes('## Refined Top 3 After Deep')) {
+    pass('Shortlist file has top-10 and refined-top-3 sections');
+  } else {
+    fail('Shortlist file is missing the top-10 or refined-top-3 section');
   }
 }
 

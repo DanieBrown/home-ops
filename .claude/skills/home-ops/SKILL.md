@@ -106,6 +106,6 @@ Prefer a subagent for `scan` because it can involve multiple pages and platform-
 
 When multiple listings are being evaluated, the main agent should own the final tracker merge, pipeline edits, and summary. Workers should return structured evaluation results or other staged output rather than racing to edit `data/listings.md` directly, and browser-backed verification should stay serialized across the run.
 
-`deep` may also use a subagent if the research scope is broad, but it is not required.
+`deep` with a populated top-10 shortlist in `data/shortlist.md` should launch one subagent per shortlisted home. Each worker should return structured deep-dive findings and a tentative verdict for one home, while the main agent owns the combined batch brief, shortlist rewrite, final top-3 rerank, and finalist-tab replacement in the hosted browser.
 
 Execute the instructions from the loaded mode files.

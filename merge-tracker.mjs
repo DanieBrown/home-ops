@@ -225,7 +225,7 @@ function serializeListing(entry) {
   return `| ${entry.num} | ${entry.date} | ${entry.address} | ${entry.city} | ${entry.price} | ${entry.bedsBaths} | ${entry.sqft} | ${entry.score} | ${entry.status} | ${entry.report} | ${entry.notes} |`;
 }
 
-function parseAddition(content, filename) {
+function parseAdditionLine(content, filename, lineNumber) {
   const trimmed = content.trim();
   if (!trimmed) {
     return null;
@@ -237,13 +237,13 @@ function parseAddition(content, filename) {
 
   const columns = trimmed.split('\t').map((value) => value.trim());
   if (columns.length < 10) {
-    console.warn(`⚠️  Skipping malformed TSV ${filename}: ${columns.length} columns`);
+    console.warn(`⚠️  Skipping malformed TSV ${filename}:${lineNumber}: ${columns.length} columns`);
     return null;
   }
 
   const num = Number.parseInt(columns[0], 10);
   if (Number.isNaN(num)) {
-    console.warn(`⚠️  Skipping ${filename}: invalid row number`);
+    console.warn(`⚠️  Skipping ${filename}:${lineNumber}: invalid row number`);
     return null;
   }
 
@@ -269,6 +269,20 @@ function parseAddition(content, filename) {
     report: columns[9] ?? '',
     notes: columns[10] ?? '',
   };
+}
+
+function parseAdditionFile(content, filename) {
+  const additions = [];
+  const lines = content.split(/\r?\n/);
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const addition = parseAdditionLine(lines[index], filename, index + 1);
+    if (addition) {
+      additions.push(addition);
+    }
+  }
+
+  return additions;
 }
 
 function findDuplicate(entries, addition) {
@@ -353,39 +367,45 @@ let updated = 0;
 let skipped = 0;
 
 for (const file of additionFiles) {
-  const addition = parseAddition(readFileSync(join(ADDITIONS_DIR, file), 'utf-8'), file);
-  if (!addition) {
+  const additions = parseAdditionFile(readFileSync(join(ADDITIONS_DIR, file), 'utf-8'), file);
+  if (additions.length === 0) {
     skipped += 1;
     continue;
   }
 
-  const duplicate = findDuplicate(entries, addition);
-  if (duplicate) {
-    const merged = mergeEntry(duplicate, addition);
-    const currentLine = serializeListing(duplicate);
-    const nextLine = serializeListing(merged);
-    if (currentLine !== nextLine && duplicate.lineIndex >= 0) {
-      listingLines[duplicate.lineIndex] = nextLine;
-      Object.assign(duplicate, merged);
-      updated += 1;
-      console.log(`🔄 Update: #${duplicate.num} ${duplicate.address}, ${duplicate.city}`);
-    } else {
-      skipped += 1;
-      console.log(`⏭️  Skip: ${addition.address}, ${addition.city} (no net change)`);
-    }
-    continue;
+  if (additions.length > 1) {
+    console.log(`  ${file}: ${additions.length} staged rows`);
   }
 
-  const nextNumber = addition.num > maxNumber ? addition.num : maxNumber + 1;
-  maxNumber = Math.max(maxNumber, nextNumber);
-  const row = {
-    ...addition,
-    num: nextNumber,
-    status: canonicalizeStatus(addition.status),
-  };
-  entries.push({ ...row, lineIndex: -1 });
-  added += 1;
-  console.log(`➕ Add #${nextNumber}: ${row.address}, ${row.city}`);
+  for (const addition of additions) {
+    const duplicate = findDuplicate(entries, addition);
+    if (duplicate) {
+      const merged = mergeEntry(duplicate, addition);
+      const currentLine = serializeListing(duplicate);
+      const nextLine = serializeListing(merged);
+      if (currentLine !== nextLine && duplicate.lineIndex >= 0) {
+        listingLines[duplicate.lineIndex] = nextLine;
+        Object.assign(duplicate, merged);
+        updated += 1;
+        console.log(`🔄 Update: #${duplicate.num} ${duplicate.address}, ${duplicate.city}`);
+      } else {
+        skipped += 1;
+        console.log(`⏭️  Skip: ${addition.address}, ${addition.city} (no net change)`);
+      }
+      continue;
+    }
+
+    const nextNumber = addition.num > maxNumber ? addition.num : maxNumber + 1;
+    maxNumber = Math.max(maxNumber, nextNumber);
+    const row = {
+      ...addition,
+      num: nextNumber,
+      status: canonicalizeStatus(addition.status),
+    };
+    entries.push({ ...row, lineIndex: -1 });
+    added += 1;
+    console.log(`➕ Add #${nextNumber}: ${row.address}, ${row.city}`);
+  }
 }
 
 if (added > 0 || updated > 0) {

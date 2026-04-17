@@ -3,7 +3,7 @@
 import { createHash } from 'crypto';
 import { readFile } from 'fs/promises';
 import { dirname, join } from 'path';
-import { fileURLToPath } from 'url';
+import { fileURLToPath, pathToFileURL } from 'url';
 import { chromium } from 'playwright';
 import {
   appendSessionLog,
@@ -13,11 +13,17 @@ import {
   resolveReviewExtensionDir,
   writeSessionState,
 } from './browser-session.mjs';
+import {
+  auditParsedReport,
+  getCriticalAuditFindings,
+  parseReport,
+  parseShortlist,
+  resolveWorkspacePath,
+} from './research-utils.mjs';
 
 const DEFAULT_PROFILE = 'chrome-host';
 const DEFAULT_TIMEOUT_MS = 30000;
 const DEFAULT_GROUP_COLOR = 'blue';
-const SHORTLIST_PATH = 'data/shortlist.md';
 const REVIEW_EXTENSION_NAME = 'home-ops-review-tabs';
 
 const HELP_TEXT = `Usage:
@@ -31,6 +37,7 @@ Options:
   --group <name>     Optional Chrome tab-group title.
   --color <name>     Chrome tab-group color. Defaults to blue.
   --replace          Close all other tabs in the hosted Chrome window before opening targets.
+  --skip-finalist-gate  Allow shortlist-top3 to bypass the strict research gate.
   --dry-run          Resolve the target URLs and print them without changing Chrome.
   --help             Show this help text.
 `;
@@ -47,6 +54,7 @@ function parseArgs(argv) {
     groupTitle: null,
     groupColor: DEFAULT_GROUP_COLOR,
     replaceExisting: false,
+    skipFinalistGate: false,
     dryRun: false,
     help: false,
   };
@@ -79,6 +87,11 @@ function parseArgs(argv) {
 
     if (arg === '--replace') {
       config.replaceExisting = true;
+      continue;
+    }
+
+    if (arg === '--skip-finalist-gate') {
+      config.skipFinalistGate = true;
       continue;
     }
 
@@ -118,96 +131,60 @@ function parseArgs(argv) {
   return config;
 }
 
-function normalizeWorkspacePath(rawPath) {
-  return String(rawPath ?? '').trim().replace(/\\/g, '/').replace(/^\.\//, '');
-}
-
-function resolveWorkspacePath(projectRoot, rawPath) {
-  const normalized = normalizeWorkspacePath(rawPath);
-  return join(projectRoot, normalized);
-}
-
 async function readUtf8(filePath) {
   return readFile(filePath, 'utf8');
 }
 
-function parseMarkdownTable(lines, startHeader) {
-  const startIndex = lines.findIndex((line) => line.trim() === startHeader);
-  if (startIndex === -1) {
-    return [];
-  }
-
-  const rows = [];
-
-  for (let index = startIndex + 2; index < lines.length; index += 1) {
-    const trimmed = lines[index].trim();
-    if (!trimmed.startsWith('|')) {
-      break;
-    }
-
-    const columns = trimmed.split('|').slice(1, -1).map((value) => value.trim());
-    rows.push(columns);
-  }
-
-  return rows;
-}
-
-function extractMarkdownLinkTarget(value) {
-  const match = String(value ?? '').match(/\[[^\]]+\]\(([^)]+)\)/);
-  return match ? match[1].trim() : null;
-}
-
-function normalizeKey(address, city) {
-  return `${String(address ?? '').trim().toLowerCase()}|${String(city ?? '').trim().toLowerCase()}`;
-}
-
-async function parseShortlist(projectRoot) {
-  const content = await readUtf8(join(projectRoot, SHORTLIST_PATH));
-  const lines = content.split(/\r?\n/);
-  const compareRows = parseMarkdownTable(lines, '## Compare Top 10');
-  const refinedRows = parseMarkdownTable(lines, '## Refined Top 3 After Deep');
-
-  const compareTop10 = compareRows.map((columns) => ({
-    rank: columns[0],
-    tag: columns[1],
-    trackerNumber: columns[2],
-    address: columns[3],
-    city: columns[4],
-    score: columns[5],
-    status: columns[6],
-    reportPath: extractMarkdownLinkTarget(columns[7]),
-    notes: columns[8],
-  })).filter((row) => row.reportPath);
-
-  const compareIndex = new Map(compareTop10.map((row) => [normalizeKey(row.address, row.city), row]));
-
-  const refinedTop3 = refinedRows.map((columns) => {
-    const address = columns[1];
-    const city = columns[2];
-    return {
-      rank: columns[0],
-      address,
-      city,
-      updatedVerdict: columns[3],
-      why: columns[4],
-      reportPath: compareIndex.get(normalizeKey(address, city))?.reportPath ?? null,
-    };
-  }).filter((row) => row.reportPath);
-
-  return { compareTop10, refinedTop3 };
-}
-
-async function extractListingUrlFromReport(projectRoot, reportPath) {
+async function extractReviewTargetFromReport(projectRoot, reportPath) {
   const absoluteReportPath = resolveWorkspacePath(projectRoot, reportPath);
   const content = await readUtf8(absoluteReportPath);
   const urlLine = content.split(/\r?\n/).find((line) => line.startsWith('**URL:**'));
 
-  if (!urlLine) {
-    return null;
+  if (urlLine) {
+    const url = urlLine.replace('**URL:**', '').trim();
+    if (url) {
+      return url;
+    }
   }
 
-  const url = urlLine.replace('**URL:**', '').trim();
-  return url || null;
+  return pathToFileURL(absoluteReportPath).href;
+}
+
+function validateFinalistGate(projectRoot, rows, config) {
+  if (config.command !== 'shortlist-top3' || config.skipFinalistGate) {
+    return;
+  }
+
+  const blocked = rows.map((row) => {
+    const report = parseReport(projectRoot, row.reportPath);
+    const audit = auditParsedReport(report);
+    const blockers = getCriticalAuditFindings(audit, {
+      headings: ['Neighborhood Sentiment', 'School Review', 'Development and Infrastructure'],
+      strictWarnings: true,
+    });
+
+    return {
+      address: row.address,
+      city: row.city,
+      reportPath: report.relativePath,
+      blockers,
+    };
+  }).filter((row) => row.blockers.length > 0);
+
+  if (blocked.length === 0) {
+    return;
+  }
+
+  const details = blocked.map((row) => {
+    const findings = row.blockers.map((finding) => `${finding.heading}: ${finding.message}`).join('; ');
+    return `- ${row.address}, ${row.city} (${row.reportPath}) -> ${findings}`;
+  }).join('\n');
+
+  throw new Error(
+    'Refined top 3 failed the strict finalist research gate.\n'
+    + `${details}\n`
+    + 'Run node shortlist-finalist-gate.mjs for a full report, or rerun with --skip-finalist-gate only if you intentionally want to bypass the evidence gate.',
+  );
 }
 
 async function resolveTargets(projectRoot, config) {
@@ -224,30 +201,31 @@ async function resolveTargets(projectRoot, config) {
       throw new Error('The reports command requires at least one report path.');
     }
 
-    const urls = [];
+    const reviewTargets = [];
     for (const reportPath of config.values) {
-      const url = await extractListingUrlFromReport(projectRoot, reportPath);
-      if (url) {
-        urls.push(url);
+      const reviewTarget = await extractReviewTargetFromReport(projectRoot, reportPath);
+      if (reviewTarget) {
+        reviewTargets.push(reviewTarget);
       }
     }
 
-    return [...new Set(urls)];
+    return [...new Set(reviewTargets)];
   }
 
   if (config.command === 'shortlist-top10' || config.command === 'shortlist-top3') {
-    const shortlist = await parseShortlist(projectRoot);
-    const rows = config.command === 'shortlist-top10' ? shortlist.compareTop10 : shortlist.refinedTop3;
-    const urls = [];
+    const shortlist = parseShortlist(projectRoot);
+    const rows = config.command === 'shortlist-top10' ? shortlist.top10 : shortlist.refinedTop3;
+    validateFinalistGate(projectRoot, rows, config);
+    const reviewTargets = [];
 
     for (const row of rows) {
-      const url = await extractListingUrlFromReport(projectRoot, row.reportPath);
-      if (url) {
-        urls.push(url);
+      const reviewTarget = await extractReviewTargetFromReport(projectRoot, row.reportPath);
+      if (reviewTarget) {
+        reviewTargets.push(reviewTarget);
       }
     }
 
-    return [...new Set(urls)];
+    return [...new Set(reviewTargets)];
   }
 
   throw new Error(`Unknown command: ${config.command}`);
@@ -366,6 +344,40 @@ async function getExtensionBridgeUrl(projectRoot) {
   return `chrome-extension://${extensionId}/bridge.html`;
 }
 
+function isBridgeBlockedError(error) {
+  const message = String(error?.message ?? error ?? '');
+  return message.includes('net::ERR_BLOCKED_BY_CLIENT')
+    || message.includes('window.homeOpsReviewTabs');
+}
+
+async function openReviewTabsDirectly(context, urls, config, session) {
+  const existingPages = context.pages().filter((page) => !page.isClosed());
+  const openedPages = [];
+
+  for (const url of urls) {
+    const page = await context.newPage();
+
+    try {
+      await page.goto(url, { waitUntil: 'domcontentloaded', timeout: DEFAULT_TIMEOUT_MS });
+      openedPages.push(page);
+    } catch (error) {
+      await page.close().catch(() => {});
+      throw error;
+    }
+  }
+
+  if (config.replaceExisting) {
+    await Promise.all(existingPages.map((page) => page.close().catch(() => {})));
+  }
+
+  console.log(`Opened ${openedPages.length} review tabs in hosted Chrome.`);
+  if (config.groupTitle) {
+    console.log(`Tab group skipped because the review extension bridge was unavailable: ${config.groupTitle}`);
+  }
+  console.log(`Hosted session: ${session.reusedExisting ? 'reused' : 'reopened'}`);
+  console.log('Review helper: direct CDP fallback');
+}
+
 async function run() {
   let config;
   try {
@@ -420,21 +432,34 @@ async function run() {
     const bridgePage = await context.newPage();
 
     try {
-      await bridgePage.goto(bridgePageUrl, { waitUntil: 'domcontentloaded', timeout: DEFAULT_TIMEOUT_MS });
-      const result = await bridgePage.evaluate((payload) => {
-        return window.homeOpsReviewTabs.openReviewTabs(payload);
-      }, {
-        urls,
-        groupTitle: effectiveGroupTitle,
-        groupColor: config.groupColor,
-        replaceExisting: config.replaceExisting,
-      });
+      try {
+        await bridgePage.goto(bridgePageUrl, { waitUntil: 'domcontentloaded', timeout: DEFAULT_TIMEOUT_MS });
+        const result = await bridgePage.evaluate((payload) => {
+          return window.homeOpsReviewTabs.openReviewTabs(payload);
+        }, {
+          urls,
+          groupTitle: effectiveGroupTitle,
+          groupColor: config.groupColor,
+          replaceExisting: config.replaceExisting,
+        });
 
-      console.log(`Opened ${result.urls.length} review tabs in hosted Chrome.`);
-      if (effectiveGroupTitle) {
-        console.log(`Tab group: ${effectiveGroupTitle}`);
+        console.log(`Opened ${result.urls.length} review tabs in hosted Chrome.`);
+        if (effectiveGroupTitle) {
+          console.log(`Tab group: ${effectiveGroupTitle}`);
+        }
+        console.log(`Hosted session: ${session.reusedExisting ? 'reused' : 'reopened'}`);
+      } catch (error) {
+        if (!isBridgeBlockedError(error)) {
+          throw error;
+        }
+
+        console.warn('Review extension bridge unavailable; falling back to direct tab control.');
+        await bridgePage.close().catch(() => {});
+        await openReviewTabsDirectly(context, urls, {
+          replaceExisting: config.replaceExisting,
+          groupTitle: effectiveGroupTitle,
+        }, session);
       }
-      console.log(`Hosted session: ${session.reusedExisting ? 'reused' : 'reopened'}`);
     } finally {
       await bridgePage.close().catch(() => {});
     }

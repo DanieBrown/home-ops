@@ -43,7 +43,7 @@ When any of those flags are present:
 - If a selected platform needs login and there is no usable hosted session, stop and tell the user to run `/home-ops init {matching flags}` first.
 - Each selected platform should fill up to 3 pending homes per configured area.
 - Use the current search results to refill those area buckets even when the URLs appeared in older scan history.
-- If Zillow blocks with a sign-in, press-and-hold, or similar human-verification prompt, pause the scan immediately, request the user to sign in or clear the prompt, and do not continue to later areas or other platforms until the user confirms access.
+- If Zillow blocks with a sign-in, press-and-hold, or similar human-verification prompt, skip Zillow for the rest of the current scan, record the blocker, tell the user how to clear it manually, and continue scanning the other selected platforms. If Zillow was the only selected platform, finish the scan with a blocker summary.
 
 For platforms that reject automated sign-in or keep surfacing anti-bot prompts, prefer the hosted real-Chrome path over the Playwright-managed browser path.
 
@@ -57,7 +57,7 @@ When no platform flags are present:
 - Do not bootstrap browser sessions from scan mode. Session setup belongs to `/home-ops init`.
 - If the session is not logged in, stop and prompt the user using the platform's `login_prompt`.
 - If a refreshed search tab shows Zillow press-and-hold or a similar human-verification prompt, bring that tab to the front and tell the user to clear it in the hosted browser before rerunning the scan.
-- Zillow sign-in or verification blockers are a hard stop for the scan command. Pause and request manual sign-in confirmation before continuing.
+- Zillow sign-in or verification blockers should mark Zillow as `skipped_blocked` for the current scan rather than aborting the whole command. Tell the user how to rerun `/home-ops scan --zillow` after clearing the blocker.
 - Do not fake logged-in access.
 
 ## Extraction Targets
@@ -142,5 +142,6 @@ Return a concise summary with:
 - filtered-out listings
 - listings added to the pipeline
 - any login or anti-bot blockers
+- any platforms skipped for the rest of the scan after blockers
 
 If no new listings qualify, say so directly.

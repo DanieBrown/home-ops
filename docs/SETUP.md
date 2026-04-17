@@ -25,20 +25,24 @@ Create the reusable repo-local hosted browser session after you configure `porta
 npm run browser:setup
 ```
 
-This command reads the login-required browser targets from `portals.yml`, launches a real local Chrome window with CDP enabled and a separate repo-local user-data-dir under `output/browser-sessions/chrome-host`, opens the configured base pages for sites such as Zillow, Redfin, Realtor.com, Facebook, and Nextdoor, writes status to `output/browser-sessions/chrome-host/session-state.json`, and appends lifecycle events to `batch/logs/browser-sessions.tsv`.
+This command reads the login-required browser targets from `portals.yml`, launches a real local hosted browser window with CDP enabled and a separate repo-local user-data-dir under `output/browser-sessions/chrome-host`, opens the configured base pages for sites such as Zillow, Redfin, Realtor.com, Facebook, and Nextdoor, writes status to `output/browser-sessions/chrome-host/session-state.json`, and appends lifecycle events to `batch/logs/browser-sessions.tsv`. It prefers Chrome, but now falls back to Edge or Chromium when Chrome is unavailable.
 
 For a targeted refresh instead of the full configured set:
 
 ```bash
 /home-ops init --zillow --redfin --relator
 /home-ops init --facebook --nextdoor
+/home-ops init --greatschools
 
 # low-level terminal equivalents
 npm run browser:session -- --hosted --zillow --channel chrome
 npm run browser:session -- --hosted --redfin --channel chrome
 npm run browser:session -- --hosted --relator --channel chrome
 npm run browser:session -- --hosted --facebook --nextdoor --channel chrome
+npm run browser:session -- --hosted --greatschools --channel chrome
 ```
+
+`--greatschools` opens the direct GreatSchools home page inside the hosted browser session without changing the default login-required setup set.
 
 Sign in manually in the opened browser window, complete any captcha or anti-bot challenge yourself, and keep the browser running while Home-Ops attaches to it for scanning or verification. Check the repo-local hosted browser status with:
 
@@ -94,15 +98,19 @@ Typical entry points:
 - Run `/home-ops-tracker` to review or update tracker status.
 - Run `/home-ops-deep` for school, neighborhood, and development research.
 
-When `/home-ops compare` ranks evaluated homes, it should update `data/shortlist.md` with up to the top ten viable tags and open those home listing pages in individual browser tabs for review. When `/home-ops evaluate` runs without an explicit target, it should also open up to ten viable newly evaluated homes in one hosted-Chrome tab group titled `Top 10`. When `/home-ops deep` is then asked to work on the shortlist, it should batch-research those tagged homes, save the batch brief to `reports/deep-shortlist-{YYYY-MM-DD}.md`, update `data/shortlist.md` with a refined post-deep top three, and replace the remaining Chrome home tabs with only those finalist listing pages.
+When `/home-ops evaluate` runs without an explicit target, it should persist up to ten viable newly evaluated homes into `data/shortlist.md` and open that saved cohort in one hosted-Chrome tab group titled `Top 10`. When `/home-ops compare` ranks evaluated homes, it can overwrite the same file with up to the top ten viable comparison tags and reopen those pages for side-by-side review. When `/home-ops deep` is then asked to work on the shortlist, it should launch one subagent per shortlisted home, save the batch brief to `reports/deep-shortlist-{YYYY-MM-DD}.md`, update `data/shortlist.md` with a refined post-deep top three, and replace the remaining Chrome home tabs with only those finalist listing pages.
+
+Use `npm run plan:research -- --shortlist --type development` or `npm.cmd run plan:research -- --shortlist --type development` when deep needs a development-first source plan from `portals.yml`, and run `npm run gate:finalists` or `npm.cmd run gate:finalists` before promoting the refined top 3. The final `shortlist-top3` review helper enforces the same gate unless `--skip-finalist-gate` is used explicitly.
 
 Use `npm run browser:review` or `npm.cmd run browser:review` on Windows PowerShell when you need the low-level review-tab helper directly.
 
 When `/home-ops evaluate` runs without a target, Home-Ops should deduplicate the pending pipeline by property, split the canonical set into 5-property worker batches, assign one subagent per batch, stage tracker additions under `batch/tracker-additions/`, merge them into `data/listings.md`, and move handled items into the `Processed` section of `data/pipeline.md`. The main agent should keep dispatching those batches until the full pending set has been attempted.
 
+After evaluate or deep writes reports, run `node research-coverage-audit.mjs` or `npm.cmd run audit:research` on Windows PowerShell to check whether neighborhood, school, and development evidence was actually sourced. If the audit or finalist gate flags school or development gaps, run `node research-source-plan.mjs <report-path> --type all` or `npm.cmd run plan:research -- <report-path> --type all` to turn the configured `portals.yml` inventories into concrete source URLs and lookup targets.
+
 When `/home-ops scan` runs, Home-Ops should keep at most 3 unchecked pending listings per source per configured area. If a Zillow, Redfin, or Realtor.com area bucket already has 3 or more pending entries, Home-Ops should clear that source-area bucket first and then refresh it with up to 3 current homes from that source and area.
 The pending list may contain the same home from multiple sources at once, but it should not keep duplicate URLs or same-source duplicate homes. `data/scan-history.tsv` should continue to log scan outcomes, but it should not block later area-bucket refills.
-If Zillow blocks on sign-in or human verification during scan mode, Home-Ops should pause immediately, request manual sign-in confirmation, and stop before moving on to later areas or other platforms.
+If Zillow blocks on sign-in or human verification during scan mode, Home-Ops should skip Zillow for the rest of that scan, continue with the other platforms, and tell the user how to rerun `/home-ops scan --zillow` after clearing the blocker.
 
 When you need a saved browser session for Playwright-backed checks, reuse it with:
 
@@ -156,6 +164,7 @@ Run it from the dashboard directory with:
 node doctor.mjs
 node profile-sync-check.mjs
 node verify-pipeline.mjs
+node research-coverage-audit.mjs
 node test-all.mjs --quick
 ```
 

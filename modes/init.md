@@ -13,7 +13,7 @@ Launch or confirm the repo-local hosted browser session that Home-Ops will reuse
 
 ## Goal
 
-Prepare a reusable hosted Chrome session for the login-required browser targets in `portals.yml` so the user can sign in once and then run `/home-ops hunt`, `/home-ops scan`, `/home-ops evaluate`, or `/home-ops deep` without repeating portal login.
+Prepare a reusable hosted browser session for the login-required browser targets in `portals.yml` so the user can sign in once and then run `/home-ops hunt`, `/home-ops scan`, `/home-ops evaluate`, or `/home-ops deep` without repeating portal login.
 
 ## Platform Flags
 
@@ -24,8 +24,10 @@ If the command arguments include any of these flags, treat them as a platform fi
 - `--relator`
 - `--facebook`
 - `--nextdoor`
+- `--greatschools`
 
 Treat `--realtor` as a backward-compatible alias, but prefer `--relator` in commands and documentation.
+Treat `--greatschools` as a direct school-research target rather than a login-required portal.
 
 When no platform flags are present:
 - Initialize all login-required browser targets from `portals.yml`, including Facebook and Nextdoor when they are configured as login-required sentiment sources.
@@ -36,8 +38,13 @@ When no platform flags are present:
 2. If the hosted session is already open and the CDP endpoint is reachable, report that the session is ready instead of relaunching it unless the user explicitly asks to refresh it.
 3. If a new setup is needed and no platform flags are present, run `npm.cmd run browser:setup` on Windows PowerShell.
 4. If a new setup is needed and platform flags are present, run `npm.cmd run browser:session -- --hosted --caller init --channel chrome {matching flags}` on Windows PowerShell.
-5. Never enter credentials for the user. The user must complete sign-in manually in the hosted Chrome window.
-6. Tell the user to keep the hosted browser running after login so Home-Ops can attach to it later over CDP.
+5. Use `--greatschools` when the user wants the hosted browser session to preload direct school pages instead of relying on search-engine fallback.
+6. Never enter credentials for the user. The user must complete sign-in manually in the hosted Chrome window.
+7. Tell the user to keep the hosted browser running after login so Home-Ops can attach to it later over CDP.
+
+Notes:
+- The hosted session launcher prefers local Chrome, but now falls back to Edge or Chromium automatically when Chrome is not installed.
+- Report the actual browser channel used when a fallback occurred.
 
 ## Output Summary
 

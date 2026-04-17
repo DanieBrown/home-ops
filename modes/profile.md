@@ -25,10 +25,44 @@ If any of those files are missing, create them from the checked-in example or te
 ## Interaction Rules
 
 - Use `vscode_askQuestions` in short batches instead of dumping one long questionnaire into chat.
-- Prefer a mix of fixed-choice and free-input questions.
+- Prefer fixed-choice questions first, then short custom follow-ups only when needed.
+- For single-value fields that map cleanly into YAML, present roughly 4 generic default options plus a `Custom` option.
+- For refresh flows, include a `Keep current` option when a meaningful current value already exists.
+- For multi-value sections such as features, deal-breakers, and lifestyle preferences, prefer curated multi-select lists with optional freeform additions.
 - For grouped criteria such as areas, features, deal-breakers, or commute destinations, ask the user for a bulleted list and map the bullets back to the correct fields.
 - Preserve any current value the user explicitly says to keep.
 - Do not write buyer-specific criteria into `modes/_shared.md`.
+
+## Question Style Rules
+
+Use these defaults unless the current market or prior profile makes a different set more sensible.
+
+### Single-Choice Defaults
+
+For numeric or enum-style answers, prefer option sets like these:
+
+- Price range: `200k-400k`, `400k-600k`, `600k-800k`, `800k-1.0M+`, `Custom`
+- Minimum beds: `3+`, `4+`, `5+`, `6+`, `Custom`
+- Minimum garage spaces: `1+`, `2+`, `3+`, `4+`, `Custom`
+- Minimum square footage: `1800+`, `2200+`, `2700+`, `3200+`, `Custom`
+- Minimum school rating: `5+`, `6+`, `7+`, `8+`, `Custom`
+- Maximum listing age: `7 days`, `14 days`, `30 days`, `60 days`, `Custom`
+- Home type posture: `Resale strongly preferred`, `Resale preferred but new is OK`, `Resale only`, `No strong preference`
+- Story preference: `No preference`, `1 story`, `2 stories`, `3+ stories`, `Custom`
+- HOA maximum: `No cap`, `$100/mo`, `$200/mo`, `$300/mo`, `Custom`
+
+If the user picks `Custom`, ask a short follow-up for the exact value.
+
+### Multi-Select Defaults
+
+For preference-heavy sections, offer curated pick-lists like these before asking for freeform additions:
+
+- Property features: `Large backyard`, `Fenced yard`, `Open-concept plan`, `Updated kitchen`, `Hardwood or LVP floors`, `Bonus room or office`, `First-floor primary suite`, `Two-story layout`, `Mature neighborhood`, `Community pool`
+- Street and lot feel: `Cul-de-sac`, `Low-traffic interior street`, `Tree cover`, `Flat yard`, `Large lot`, `Play-friendly backyard`
+- Deal-breakers: `Busy road`, `Flood risk`, `High HOA`, `Townhome or condo`, `Small or cramped yard`, `Major repair needed`, `Weak schools`, `Long commute`, `Backing to commercial property`, `New construction`
+- Family and lifestyle priorities: `School quality`, `Quiet street`, `Neighborhood community feel`, `Commute convenience`, `Outdoor space`, `Move-in-ready condition`, `Resale stability`, `Lower monthly payment`
+
+When a selected item maps cleanly into `config/profile.yml`, store it there. If it is more nuanced, also reflect it in `buyer-profile.md` and `modes/_profile.md`.
 
 ## Question Flow
 
@@ -55,6 +89,16 @@ Collect:
 - minimum school rating
 - maximum listing age in days
 - home type preference
+
+Ask the hard requirements using structured defaults first. Example:
+
+- price band from a short default list plus `Custom`
+- minimum beds from a short default list plus `Custom`
+- garage minimum from a short default list plus `Custom`
+- square-foot minimum from a short default list plus `Custom`
+- school minimum from a short default list plus `Custom`
+- listing-age maximum from a short default list plus `Custom`
+- home-type preference from a short default list
 
 For search areas, ask for a bulleted list in a format such as:
 
@@ -83,7 +127,20 @@ Collect:
 - pool preference
 - year-built range
 
-For feature-heavy answers, ask the user for a bulleted list and map each item back into either a structured `config/profile.yml` field or a narrative note in `buyer-profile.md` and `modes/_profile.md`.
+For feature-heavy answers, use a multi-select pick-list first, then ask for custom additions only if the user has something missing from the list. Map each selection back into either a structured `config/profile.yml` field or a narrative note in `buyer-profile.md` and `modes/_profile.md`.
+
+Use defaults such as:
+
+- `Large backyard`
+- `Fenced yard`
+- `Open-concept plan`
+- `Updated kitchen`
+- `Hardwood or LVP floors`
+- `Bonus room or office`
+- `First-floor primary suite`
+- `Two-story layout`
+- `Cul-de-sac or low-traffic street`
+- `Community pool`
 
 ### 4. Deal-Breakers And Lifestyle Context
 
@@ -95,6 +152,19 @@ Collect:
 - lot and yard priorities
 - commute tolerance
 - how aggressive the buyer wants to be in a tight market
+
+Use a multi-select deal-breaker list first, then collect missing nuance in freeform. Good defaults:
+
+- `Busy road or cut-through traffic`
+- `Floodplain or drainage concern`
+- `HOA above budget`
+- `Small or unusable backyard`
+- `Weak assigned schools`
+- `Townhome or condo`
+- `Backs to commercial or highway`
+- `Major immediate repairs`
+- `Too far from preferred commute`
+- `Builder-heavy new construction`
 
 ### 5. Commute And Financial Assumptions
 
@@ -109,6 +179,12 @@ For commute destinations, ask for bullets in a format such as:
 
 - `Downtown Raleigh | Downtown Raleigh, NC | occasional`
 - `Research Triangle Park | RTP, NC | daily`
+
+For down payment and closing-cost assumptions, prefer short default options first. Example:
+
+- down payment: `10%`, `15%`, `20%`, `25%+`, `Custom`
+- closing costs: `1-2%`, `2-3%`, `3-4%`, `4%+`, `Custom`
+- loan type: `30-year fixed`, `15-year fixed`, `ARM`, `Custom`
 
 ### 6. Neighborhood Weight Scores
 
@@ -179,6 +255,8 @@ Update the narrative brief with:
 - family and lifestyle context
 - commute destinations
 
+When the user selected from structured defaults, rewrite those picks into natural-language buyer criteria rather than echoing the raw option labels.
+
 ### `modes/_profile.md`
 
 Update the buyer-specific operating heuristics with:
@@ -191,13 +269,24 @@ Update the buyer-specific operating heuristics with:
 
 Preserve any existing nuanced notes that the user did not override.
 
+## Interview Quality Bar
+
+The profile flow should feel like a guided form, not a blank interview.
+
+Rules:
+
+- Do not ask every field as pure free text when a short default list would make the answer easier.
+- Do not anchor the option sets around the current buyer's exact values; use generic defaults that work for many buyers, with `Custom` available.
+- Keep each batch small enough that the user can answer quickly.
+- If the user chooses multiple features or deal-breakers, reflect the whole set back into the written profile instead of collapsing it down to one headline preference.
+
 ## Validation
 
 After updating the files, run:
 
 - `node profile-sync-check.mjs`
 
-If the buyer changed areas, price bands, or other search coverage materially, tell the user that `portals.yml` may need a separate refresh to keep scan mode aligned.
+If the buyer changed areas or other search coverage materially, tell the user that `portals.yml` may still need area-path updates even though scan now syncs numeric filter ranges from `config/profile.yml` at runtime.
 
 ## Output Summary
 

@@ -1083,10 +1083,10 @@ function formatRerunCommand(platform) {
 function buildManualActionMessage(platform, platformName, area, loginPrompt) {
   if (platform === 'zillow') {
     const prompt = loginPrompt || 'I need the saved Zillow browser session. Run /home-ops init --zillow if needed, sign in manually in the hosted Chrome window, then confirm.';
-    return `${platformName} | ${area} | Zillow requires manual sign-in confirmation before scan continues. ${prompt} Clear any press-and-hold or human-verification prompt in the active Zillow tab, then rerun ${formatRerunCommand(platform)}.`;
+    return `${platformName} | ${area} | Zillow was skipped for the rest of this scan after a manual sign-in or verification blocker. ${prompt} Clear any press-and-hold or human-verification prompt in the active Zillow tab, then rerun ${formatRerunCommand(platform)}.`;
   }
 
-  return `${platformName} | ${area} | check the refreshed hosted browser tab for a press-and-hold or similar verification prompt, complete it manually, then rerun ${formatRerunCommand(platform)}.`;
+  return `${platformName} | ${area} | this platform was skipped for the rest of this scan after a login or verification blocker. Check the refreshed hosted browser tab, complete any prompt manually, then rerun ${formatRerunCommand(platform)}.`;
 }
 
 async function closeBrowserConnection(browser) {
@@ -1384,7 +1384,8 @@ async function main() {
   let extractedCount = 0;
   let duplicateCount = 0;
   let filteredCount = 0;
-  let manualActionRequired = null;
+  const manualActionsRequired = [];
+  const blockedPlatforms = new Set();
 
   const browser = await chromium.connectOverCDP(session.cdpUrl, { timeout: 30000, isLocal: true });
   try {
@@ -1394,8 +1395,11 @@ async function main() {
       throw new Error('Hosted browser session is running, but no default context was exposed.');
     }
 
-    outerLoop:
     for (const platform of selectedPlatforms) {
+      if (blockedPlatforms.has(platform)) {
+        continue;
+      }
+
       const config = portals[platform];
       const sourceKey = canonicalPlatformKey(platform);
       for (const search of config.searchUrls) {
@@ -1453,8 +1457,10 @@ async function main() {
         }
 
         if (result.manualActionRequired) {
-          manualActionRequired = result.manualActionRequired;
-          break outerLoop;
+          manualActionsRequired.push(result.manualActionRequired);
+          blockedPlatforms.add(platform);
+          console.log(`Skipping remaining ${config.name} areas for this scan after blocker in ${areaLabel}.`);
+          break;
         }
       }
     }
@@ -1486,14 +1492,24 @@ async function main() {
     }
   }
 
-  if (manualActionRequired) {
-    console.log('\nManual browser check required:');
-    console.log(`- ${manualActionRequired.message}`);
-    process.exit(2);
+  if (manualActionsRequired.length > 0) {
+    console.log('\nManual browser follow-up suggested:');
+    for (const action of manualActionsRequired) {
+      console.log(`- ${action.message}`);
+    }
   }
 
-  if (!manualActionRequired && addedCandidates.length === 0) {
-    console.log('\nNo new listings qualify.');
+  if (blockedPlatforms.size > 0) {
+    const blockedPlatformLabels = [...blockedPlatforms]
+      .map((platform) => portals[platform]?.name ?? platform)
+      .join(', ');
+    console.log(`\nPlatforms skipped for the rest of this scan after blockers: ${blockedPlatformLabels}`);
+  }
+
+  if (addedCandidates.length === 0) {
+    console.log(blockedPlatforms.size > 0
+      ? '\nNo new listings qualify from unblocked platforms.'
+      : '\nNo new listings qualify.');
   }
 
   process.exit(0);

@@ -27,6 +27,8 @@ Expected behavior:
 4. Update `buyer-profile.md`, `config/profile.yml`, and `modes/_profile.md`.
 5. Run `profile-sync-check.mjs`.
 
+The normalized weights currently influence agent judgment and research emphasis. They are not yet backed by a separate deterministic scoring engine that consumes structured neighborhood, school, and development source records.
+
 ## Hunt Flow
 
 The hunt mode is a sequential orchestrator around the existing workflows.
@@ -65,6 +67,7 @@ templates/states.yml     -> canonical status model
 7. Estimate financial fit using the buyer profile.
 8. Score the listing from 1.0 to 5.0.
 9. Save a markdown report and update `data/listings.md`.
+10. Audit the generated report with `research-coverage-audit.mjs` when you need to confirm whether neighborhood, school, and development evidence was actually sourced.
 
 When `evaluate` is invoked with no explicit listing target, the mode should switch to a pipeline-batch branch:
 
@@ -96,10 +99,11 @@ The compare mode can persist a ranked shortlist into `data/shortlist.md`.
 Expected behavior:
 
 1. Compare ranks the current evaluated set.
-2. Compare writes up to the top ten viable homes into `data/shortlist.md` with stable rank tags and opens those listing URLs in separate browser tabs for review.
-3. Deep can then read that shortlist file when the user asks for a batch deep dive on the current shortlist.
-4. Deep writes a combined brief such as `reports/deep-shortlist-{YYYY-MM-DD}.md`.
-5. Deep reruns the compare framework on that shortlisted set using the new research, updates `data/shortlist.md` with the refined top three, and opens the refined finalists in separate browser tabs.
+2. Evaluate with no explicit target can write up to the top ten viable homes into `data/shortlist.md` as the latest saved review cohort, and compare can overwrite that same file with a comparison-derived top ten.
+3. Deep reads that current shortlist file when the user asks for a batch deep dive on the saved top ten.
+4. Deep can run a hosted-browser Facebook and Nextdoor extraction pass against that shortlist before the worker research begins.
+5. Deep launches one subagent per shortlisted home, writes a combined brief such as `reports/deep-shortlist-{YYYY-MM-DD}.md`, and keeps the final rerank in the main agent.
+6. Deep reruns the compare framework on that shortlisted set using the new research, updates `data/shortlist.md` with the refined top three, validates them with `shortlist-finalist-gate.mjs`, and only then opens the refined finalists in separate browser tabs.
 
 ## Tracker Model
 
@@ -129,6 +133,8 @@ Canonical statuses come from `templates/states.yml` and currently cover:
 | `doctor.mjs` | Validates required files and creates missing system directories |
 | `profile-sync-check.mjs` | Checks buyer-layer consistency |
 | `verify-pipeline.mjs` | Validates tracker rows, links, statuses, and duplicates |
+| `research-coverage-audit.mjs` | Audits evaluation reports for explicit neighborhood, school, and development evidence coverage |
+| `sentiment-browser-extract.mjs` | Reuses the hosted browser session over CDP and captures deterministic Facebook and Nextdoor sentiment evidence into `output/sentiment/` |
 | `normalize-statuses.mjs` | Normalizes status aliases to canonical states |
 | `dedup-tracker.mjs` | Removes duplicate listings keyed by address and city |
 | `merge-tracker.mjs` | Merges staged tracker additions into `data/listings.md` |

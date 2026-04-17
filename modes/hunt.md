@@ -71,13 +71,14 @@ Rules:
 
 - Run the scan workflow next using the same hosted browser session.
 - Reuse the exact scan-mode rules for platform filters, session checks, per-source caps, and anti-bot stops.
-- If Zillow or another selected portal blocks on login or human verification, stop the hunt and report the blocker instead of moving on to evaluate.
+- If Zillow or another selected portal blocks on login or human verification, report the blocker, skip that platform for the rest of the scan, and continue the hunt with whatever pipeline entries the unblocked platforms produced.
 
 ### 4. Evaluate Phase
 
 - Run the evaluate workflow with no explicit target against the refreshed pipeline.
 - Reuse the existing batch-evaluate rules, including canonical-property dedupe, 5-property worker slices, staged tracker additions, and serialized browser-backed verification.
 - Let evaluate handle the top-10 review tab behavior at the end of the batch.
+- If every selected platform blocked and the pipeline stayed empty, evaluate may complete as a no-op. Report that clearly.
 
 ## Important Rules
 

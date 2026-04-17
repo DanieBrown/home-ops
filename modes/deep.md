@@ -28,20 +28,26 @@ It also handles a shortlist batch branch:
 
 ## Shortlist Batch Branch
 
-When the user asks for a batch deep dive on the shortlist, or when the latest compare workflow clearly established a compare top 10 cohort:
+When the user asks for a batch deep dive on the shortlist, or when the latest `evaluate` or `compare` workflow clearly established a current top-10 cohort:
 
-1. Read `data/shortlist.md` and use the populated rows in the current compare shortlist table as the target set.
-2. Load the existing evaluation reports for those same shortlisted homes.
-3. Research each home across all deep-dive axes below.
-4. Write one batch brief to `reports/deep-shortlist-{YYYY-MM-DD}.md`.
-5. Update `data/shortlist.md` with:
+1. Read `data/shortlist.md` and use the populated rows in the current top-10 table as the target set.
+2. Accept cohorts created by either `evaluate` or `compare`. If the current top-10 table is empty, ask the user what set deep should review instead of guessing.
+3. Load the existing evaluation reports for those same shortlisted homes.
+4. If any shortlisted home has not been fully evaluated yet, run the evaluate workflow first before doing the deep batch.
+5. Run `research-coverage-audit.mjs` against those shortlisted evaluation reports before reranking so the deep batch knows which homes still have weak neighborhood, school, or development evidence.
+6. Run `node research-source-plan.mjs --shortlist --type all` or `npm.cmd run plan:research -- --shortlist --type all` so the configured sentiment, development, and school inventories become a concrete lookup plan for every shortlisted home before the deeper pass starts.
+7. Run `node sentiment-browser-extract.mjs --shortlist --profile chrome-host` or `npm.cmd run extract:sentiment -- --shortlist --profile chrome-host` so the hosted browser session captures deterministic Facebook and Nextdoor evidence into `output/sentiment/` before subagents start. If the hosted session is missing, closed, or not logged into those portals, say that explicitly and continue with public sources instead of pretending the sentiment pass was completed.
+8. Launch one subagent per shortlisted home, up to ten homes total. Each worker should research all deep-dive axes for one home and return a structured result with the address, evidence, key positives, key negatives, unresolved questions, and a tentative verdict. Workers should read any matching `output/sentiment/*.json` evidence when it exists and should not edit `data/listings.md`, `data/shortlist.md`, or `reports/` directly.
+9. The main agent must review the worker output, resolve conflicts, and write one combined batch brief to `reports/deep-shortlist-{YYYY-MM-DD}.md`.
+10. Update `data/shortlist.md` with:
 	- deep batch status
 	- deep batch report path
 	- refined top 3 after deeper research
-6. End by rerunning the compare framework across that same shortlist using the new deep findings and narrow it to the best three homes, not just the original evaluation summaries.
-7. Close the remaining non-finalist tabs in the hosted Chrome session and leave only the refined top 3 in individual browser tabs so the user can review the finalists immediately. Prefer the direct listing URL from the underlying report. If a direct listing URL is unavailable, open the report file instead. Use `node review-tabs.mjs shortlist-top3 --replace` or `npm.cmd run browser:review -- shortlist-top3 --replace` on Windows PowerShell. If the hosted Chrome session is closed, reopen it and restore the three finalist links into fresh tabs.
+11. End by rerunning the compare framework across that same top-10 cohort using the returned deep findings, the research-audit gaps, and any browser-backed sentiment extraction, and narrow it to the best three homes, not just the original evaluation summaries. The final ranking belongs to the main agent, not the workers.
+12. Run `node shortlist-finalist-gate.mjs` or `npm.cmd run gate:finalists` before promoting the refined top 3. Do not treat blocked homes as finalists until the gate passes or the user explicitly authorizes a bypass.
+13. Close the remaining non-finalist tabs in the hosted Chrome session and leave only the refined top 3 in individual browser tabs so the user can review the finalists immediately. Prefer the direct listing URL from the underlying report. If a direct listing URL is unavailable, open the report file instead. Use `node review-tabs.mjs shortlist-top3 --replace` or `npm.cmd run browser:review -- shortlist-top3 --replace` on Windows PowerShell. The review helper now enforces the same finalist gate unless `--skip-finalist-gate` is used explicitly. If the hosted Chrome session is closed, reopen it and restore the three finalist links into fresh tabs.
 
-If any tagged shortlist home has not been fully evaluated yet, run the evaluate workflow first before doing the deep batch. If the shortlist contains fewer than ten populated viable homes, research only the populated rows and say that the current shortlist is smaller than ten.
+If the shortlist contains fewer than ten populated viable homes, research only the populated rows and say that the current shortlist is smaller than ten.
 
 ## Research Axes
 
@@ -105,12 +111,16 @@ When deep mode is operating on the current compare shortlist, the final brief sh
 4. Best fit after deeper research
 5. Runner-up after deeper research
 6. Why the homes outside the refined top 3 fell back
-7. What changed from the original compare result
+7. What changed from the original evaluate or compare top-10 order
 
 ## Output Style
 
 - Prefer a direct research brief over a generic prompt.
 - If the user explicitly asks for a reusable prompt, provide one tailored to the address or area.
 - Distinguish clearly between evidence, inference, and unresolved questions.
+- Use the research-audit output to distinguish evidence-backed findings from inherited evaluation gaps. Deep mode should not silently treat missing neighborhood, school, or development research as completed just because the shortlist exists.
+- Use `research-source-plan.mjs` as the default bridge from `portals.yml` into actual sentiment, school, and development lookups, with development checks first when time is limited.
+- When the hosted browser session is available, prefer `sentiment-browser-extract.mjs` for Facebook and Nextdoor evidence before falling back to public-source neighborhood sentiment.
+- When the shortlist batch branch is active, use one subagent per home as the default pattern and make it clear that the main agent owns the final top-3 rerank.
 - When running the shortlist batch branch, persist the refined top 3 back into `data/shortlist.md` after writing the batch brief.
-- When the shortlist batch branch finishes, the refined top 3 should be the only remaining home tabs left open in the hosted Chrome window for review.
+- When the shortlist batch branch finishes, the refined top 3 should be the only remaining home tabs left open in the hosted Chrome window for review, and that finalist set must pass the strict research gate unless the user explicitly overrides it.

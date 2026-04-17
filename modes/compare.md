@@ -49,7 +49,8 @@ For each listing, normalize these fields:
 After every comparison that produces a ranked set of evaluated homes:
 
 1. Persist up to the top ten decision-relevant homes to `data/shortlist.md`.
-2. Tag them there as:
+2. Set the cohort metadata so the file clearly shows `Source Mode: compare`, the compare scope, the trigger, and whether the cohort is smaller than ten.
+3. Tag them there as:
 	- `Compare Top 10 - Rank 1`
 	- `Compare Top 10 - Rank 2`
 	- `Compare Top 10 - Rank 3`
@@ -60,10 +61,10 @@ After every comparison that produces a ranked set of evaluated homes:
 	- `Compare Top 10 - Rank 8`
 	- `Compare Top 10 - Rank 9`
 	- `Compare Top 10 - Rank 10`
-3. Include tracker row numbers, report links, current score, current status, and a one-line reason each home made the compare top 10.
-4. Overwrite the previous shortlist cohort rather than appending a second active cohort.
-5. If a deep-batch rerank already exists for the same compare cohort, replace the old refined ranking with the new one.
-6. Open the direct listing URL for each home in the compare top-10 shortlist in its own browser tab so the user can review the homes side by side. Prefer the listing URL from the underlying report. If no direct listing URL is available, open the report file instead.
+4. Include tracker row numbers, report links, current score, current status, and a one-line reason each home made the compare top 10.
+5. Overwrite the previous shortlist cohort rather than appending a second active cohort, even if the previous top-10 cohort came from `evaluate`.
+6. If a deep-batch rerank already exists for the same compare cohort, replace the old refined ranking with the new one.
+7. Open the saved top-10 cohort in the hosted browser so the user can review the homes side by side. Prefer the listing URL from the underlying report. If no direct listing URL is available, open the report file instead. Use `node review-tabs.mjs shortlist-top10 --group "Top 10"` or `npm.cmd run browser:review -- shortlist-top10 --group "Top 10"` on Windows PowerShell.
 
 Prefer homes that are still alive in the decision process. Exclude `Sold` and `SKIP` homes from the tagged shortlist unless the user explicitly asks to compare eliminated homes too. If fewer than ten viable homes remain, tag fewer and say so clearly.
 

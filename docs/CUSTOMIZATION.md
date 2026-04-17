@@ -26,6 +26,8 @@ Key sections to tune:
 - `financial`: down payment, closing cost, and payment assumptions
 - `workflow.shortlist.preserve_on_reset`: keep `data/shortlist.md` stable during recurring reset and hunt runs
 
+These weight blocks currently steer evaluator judgment and research emphasis. They are not yet a standalone deterministic scoring engine that automatically consumes structured sentiment, school, and development records.
+
 ## buyer-profile.md
 
 Use this file for the context that is hard to express in YAML, such as:
@@ -49,6 +51,8 @@ Customize:
 - fallback `search_queries` used when direct browsing is blocked
 
 Scan syncs the numeric portal filters from `config/profile.yml` at runtime, so `portals.yml` does not need to mirror every price, bed, garage, and square-foot threshold by hand.
+
+The source inventories in `portals.yml` are both configuration and audit surface. Home-Ops uses them to define what the evaluator should look for, and `research-coverage-audit.mjs` uses report content to tell you whether those evidence classes were actually covered.
 
 ## Prompt Overrides
 

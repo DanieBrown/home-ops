@@ -19,6 +19,7 @@ const REVIEW_EXTENSION_NAME = 'home-ops-review-tabs';
 
 const PORTAL_ALIASES = {
   facebook: 'facebook',
+  greatschools: 'greatschools',
   nextdoor: 'nextdoor',
   relator: 'realtor',
   'realtor.com': 'realtor',
@@ -59,6 +60,7 @@ const FALLBACK_PORTAL_TARGETS = {
 
 const PLATFORM_FLAG_MAP = {
   '--facebook': 'facebook',
+  '--greatschools': 'greatschools',
   '--nextdoor': 'nextdoor',
   '--zillow': 'zillow',
   '--redfin': 'redfin',
@@ -71,7 +73,7 @@ const LOG_FILE_HEADER = 'opened_at\tclosed_at\tcaller\tprofile\tchannel\tplatfor
 
 const HELP_TEXT = `Usage:
   node browser-session.mjs [portal|configured|all|url] [--profile NAME] [--channel CHANNEL]
-  node browser-session.mjs --zillow --redfin --relator --facebook --nextdoor [--searches] [--caller scan]
+  node browser-session.mjs --zillow --redfin --relator --facebook --nextdoor --greatschools [--searches] [--caller scan]
   node browser-session.mjs configured --hosted --channel chrome [--caller setup]
   node browser-session.mjs --status [--profile NAME]
 
@@ -82,6 +84,7 @@ Examples:
   node browser-session.mjs configured --hosted --channel chrome
   node browser-session.mjs --platform realtor --searches
   node browser-session.mjs --facebook --nextdoor --hosted --caller init
+  node browser-session.mjs --greatschools --hosted --caller research
   node browser-session.mjs --status --profile chrome-host
   node browser-session.mjs https://www.zillow.com/
 
@@ -89,7 +92,8 @@ Notes:
   - This opens a headed persistent browser profile stored under output/browser-sessions/.
   - Chrome is preferred by default when it is installed locally.
   - Use --hosted to launch a real local Chrome window with a separate user-data-dir and CDP enabled.
-  - When portals.yml is present, configured targets come from its login-required platforms and sentiment sources.
+  - When portals.yml is present, named targets come from its platforms plus supplemental source inventories such as sentiment_sources and school_sources.
+  - The default configured set still limits itself to login-required targets.
   - Use --searches to open the configured search URLs instead of just the platform home pages.
   - Sign in manually, complete any captcha or anti-bot checks yourself, then close the browser.
   - The saved profile can be reused by other Playwright scripts in this repo.`;
@@ -214,6 +218,7 @@ export async function loadBrowserTargets(projectRoot) {
     const browserTargets = {
       ...buildPortalTargets(parsed.platforms),
       ...buildSupplementalTargets(parsed.sentiment_sources),
+      ...buildSupplementalTargets(parsed.school_sources),
     };
 
     return Object.keys(browserTargets).length > 0 ? browserTargets : { ...FALLBACK_PORTAL_TARGETS };
@@ -361,14 +366,24 @@ function resolveBrowserExecutable(channel) {
   };
 
   const platformCandidates = candidatesByPlatform[platform] ?? {};
-  const candidates = platformCandidates[normalized] ?? [];
-  const match = candidates.find((candidate) => existsSync(candidate));
+  const requestedChannels = normalized === 'chrome'
+    ? ['chrome', 'msedge', 'chromium']
+    : [normalized];
 
-  if (!match) {
-    throw new Error(`Could not find a local executable for browser channel: ${normalized}`);
+  for (const candidateChannel of requestedChannels) {
+    const candidates = platformCandidates[candidateChannel] ?? [];
+    const match = candidates.find((candidate) => existsSync(candidate));
+
+    if (match) {
+      return {
+        channel: candidateChannel,
+        executablePath: match,
+        fallbackFrom: candidateChannel === normalized ? null : normalized,
+      };
+    }
   }
 
-  return match;
+  throw new Error(`Could not find a local executable for browser channel: ${normalized}`);
 }
 
 async function waitForCdpEndpoint(endpointURL, timeoutMs) {
@@ -401,7 +416,8 @@ export async function launchHostedBrowserSession({
   const effectiveUserDataDir = resolveBrowserProfileDir(projectRoot, profileName);
   await mkdir(effectiveUserDataDir, { recursive: true });
 
-  const executablePath = resolveBrowserExecutable(channel);
+  const resolvedBrowser = resolveBrowserExecutable(channel);
+  const executablePath = resolvedBrowser.executablePath;
   const endpointURL = `http://127.0.0.1:${cdpPort}`;
   const reviewExtensionDir = resolveReviewExtensionDir(projectRoot);
   const args = [
@@ -424,7 +440,9 @@ export async function launchHostedBrowserSession({
   const versionInfo = await waitForCdpEndpoint(endpointURL, timeoutMs);
 
   return {
-    channel,
+    channel: resolvedBrowser.channel,
+    requestedChannel: channel,
+    fallbackFrom: resolvedBrowser.fallbackFrom,
     userDataDir: effectiveUserDataDir,
     executablePath,
     cdpPort,
@@ -785,6 +803,9 @@ async function main() {
     ].join('\t'));
 
     console.log(`Opened hosted browser using channel: ${launched.channel}`);
+    if (launched.fallbackFrom) {
+      console.log(`Requested channel ${launched.fallbackFrom} was unavailable; fell back to ${launched.channel}.`);
+    }
     console.log(`Profile directory: ${launched.userDataDir}`);
     console.log(`Targets opened: ${targetSelection.urls.length}`);
     console.log(`CDP endpoint: ${launched.cdpUrl}`);
