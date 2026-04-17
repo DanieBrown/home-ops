@@ -11,6 +11,8 @@ Use this skill for the per-home worker inside Home-Ops batch `evaluate` runs.
 
 This skill turns one prepared canonical-property evidence packet into a decision-ready report draft and structured results for the main agent to merge.
 
+Use the exact handoff schema in [Evaluate Worker Contract](./references/contract.md) when the caller or worker needs a stable packet and result format.
+
 Do not use this skill for:
 - live browser verification
 - hosted browser session management
@@ -35,6 +37,8 @@ Do not use this skill when:
 ## Expected Inputs
 
 Work from one canonical property only.
+
+For the exact packet shape, field names, and example objects, use [Evaluate Worker Contract](./references/contract.md).
 
 The caller should supply as much of this packet as possible:
 - buyer context from `buyer-profile.md`, `config/profile.yml`, and `modes/_profile.md`
@@ -103,6 +107,8 @@ If part of the packet is missing, continue conservatively and say exactly what i
 ## Output Contract
 
 Return one result bundle for one property. Prefer this structure unless the caller requested a stricter format:
+
+For the exact result fields, required values, and an end-to-end example, use [Evaluate Worker Contract](./references/contract.md).
 
 ```markdown
 ## Report Draft
