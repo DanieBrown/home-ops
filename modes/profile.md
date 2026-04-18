@@ -324,9 +324,10 @@ Rules:
 
 After updating the files, run:
 
+- `node generate-portals.mjs` -- regenerates `portals.yml` from the updated `config/profile.yml` and `config/city-registry.yml`. Always run this when search areas change so Zillow, Redfin, and Realtor.com base URLs stay in sync with the profile.
 - `node profile-sync-check.mjs`
 
-If the buyer changed areas or other search coverage materially, tell the user that `portals.yml` may still need area-path updates even though scan now syncs numeric filter ranges from `config/profile.yml` at runtime.
+If `generate-portals.mjs` emits a warning for an unmatched city, add the missing `redfin_city_id` and `primary_zip` to `config/city-registry.yml` and rerun the generator before continuing.
 
 ## Output Summary
 
@@ -334,6 +335,6 @@ Return a concise summary with:
 - which buyer-layer files were updated
 - the biggest profile changes captured
 - whether the weight scores were re-normalized
+- whether `generate-portals.mjs` ran cleanly, plus any unmatched-city warnings it surfaced
 - whether `profile-sync-check.mjs` passed
-- whether `portals.yml` now looks out of sync with the new profile
 - and an explicit next-step line telling the user to run `/home-ops init` next

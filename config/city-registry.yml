@@ -1,0 +1,43 @@
+# City registry -- resolves profile search areas into portal-specific URL pieces.
+# generate-portals.mjs reads this file. To add a new market, append an entry
+# keyed by name + state. Unknown cities fall back to zipcode-based URLs
+# (Redfin) or derived slugs (Zillow, Realtor.com) with a warning.
+#
+# Fields per entry:
+#   name              -- canonical display name (matches config/profile.yml)
+#   state             -- 2-letter state code
+#   aliases           -- alternate names the profile might use
+#   redfin_city_id    -- numeric ID in https://www.redfin.com/city/<id>/<ST>/<City>
+#   redfin_slug       -- the Title-Case slug after the state code (defaults to name)
+#   primary_zip       -- fallback zip for Redfin zipcode URLs
+#   zillow_slug       -- override slug for Zillow when it differs from the derived one
+#   realtor_slug      -- override slug for Realtor.com when it differs
+
+cities:
+  - name: "Holly Springs"
+    state: "NC"
+    redfin_city_id: 8242
+    primary_zip: "27540"
+
+  - name: "Fuquay-Varina"
+    state: "NC"
+    redfin_city_id: 6517
+    primary_zip: "27526"
+
+  - name: "Apex"
+    state: "NC"
+    redfin_city_id: 387
+    primary_zip: "27502"
+
+  - name: "Cary"
+    state: "NC"
+    redfin_city_id: 35713
+    primary_zip: "27513"
+
+  - name: "Willow Springs"
+    state: "NC"
+    aliases: ["Willow Spring"]
+    primary_zip: "27592"
+    # Zillow and Realtor.com canonical slugs use the singular form.
+    zillow_slug: "willow-spring-nc"
+    realtor_slug: "Willow-Spring_NC"

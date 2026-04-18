@@ -18,9 +18,12 @@ npx playwright install chromium
 npm run doctor
 
 cp config/profile.example.yml config/profile.yml
-cp templates/portals.example.yml portals.yml
 cp modes/_profile.template.md modes/_profile.md
+# Edit config/profile.yml to set search.areas, hard_requirements, etc.
+npm run portals:generate
 ```
+
+`portals.yml` is generated from `config/profile.yml` and `config/city-registry.yml` — skip the old `cp templates/portals.example.yml portals.yml` step. Rerun `npm run portals:generate` any time you change search areas (the `/home-ops profile` flow does this for you automatically).
 
 Then set up the hosted browser session so portal logins persist:
 

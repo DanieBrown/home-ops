@@ -92,7 +92,15 @@ If `config/profile.yml` is missing, copy from `config/profile.example.yml` and t
 
 ### Step 3: Portal Searches
 
-If `portals.yml` is missing, copy from `templates/portals.example.yml` and customize the search URLs for the user's target market.
+`portals.yml` is generated from `config/profile.yml` and `config/city-registry.yml`. Once the profile has search areas, run:
+
+```
+node generate-portals.mjs
+```
+
+This writes Zillow, Redfin, and Realtor.com base URLs for every configured area, plus NC-aware sentiment, school, and development sources. Rerun it any time search areas change. If the generator warns about an unmatched city, add its `redfin_city_id` and `primary_zip` to `config/city-registry.yml` and rerun.
+
+Do not copy `templates/portals.example.yml` directly -- it is kept only as a shape reference for the generator output.
 
 ### Step 4: Tracker
 
