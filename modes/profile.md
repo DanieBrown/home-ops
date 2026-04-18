@@ -25,42 +25,43 @@ If any of those files are missing, create them from the checked-in example or te
 ## Interaction Rules
 
 - Use `vscode_askQuestions` in short batches instead of dumping one long questionnaire into chat.
-- Prefer fixed-choice questions first, then short custom follow-ups only when needed.
-- For single-value fields that map cleanly into YAML, present roughly 4 generic default options plus a `Custom` option.
-- For refresh flows, include a `Keep current` option when a meaningful current value already exists.
-- For multi-value sections such as features, deal-breakers, and lifestyle preferences, prefer curated multi-select lists with optional freeform additions.
-- For grouped criteria such as areas, features, deal-breakers, or commute destinations, ask the user for a bulleted list and map the entries back to the correct fields.
-- For search areas specifically, also accept one comma-delimited free-text reply containing multiple area names, then convert that one answer into the structured `search.areas` list.
+- Default to fixed-choice and multi-select questions. Free-text should be the exception, reserved for nuanced narrative answers that cannot be reduced to a pick-list.
+- **Seed every question with the current profile value.** When a meaningful current value exists, it must be the pre-selected default on single-choice questions and the pre-checked set on multi-select questions. The user should be able to accept the whole profile without typing anything.
+- Every single-choice question must include a `Keep current` option when a current value exists, and a `Custom` option for anything the defaults miss.
+- Every multi-select question must list the user's existing selections at the top already checked, then add curated defaults beneath them as unchecked suggestions, then expose an `Add custom` free-text entry at the bottom for one-off additions.
+- For grouped criteria such as areas, features, deal-breakers, or commute destinations, the default interaction is a multi-select pick-list. Only fall back to bulleted or comma-delimited free text if the user explicitly asks to type it out.
 - Preserve any current value the user explicitly says to keep.
 - Do not write buyer-specific criteria into `modes/_shared.md`.
 
 ## Question Style Rules
 
-Use these defaults unless the current market or prior profile makes a different set more sensible.
+Every question must be rendered with the current profile value pre-selected. The option sets below are only the fallback when no current value exists or the current value has no natural bucket.
 
 ### Single-Choice Defaults
 
-For numeric or enum-style answers, prefer option sets like these:
+For numeric or enum-style answers, present roughly four buckets plus `Keep current` (when applicable) and `Custom`:
 
-- Price range: `200k-400k`, `400k-600k`, `600k-800k`, `800k-1.0M+`, `Custom`
-- Minimum beds: `3+`, `4+`, `5+`, `6+`, `Custom`
-- Minimum garage spaces: `1+`, `2+`, `3+`, `4+`, `Custom`
-- Minimum square footage: `1800+`, `2200+`, `2700+`, `3200+`, `Custom`
-- Minimum school rating: `5+`, `6+`, `7+`, `8+`, `Custom`
-- Maximum listing age: `7 days`, `14 days`, `30 days`, `60 days`, `Custom`
-- Home type posture: `Resale strongly preferred`, `Resale preferred but new is OK`, `Resale only`, `No strong preference`
-- Story preference: `No preference`, `1 story`, `2 stories`, `3+ stories`, `Custom`
-- HOA maximum: `No cap`, `$100/mo`, `$200/mo`, `$300/mo`, `Custom`
+- Price range: `200k-400k`, `400k-600k`, `600k-800k`, `800k-1.0M+`, `Keep current`, `Custom`
+- Minimum beds: `3+`, `4+`, `5+`, `6+`, `Keep current`, `Custom`
+- Minimum garage spaces: `1+`, `2+`, `3+`, `4+`, `Keep current`, `Custom`
+- Minimum square footage: `1800+`, `2200+`, `2700+`, `3200+`, `Keep current`, `Custom`
+- Minimum school rating: `5+`, `6+`, `7+`, `8+`, `Keep current`, `Custom`
+- Maximum listing age: `7 days`, `14 days`, `30 days`, `60 days`, `Keep current`, `Custom`
+- Home type posture: `Resale strongly preferred`, `Resale preferred but new is OK`, `Resale only`, `No strong preference`, `Keep current`
+- Story preference: `No preference`, `1 story`, `2 stories`, `3+ stories`, `Keep current`, `Custom`
+- HOA maximum: `No cap`, `$100/mo`, `$200/mo`, `$300/mo`, `Keep current`, `Custom`
 
-If the user picks `Custom`, ask a short follow-up for the exact value.
+When the current profile value falls inside one of the listed buckets, mark that bucket as the pre-selected option so the user can press enter to accept it. When the current value is outside the buckets, include it verbatim as a `Keep current (<exact value>)` option. Ask the `Custom` follow-up only when the user explicitly picks `Custom`.
 
 ### Multi-Select Defaults
 
-For preference-heavy sections, offer curated pick-lists like these before asking for freeform additions:
+Every multi-select must be rendered as: the user's existing selections at the top already checked, curated defaults underneath as unchecked suggestions, and an `Add custom` row at the bottom for freeform entries. Do not drop a current selection just because it is not in the curated list -- keep it, checked, so the user sees their existing profile and can uncheck to remove.
+
+Curated defaults (the unchecked suggestions, de-duplicated against whatever the current profile already has):
 
 - Property features: `Large backyard`, `Fenced yard`, `Open-concept plan`, `Updated kitchen`, `Hardwood or LVP floors`, `Bonus room or office`, `First-floor primary suite`, `Two-story layout`, `Mature neighborhood`, `Community pool`
 - Street and lot feel: `Cul-de-sac`, `Low-traffic interior street`, `Tree cover`, `Flat yard`, `Large lot`, `Play-friendly backyard`
-- Deal-breakers: `Busy road`, `Flood risk`, `High HOA`, `Townhome or condo`, `Small or cramped yard`, `Major repair needed`, `Weak schools`, `Long commute`, `Backing to commercial property`, `New construction`
+- Deal-breakers: `Busy road`, `Flood risk`, `Townhome or condo`, `Small or cramped yard`, `Major repair needed`, `Weak schools`, `Long commute`, `Backing to commercial property`, `New construction`
 - Family and lifestyle priorities: `School quality`, `Quiet street`, `Neighborhood community feel`, `Commute convenience`, `Outdoor space`, `Move-in-ready condition`, `Resale stability`, `Lower monthly payment`
 
 When a selected item maps cleanly into `config/profile.yml`, store it there. If it is more nuanced, also reflect it in `buyer-profile.md` and `modes/_profile.md`.
@@ -78,10 +79,12 @@ Collect:
 - location
 - timezone
 
+When the current profile already has any of these values, pre-fill them as the default answer on each question. Offer `Keep current` as the first option so the user can accept an unchanged identity field without retyping anything. Identity fields are free-text by nature, so the only goal here is to minimize retyping for the refresh flow.
+
 ### 2. Search Areas And Hard Requirements
 
 Collect:
-- target areas as a bulleted list or comma-delimited list
+- target areas
 - price minimum and maximum
 - minimum beds
 - minimum garage spaces
@@ -91,54 +94,46 @@ Collect:
 - maximum listing age in days
 - home type preference
 
-Ask the hard requirements using structured defaults first. Example:
+#### Search areas (multi-select)
 
-- price band from a short default list plus `Custom`
-- minimum beds from a short default list plus `Custom`
-- garage minimum from a short default list plus `Custom`
-- square-foot minimum from a short default list plus `Custom`
-- school minimum from a short default list plus `Custom`
-- listing-age maximum from a short default list plus `Custom`
-- home-type preference from a short default list
+Render a single multi-select question built from:
 
-For search areas, accept either a structured bulleted list or a single comma-delimited reply.
+1. Every area currently in `search.areas` (pre-checked, with the county and rank shown next to the name so the user can see what is on file).
+2. A short list of unchecked regional suggestions the current profile does not already include. Default suggestions for the Triangle market: `Holly Springs`, `Apex`, `Cary`, `Willow Springs`, `Fuquay-Varina`, `Morrisville`, `Wake Forest`, `Durham`, `Raleigh`.
+3. An `Add custom area` row at the bottom for one-off additions.
 
-Structured example:
+Rules:
 
-- `Holly Springs | NC | Wake | 1`
-- `Apex | NC | Wake | 2`
+- The user accepts the current areas simply by leaving the pre-checked boxes alone.
+- Unchecking a pre-checked row removes that area from `search.areas`.
+- For every area the user adds (either from the suggestion list or via `Add custom area`) that is missing a county or rank, ask one consolidated follow-up covering all missing values at once instead of asking per area. Format the follow-up as a short table:
+  - `Apex | county? | rank?`
+  - `Morrisville | county? | rank?`
+- If the user picks Willow Springs, a multi-county value such as `Wake, Harnett` is acceptable.
+- Only drop back to free text (bulleted or comma-delimited) if the user explicitly asks for it.
 
-Comma-delimited shorthand example:
+#### Hard requirements (single-choice, current value pre-selected)
 
-- `Holly Springs, Cary, Apex, Willow Springs`
+Ask each hard requirement as a single-choice question using the buckets in "Single-Choice Defaults" above. For each question:
 
-Interpret the columns as:
-- area name
-- state
-- county
-- rank
+- Pre-select the bucket that contains the current profile value.
+- When the current value does not fit any bucket cleanly, surface it as `Keep current (<exact value>)` and pre-select that.
+- Include `Custom` on every question for explicit overrides.
 
-If the user provides multiple areas in one answer, keep them in one batch.
-If county or rank is omitted, ask one consolidated follow-up that covers all missing values instead of asking one area at a time.
-If Willow Springs is selected, a multi-county value such as `Wake, Harnett` is acceptable.
+The full set is:
+- price band
+- minimum beds
+- garage minimum
+- square-foot minimum
+- school minimum
+- listing-age maximum
+- home-type preference
 
 ### 3. Soft Preferences And Features
 
-Collect:
-- preferred home style
-- fenced-yard preference
-- preferred floor-plan style
-- updated kitchen preference
-- preferred flooring types
-- preferred street type
-- preferred story count
-- HOA maximum monthly budget
-- pool preference
-- year-built range
+This batch replaces the old set of individual yes/no questions about fenced yards, updated kitchens, pools, floor-plan style, and street type. Those preferences are captured inside the multi-select below, so do not also ask them as separate soft-preference questions.
 
-For feature-heavy answers, use a multi-select pick-list first, then ask for custom additions only if the user has something missing from the list. Map each selection back into either a structured `config/profile.yml` field or a narrative note in `buyer-profile.md` and `modes/_profile.md`.
-
-Use defaults such as:
+Ask one multi-select for desired features (current profile selections pre-checked, curated suggestions below, `Add custom` at the bottom). Curated defaults:
 
 - `Large backyard`
 - `Fenced yard`
@@ -150,23 +145,24 @@ Use defaults such as:
 - `Two-story layout`
 - `Cul-de-sac or low-traffic street`
 - `Community pool`
+- `Mature neighborhood`
+
+Then ask three short single-choice questions that genuinely do not fit the multi-select:
+
+- preferred story count (uses the Single-Choice Defaults above)
+- HOA maximum monthly budget (uses the Single-Choice Defaults above)
+- year-built range: `2010+`, `2000+`, `1990+`, `No preference`, `Keep current`, `Custom`
+
+Pre-select the current value on each of the three single-choice questions. Every multi-select selection should land in a structured `config/profile.yml` field where one exists; anything nuanced should also be reflected in `buyer-profile.md` and `modes/_profile.md`.
 
 ### 4. Deal-Breakers And Lifestyle Context
 
-Collect:
-- deal-breakers as a bulleted list
-- family context
-- resale versus new-construction tolerance
-- street-noise sensitivity
-- lot and yard priorities
-- commute tolerance
-- how aggressive the buyer wants to be in a tight market
+Several dimensions that used to live here (street noise, lot and yard priorities, resale-vs-new-construction tolerance) are already captured by the deal-breaker multi-select or by Section 2's home-type preference. Do not re-ask them.
 
-Use a multi-select deal-breaker list first, then collect missing nuance in freeform. Good defaults:
+Ask one multi-select for deal-breakers (current profile selections pre-checked, curated suggestions below, `Add custom` at the bottom). Curated defaults:
 
 - `Busy road or cut-through traffic`
 - `Floodplain or drainage concern`
-- `HOA above budget`
 - `Small or unusable backyard`
 - `Weak assigned schools`
 - `Townhome or condo`
@@ -175,35 +171,65 @@ Use a multi-select deal-breaker list first, then collect missing nuance in freef
 - `Too far from preferred commute`
 - `Builder-heavy new construction`
 
+Notes:
+- `HOA above budget` was intentionally dropped -- Section 3 already captures the HOA monthly cap, which is how this constraint gets enforced.
+- If the user unchecks `Busy road or cut-through traffic`, that implicitly answers street-noise tolerance; no separate question needed.
+- If the user's home-type preference in Section 2 is `Resale strongly preferred` or `Resale only`, pre-check `Builder-heavy new construction` here so the two signals stay consistent.
+
+Then collect the narrative-only lifestyle fields that do not map to any pick-list:
+
+- family context (short free text: household size, kids or pets, stage of life)
+- buyer aggressiveness in a tight market (single-choice: `Wait for the perfect fit`, `Move on strong fits`, `Compete hard`, `Keep current`, `Custom`)
+
+Pre-fill the current value on each question where the profile already has one.
+
 ### 5. Commute And Financial Assumptions
 
 Collect:
-- commute destinations as a bulleted list
-- destination priority for each commute target
+- commute destinations and priority (daily / occasional / rare)
 - down-payment percentage
 - loan type
 - closing-cost minimum and maximum percentages
 
-For commute destinations, ask for bullets in a format such as:
+#### Commute destinations (multi-select)
 
-- `Downtown Raleigh | Downtown Raleigh, NC | occasional`
-- `Research Triangle Park | RTP, NC | daily`
+Render a multi-select seeded from:
 
-For down payment and closing-cost assumptions, prefer short default options first. Example:
+1. The user's current `financial.commute_destinations` (pre-checked, with priority shown next to each).
+2. Unchecked regional suggestions the profile does not already include. Defaults: `Downtown Raleigh`, `Research Triangle Park`, `Cary office parks`, `Durham`, `Chapel Hill`, `Apex`.
+3. An `Add custom destination` row.
 
-- down payment: `10%`, `15%`, `20%`, `25%+`, `Custom`
-- closing costs: `1-2%`, `2-3%`, `3-4%`, `4%+`, `Custom`
-- loan type: `30-year fixed`, `15-year fixed`, `ARM`, `Custom`
+After the user confirms the set, ask one follow-up assigning `daily`, `occasional`, or `rare` to any destination where priority is missing. Pre-fill the existing priority for pre-checked rows.
+
+#### Financial assumptions (single-choice, current value pre-selected)
+
+- down payment: `10%`, `15%`, `20%`, `25%+`, `Keep current`, `Custom`
+- closing costs: `1-2%`, `2-3%`, `3-4%`, `4%+`, `Keep current`, `Custom`
+- loan type: `30-year fixed`, `15-year fixed`, `ARM`, `Keep current`, `Custom`
+
+Pre-select the bucket that matches the current profile value on every question.
 
 ### 6. Neighborhood Weight Scores
 
-Ask one 0-100 question for each neighborhood weighting factor. Use wording like this:
+Do not start with raw 0-100 text input. Ask each factor as a single-choice question with five importance bands plus the current normalized weight shown as `Keep current`:
 
-- How important is low crime in your neighborhood? Enter `0-100`.
-- How important is manageable traffic and commute friction near the home? Enter `0-100`.
-- How important is a strong sense of community and neighbor quality? Enter `0-100`.
-- How important is strong local school reputation as part of the neighborhood score? Enter `0-100`.
-- How important is everyday livability such as parks, groceries, healthcare access, and lower noise? Enter `0-100`.
+- `Not important` = 10
+- `Somewhat` = 25
+- `Important` = 50
+- `Very important` = 75
+- `Critical` = 90
+- `Keep current (<current normalized value>)`
+- `Custom 0-100`
+
+Pre-select the band closest to the current normalized weight for each factor. Only route through `Custom 0-100` when the user explicitly picks it.
+
+Ask one such question per factor:
+
+- How important is low crime in your neighborhood?
+- How important is manageable traffic and commute friction near the home?
+- How important is a strong sense of community and neighbor quality?
+- How important is strong local school reputation as part of the neighborhood score?
+- How important is everyday livability such as parks, groceries, healthcare access, and lower noise?
 
 Map those answers to:
 - `sentiment.weights.crime_safety`
@@ -214,13 +240,15 @@ Map those answers to:
 
 ### 7. School Weight Scores
 
-Ask one 0-100 question for each school weighting factor. Use wording like this:
+Use the same five-band importance question format as Section 6, with the current school-sentiment weight shown as `Keep current` and pre-selected band matching the closest existing value.
 
-- How important is academic performance? Enter `0-100`.
-- How important is parent and community trust in the school? Enter `0-100`.
-- How important is teacher and staff quality? Enter `0-100`.
-- How important is school safety and student environment? Enter `0-100`.
-- How important are extracurriculars and available resources? Enter `0-100`.
+Ask one question per factor:
+
+- How important is academic performance?
+- How important is parent and community trust in the school?
+- How important is teacher and staff quality?
+- How important is school safety and student environment?
+- How important are extracurriculars and available resources?
 
 Map those answers to:
 - `school_sentiment.weights.academic_performance`
@@ -280,15 +308,17 @@ Preserve any existing nuanced notes that the user did not override.
 
 ## Interview Quality Bar
 
-The profile flow should feel like a guided form, not a blank interview.
+The profile flow should feel like a guided form, not a blank interview. A user who only wants to confirm the current profile should be able to walk through every batch by accepting the pre-selected defaults without typing anything.
 
 Rules:
 
-- Do not ask every field as pure free text when a short default list would make the answer easier.
-- Do not anchor the option sets around the current buyer's exact values; use generic defaults that work for many buyers, with `Custom` available.
+- Do not ask any field as pure free text when a short default list or multi-select would make the answer easier.
+- Always seed the question with the current profile value: pre-select it on single-choice questions, pre-check it on multi-select questions, and include a `Keep current` option when the current value falls outside the curated buckets.
+- Keep the curated option sets generic enough to work for many buyers, but never drop a current selection just because it is not in the curated list -- preserve it as a checked row so the user can see and keep it.
+- Expose `Add custom` or `Custom` on every question as an escape hatch for anything the defaults miss.
 - Keep each batch small enough that the user can answer quickly.
 - If the user chooses multiple features or deal-breakers, reflect the whole set back into the written profile instead of collapsing it down to one headline preference.
-- When the user supplies multiple search areas in one reply, preserve that batch and ask at most one grouped follow-up for any missing county or rank fields.
+- When the user adds new search areas, preserve the batch and ask at most one grouped follow-up for any missing county or rank fields.
 
 ## Validation
 

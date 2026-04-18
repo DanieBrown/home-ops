@@ -18,6 +18,16 @@ import {
   parseReport,
   parseShortlist,
 } from './research-utils.mjs';
+import {
+  CACHE_TTL,
+  getCacheEntry,
+  isCacheFresh,
+  loadCache,
+  pruneCache,
+  putCacheEntry,
+  saveCache,
+  ttlForVerification,
+} from './cache-utils.mjs';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const PIPELINE_PATH = join(ROOT, 'data', 'pipeline.md');
@@ -130,6 +140,8 @@ Options:
   --skip-merge           Leave staged TSV additions in batch/tracker-additions/ without merging them.
   --skip-review-tabs     Do not open shortlist review tabs after writing data/shortlist.md.
   --skip-audit           Do not run research-coverage-audit.mjs on newly written reports.
+  --no-cache             Skip the extraction cache so every URL is freshly scraped.
+  --refresh-cache        Re-scrape every URL but still update the cache with the new result.
   --help                 Show this help text.
 `;
 
@@ -223,6 +235,8 @@ function parseArgs(argv) {
     skipMerge: false,
     skipReviewTabs: false,
     skipAudit: false,
+    noCache: false,
+    refreshCache: false,
     help: false,
   };
 
@@ -267,6 +281,16 @@ function parseArgs(argv) {
 
     if (arg === '--skip-audit') {
       config.skipAudit = true;
+      continue;
+    }
+
+    if (arg === '--no-cache') {
+      config.noCache = true;
+      continue;
+    }
+
+    if (arg === '--refresh-cache') {
+      config.refreshCache = true;
       continue;
     }
 
@@ -1116,6 +1140,60 @@ function summarizeSnapshot(snapshot) {
     description: chooseFirst(extractMeta(snapshot, 'description'), extractMeta(snapshot, 'og:description'), ''),
     excerpt: snapshot.bodyText.slice(0, 1200),
   };
+}
+
+const EXTRACTION_CACHE_NAME = 'extraction';
+
+function buildExtractionCacheKey(entry) {
+  return canonicalizeUrl(entry.canonicalUrl || entry.url || '').toLowerCase();
+}
+
+function reviveCachedAttempt(cached, entry) {
+  return {
+    inputType: 'url',
+    platformKey: entry.platformKey,
+    platformLabel: entry.platformLabel,
+    url: entry.url,
+    canonicalUrl: entry.canonicalUrl,
+    finalUrl: cached.finalUrl || entry.url,
+    verification: cached.verification,
+    responseStatus: cached.responseStatus ?? 0,
+    navigationError: cached.navigationError ?? '',
+    facts: cached.facts,
+    snapshot: cached.snapshot,
+    fromCache: true,
+  };
+}
+
+async function extractFromBrowserCached(context, entry, cacheState) {
+  const key = buildExtractionCacheKey(entry);
+  const cache = cacheState?.cache;
+
+  if (cache && !cacheState.disabled && !cacheState.refresh && key) {
+    const existing = getCacheEntry(cache, key);
+    const ttlMs = existing ? ttlForVerification(existing.verification?.status) : 0;
+    if (existing && isCacheFresh(existing, ttlMs)) {
+      cacheState.hits += 1;
+      return reviveCachedAttempt(existing, entry);
+    }
+  }
+
+  const attempt = await extractFromBrowser(context, entry);
+  cacheState.misses += 1;
+
+  if (cache && !cacheState.disabled && key && attempt?.verification?.status) {
+    putCacheEntry(cache, key, {
+      verification: attempt.verification,
+      facts: attempt.facts,
+      snapshot: attempt.snapshot,
+      finalUrl: attempt.finalUrl,
+      responseStatus: attempt.responseStatus,
+      navigationError: attempt.navigationError,
+    });
+    cacheState.dirty = true;
+  }
+
+  return attempt;
 }
 
 async function extractFromBrowser(context, entry) {
@@ -2139,6 +2217,19 @@ async function main() {
   let nextReportNumber = getNextReportNumber(existingContext.reportMap, existingContext.trackerMap);
   const evaluatedGroups = [];
 
+  const extractionCache = config.noCache ? { entries: {} } : await loadCache(EXTRACTION_CACHE_NAME);
+  if (!config.noCache) {
+    pruneCache(extractionCache, CACHE_TTL.DEFAULT_PRUNE_MS);
+  }
+  const cacheState = {
+    cache: extractionCache,
+    disabled: Boolean(config.noCache),
+    refresh: Boolean(config.refreshCache),
+    hits: 0,
+    misses: 0,
+    dirty: false,
+  };
+
   for (const group of grouped) {
     const attempts = [];
     for (const entry of group.entries) {
@@ -2146,7 +2237,7 @@ async function main() {
       if (entry.inputType === 'local-report') {
         attempt = await extractFromLocalReport(entry, portals);
       } else {
-        attempt = await extractFromBrowser(session.context, entry);
+        attempt = await extractFromBrowserCached(session.context, entry, cacheState);
       }
 
       attempts.push(attempt);
@@ -2286,6 +2377,10 @@ async function main() {
     await writeFile(packet.filePath, `${JSON.stringify(packet.payload, null, 2)}\n`, 'utf8');
   }
 
+  if (!config.noCache && cacheState.dirty) {
+    await saveCache(EXTRACTION_CACHE_NAME, extractionCache);
+  }
+
   const summaryPath = join(PACKETS_DIR, `run-${runId}.json`);
   await writeFile(summaryPath, `${JSON.stringify({
     runId,
@@ -2301,6 +2396,9 @@ async function main() {
     console.log(`Run summary: ${summaryPath.replace(`${ROOT}\\`, '').replace(/\\/g, '/')}`);
     if (blockedHomes.length > 0) {
       console.log(`Left ${blockedHomes.length} home(s) blocked for manual follow-up.`);
+    }
+    if (!config.noCache) {
+      console.log(`Extraction cache: ${cacheState.hits} hit(s), ${cacheState.misses} miss(es)`);
     }
     if (session?.browser) {
       await session.browser.close();
@@ -2371,6 +2469,9 @@ async function main() {
     console.log(`Tracker staging file: ${stagedTsvPath.replace(`${ROOT}\\`, '').replace(/\\/g, '/')}`);
   }
   console.log(`Run summary: ${summaryPath.replace(`${ROOT}\\`, '').replace(/\\/g, '/')}`);
+  if (!config.noCache) {
+    console.log(`Extraction cache: ${cacheState.hits} hit(s), ${cacheState.misses} miss(es)`);
+  }
 }
 
 main().catch(async (error) => {

@@ -183,10 +183,18 @@ npm run doctor
 npm run sync-check
 npm run verify
 npm run plan:research -- --top3 --type development
+npm run check:construction -- --top3
 npm run audit:research
 npm run gate:finalists
+npm run brief:top3 -- --no-open
 node test-all.mjs --quick
 ```
+
+`check:construction` fetches NCDOT public project-index pages and writes a per-home `constructionPressure` record under `output/construction/` that `prepare:deep` then merges into each deep packet. `brief:top3` renders a one-file top-3 finalist briefing PDF under `output/briefings/` and opens it in the hosted Chrome session when the session is live. Pass `--no-open` to render without opening a tab.
+
+### Extraction caches
+
+`evaluate-pending.mjs` and `sentiment-browser-extract.mjs` now reuse prior browser work across runs via JSON caches under `output/cache/`. The extraction cache is URL-keyed with status-aware TTLs (24h for active listings, 30d for inactive, 15m for blocked) so re-running evaluate over a still-open pipeline skips the slow Playwright navigation on unchanged listings. The sentiment cache is subdivision-keyed with a 6-hour TTL so shortlist siblings in the same neighborhood share a single Facebook/Nextdoor pass. Pass `--no-cache` to force fresh work or `--refresh-cache` to re-scrape and overwrite the cache entry. Inspect or clear the caches via `npm run cache:stats`, `npm run cache:clear`, `npm run cache:sentiment:stats`, and `npm run cache:sentiment:clear`.
 
 ## License
 

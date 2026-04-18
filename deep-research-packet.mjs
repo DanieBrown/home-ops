@@ -14,9 +14,12 @@ import {
   parseReport,
   parseShortlist,
 } from './research-utils.mjs';
+import { readConstructionRecord } from './construction-check.mjs';
 
 const OUTPUT_DIR = join(ROOT, 'output', 'deep-packets');
 const SENTIMENT_DIR = join(ROOT, 'output', 'sentiment');
+// Composite weights. construction_pressure is a modifier applied to resale_risk
+// rather than a new top-level slot so the sum still equals 1.0.
 const COMPOSITE_WEIGHTS = {
   property_fit: 0.35,
   neighborhood_sentiment: 0.25,
@@ -319,6 +322,36 @@ function decorateGenericPlan(entries) {
   }));
 }
 
+function summarizeConstruction(record) {
+  if (!record) {
+    return {
+      status: 'not-reviewed',
+      level: 'unknown',
+      constructionPressure: null,
+      phaseTotals: null,
+      matchCount: 0,
+      sourcesChecked: [],
+      matches: [],
+      note: 'construction-check.mjs has not been run for this home.',
+    };
+  }
+
+  return {
+    status: record.reviewed ? 'captured' : 'unreachable',
+    level: record.level,
+    constructionPressure: record.constructionPressure,
+    phaseTotals: record.phaseTotals,
+    matchCount: Array.isArray(record.matches) ? record.matches.length : 0,
+    sourcesChecked: record.sourcesChecked ?? [],
+    matches: (record.matches ?? []).slice(0, 5),
+    roadHints: record.roadHints ?? [],
+    counties: record.counties ?? [],
+    note: record.reviewed
+      ? null
+      : 'NCDOT index pages were unreachable during the last check; downstream workers should not rely on this signal.',
+  };
+}
+
 async function buildPacket(target, researchContext) {
   const sentimentPlan = buildSentimentSourcePlan(target, researchContext);
   const developmentPlan = buildDevelopmentSourcePlan(target, researchContext);
@@ -326,6 +359,7 @@ async function buildPacket(target, researchContext) {
   const sentimentPath = buildSentimentPath(target);
   const sentimentEvidence = readJsonIfExists(sentimentPath);
   const sentimentSummary = summarizeSentimentEvidence(sentimentEvidence, researchContext.profile.sentiment?.weights ?? {});
+  const constructionSummary = summarizeConstruction(readConstructionRecord(target));
   const audit = auditParsedReport(target);
   const criticalFindings = getCriticalAuditFindings(audit, {
     headings: ['Neighborhood Sentiment', 'School Review', 'Development and Infrastructure'],
@@ -384,6 +418,7 @@ async function buildPacket(target, researchContext) {
       sourceCoverage: sentimentSummary.sourceCoverage,
       weightedSignals: sentimentSummary.weightedSignals,
     },
+    constructionEvidence: constructionSummary,
     reportSections: {
       neighborhoodSentiment: target.sections['Neighborhood Sentiment'],
       schoolReview: target.sections['School Review'],
@@ -396,6 +431,8 @@ async function buildPacket(target, researchContext) {
       'Use profileWeights.sentiment and profileWeights.school when explaining metric importance and deep rerank changes.',
       'Do not claim browser-backed neighborhood sentiment if sentimentEvidence.status is not captured.',
       'Do not give full development confidence when NCDOT or local planning sources were not reviewed directly.',
+      'Treat constructionEvidence.level as a resale-risk modifier: "high" should lower the deep rerank unless the pressure is clearly benign (e.g. completed projects only).',
+      'If constructionEvidence.status is "not-reviewed" or "unreachable", flag construction risk as an open question rather than claiming clear air.',
     ],
   };
 
@@ -409,6 +446,8 @@ async function buildPacket(target, researchContext) {
     reportPath: target.relativePath,
     outputPath: toWorkspacePath(outputPath),
     sentimentStatus: sentimentSummary.status,
+    constructionStatus: constructionSummary.status,
+    constructionLevel: constructionSummary.level,
     developmentSources: packet.sourcePlans.development.entries.length,
     schoolSources: packet.sourcePlans.school.entries.length,
     auditBlockers: criticalFindings.length,
@@ -422,6 +461,7 @@ function printSummary(results) {
     console.log(`Report: ${result.reportPath}`);
     console.log(`Packet: ${result.outputPath}`);
     console.log(`Sentiment evidence: ${result.sentimentStatus}`);
+    console.log(`Construction evidence: ${result.constructionStatus} (${result.constructionLevel})`);
     console.log(`Development sources queued: ${result.developmentSources}`);
     console.log(`School sources queued: ${result.schoolSources}`);
     console.log(`Audit blockers carried forward: ${result.auditBlockers}`);

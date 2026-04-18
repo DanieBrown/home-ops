@@ -11,11 +11,38 @@ import {
   parseReport,
   parseShortlist,
 } from './research-utils.mjs';
+import {
+  CACHE_TTL,
+  getCacheEntry,
+  isCacheFresh,
+  loadCache,
+  pruneCache,
+  putCacheEntry,
+  saveCache,
+} from './cache-utils.mjs';
+
+const SENTIMENT_CACHE_NAME = 'sentiment';
 
 const DEFAULT_PROFILE = 'chrome-host';
 const OUTPUT_DIR = join(ROOT, 'output', 'sentiment');
 const SUPPORTED_BROWSER_SOURCES = new Set(['facebook', 'nextdoor']);
 const STOP_WORDS = new Set(['and', 'the', 'for', 'with', 'from', 'near', 'road', 'drive', 'lane', 'court', 'place']);
+
+// Rate-limit knobs -- defensive, not evasive. Keeps query bursts from tripping
+// account-level rate limits on FB/ND when the user has authorized automated crawl.
+const QUERY_PAUSE_MIN_MS = 2000;
+const QUERY_PAUSE_MAX_MS = 5000;
+const SCROLL_PAUSE_MIN_MS = 900;
+const SCROLL_PAUSE_MAX_MS = 1600;
+const MAX_SCROLLS_PER_PAGE = 3;
+const MAX_QUERIES_PER_SOURCE = 6;
+
+// Quick-mode caps trade depth for latency when deep is running a progressive
+// pass. The numbers are roughly half the normal depth, which in practice lands
+// each target at ~1/3 the wall-clock time because scroll pauses dominate.
+const QUICK_MAX_SCROLLS_PER_PAGE = 1;
+const QUICK_MAX_QUERIES_PER_SOURCE = 3;
+const MAX_CONCURRENCY = 4;
 
 const BLOCK_PATTERNS = [
   /log in/i,
@@ -41,16 +68,94 @@ const RECENT_PATTERNS = [
   /\b(?:[1-9]|[1-5]\d)\s*m(?:in|ins|inute|inutes)?\b/i,
 ];
 
-const POSITIVE_PATTERNS = [/quiet/i, /friendly/i, /great/i, /love/i, /safe/i, /calm/i, /family/i, /walkable/i, /convenient/i, /helpful/i];
-const NEGATIVE_PATTERNS = [/traffic/i, /noise/i, /noisy/i, /crime/i, /unsafe/i, /speeding/i, /accident/i, /construction/i, /congestion/i, /crowded/i, /break-?in/i, /theft/i];
+// Expanded KPI keyword set. Organized by sentiment weight category so each
+// profile weight maps to the signals used for it. Positive and negative
+// patterns feed the overall direction score; theme patterns drive per-category
+// KPI rollups. Case-insensitive; word-boundary where it matters.
+const POSITIVE_PATTERNS = [
+  /\bquiet\b/i, /\bfriendly\b/i, /\bgreat\b/i, /\blove\b/i, /\bsafe\b/i,
+  /\bcalm\b/i, /\bfamily/i, /\bwalkable\b/i, /\bconvenient\b/i, /\bhelpful\b/i,
+  /\bkid-?friendly\b/i, /\bpet-?friendly\b/i, /\bwell[-\s]?maintained\b/i,
+  /\bgood neighbors?\b/i, /\bclean\b/i, /\bupgraded\b/i, /\bbeautiful\b/i,
+  /\brecommend\b/i, /\bresponsive\b/i, /\bcommunity events?\b/i,
+];
+
+const NEGATIVE_PATTERNS = [
+  /\btraffic\b/i, /\bnois(?:e|y)\b/i, /\bcrime\b/i, /\bunsafe\b/i, /\bspeeding\b/i,
+  /\baccident\b/i, /\bconstruction\b/i, /\bcongestion\b/i, /\bcrowded\b/i,
+  /\bbreak[-\s]?in\b/i, /\btheft\b/i, /\bstolen\b/i, /\bprowler\b/i, /\bshots?\b/i,
+  /\bfight\b/i, /\bsuspicious\b/i, /\bflood(?:ing|ed)?\b/i, /\bstanding water\b/i,
+  /\bsinkhole\b/i, /\bsewage\b/i, /\bpackage (?:theft|stolen)\b/i,
+  /\bcut[-\s]?through\b/i, /\bbarking\b/i, /\bsirens?\b/i, /\bgunshots?\b/i,
+  /\bmeth\b/i, /\bhomeless(?:ness)?\b/i, /\bvandal/i, /\bgraffiti\b/i,
+  /\brudeness\b/i, /\bhoa (?:drama|violation|fine)/i, /\bpower outage\b/i,
+];
 
 const THEME_PATTERNS = {
-  crime_safety: [/crime/i, /unsafe/i, /police/i, /theft/i, /break-?in/i, /suspicious/i, /safety/i, /speeding/i, /accident/i],
-  traffic_commute: [/traffic/i, /commute/i, /backup/i, /bottleneck/i, /congestion/i, /school pickup/i, /road work/i, /widening/i],
-  community: [/community/i, /neighbor/i, /neighborhood/i, /hoa/i, /family/i, /friendly/i, /event/i, /group/i],
-  school_quality: [/school/i, /teacher/i, /student/i, /elementary/i, /middle school/i, /high school/i, /bus/i, /carpool/i],
-  livability: [/park/i, /trail/i, /grocery/i, /restaurant/i, /noise/i, /quiet/i, /playground/i, /urgent care/i, /daycare/i],
+  // profile.sentiment.weights.crime_safety (0.25)
+  crime_safety: [
+    /\bcrime\b/i, /\bunsafe\b/i, /\bpolice\b/i, /\btheft\b/i, /\bstolen\b/i,
+    /\bbreak[-\s]?in\b/i, /\bsuspicious\b/i, /\bsafety\b/i, /\bprowler\b/i,
+    /\bshots?\b/i, /\bgunshots?\b/i, /\bfight\b/i, /\bvandal/i,
+    /\bpackage (?:theft|stolen)\b/i, /\bcar (?:broken into|break[-\s]?in)\b/i,
+    /\bsirens?\b/i, /\bshelter[-\s]?in[-\s]?place\b/i, /\blockdown\b/i,
+  ],
+  // profile.sentiment.weights.traffic_commute (0.20)
+  traffic_commute: [
+    /\btraffic\b/i, /\bcommute\b/i, /\bbackup\b/i, /\bbottleneck\b/i,
+    /\bcongestion\b/i, /\bschool pickup\b/i, /\broad work\b/i, /\bwidening\b/i,
+    /\bspeeding\b/i, /\bcut[-\s]?through\b/i, /\bstop sign\b/i, /\brunning (?:the )?light\b/i,
+    /\baccident\b/i, /\bcrash\b/i, /\bfender[-\s]?bender\b/i,
+    /\bdetour\b/i, /\broad clos(?:ed|ure)\b/i, /\bchoke[-\s]?point\b/i,
+    /\broundabout\b/i, /\brush hour\b/i,
+  ],
+  // profile.sentiment.weights.community (0.20)
+  community: [
+    /\bcommunity\b/i, /\bneighbor/i, /\bhoa\b/i, /\bfamily/i, /\bfriendly\b/i,
+    /\bevent/i, /\bgroup\b/i, /\bfacebook group\b/i, /\bblock party\b/i,
+    /\bpool\b/i, /\bclubhouse\b/i, /\bamenity\b/i, /\bplayground\b/i,
+    /\byard sale\b/i, /\bwelcome/i, /\bkid-?friendly\b/i, /\bpet-?friendly\b/i,
+    /\bdog park\b/i, /\bhoa (?:drama|meeting|violation|fine|board)/i,
+  ],
+  // profile.sentiment.weights.school_quality (0.20)
+  school_quality: [
+    /\bschool\b/i, /\bteacher/i, /\bstudent/i, /\belementary\b/i,
+    /\bmiddle school\b/i, /\bhigh school\b/i, /\bbus\b/i, /\bcarpool\b/i,
+    /\bpta\b/i, /\bptsa\b/i, /\bredistricting\b/i, /\bprincipal\b/i,
+    /\btest scores?\b/i, /\bgifted\b/i, /\baig\b/i, /\bspecial (?:ed|education)\b/i,
+    /\bdrop[-\s]?off\b/i, /\bpick[-\s]?up\b/i, /\bafter[-\s]?school\b/i,
+  ],
+  // profile.sentiment.weights.livability (0.15)
+  livability: [
+    /\bpark\b/i, /\btrail\b/i, /\bgrocery\b/i, /\brestaurant\b/i, /\bnois(?:e|y)\b/i,
+    /\bquiet\b/i, /\bplayground\b/i, /\burgent care\b/i, /\bdaycare\b/i,
+    /\bwalkable\b/i, /\bbike\b/i, /\bgreenway\b/i, /\bsidewalk\b/i,
+    /\bgarbage\b/i, /\btrash (?:pickup|pick[-\s]?up|day)\b/i, /\brecycl/i,
+    /\bmail\b/i, /\bamazon\b/i, /\bups\b/i, /\bfedex\b/i, /\bdelivery\b/i,
+    /\binternet\b/i, /\bspectrum\b/i, /\bgoogle fiber\b/i, /\bat&?t fiber\b/i,
+    /\bpower outage\b/i, /\bwater pressure\b/i, /\bwell water\b/i, /\bseptic\b/i,
+  ],
+  // Development/construction pressure signals -- not a profile weight today but
+  // contributes to the construction flag consumed by deep-research-packet.
+  construction_pressure: [
+    /\bconstruction\b/i, /\bclearing\b/i, /\bbulldozer\b/i, /\bnew build\b/i,
+    /\brezoning\b/i, /\bpermit\b/i, /\bdevelopment\b/i, /\bsubdivision\b/i,
+    /\bbreaking ground\b/i, /\bgroundbreaking\b/i, /\btree clearing\b/i,
+    /\blot clearing\b/i, /\bgrading\b/i, /\bheavy equipment\b/i,
+  ],
+  // Environmental risks -- feed negatives on crime_safety and livability.
+  environmental: [
+    /\bflood(?:ing|ed)?\b/i, /\bstanding water\b/i, /\bdrainage\b/i,
+    /\bsinkhole\b/i, /\brunoff\b/i, /\bcreek\b/i, /\bsewage\b/i, /\bsewer backup\b/i,
+    /\bmold\b/i, /\bpest\b/i, /\btermite\b/i, /\bmosquito/i,
+  ],
 };
+
+function randomDelay(minMs, maxMs) {
+  const span = Math.max(0, maxMs - minMs);
+  const jitter = Math.floor(Math.random() * (span + 1));
+  return new Promise((resolve) => setTimeout(resolve, minMs + jitter));
+}
 
 const HELP_TEXT = `Usage:
   node sentiment-browser-extract.mjs reports/003-foo.md
@@ -70,6 +175,10 @@ Options:
   --county <value>     Manual county hint.
   --subdivision <val>  Manual subdivision or community hint.
   --profile <name>     Hosted browser profile to reuse. Defaults to chrome-host.
+  --no-cache           Skip the per-neighborhood sentiment cache for this run.
+  --refresh-cache      Re-scrape every target but still update the cache with fresh results.
+  --quick              Cap queries and scrolls for a fast progressive pass (roughly 1/3 wall-clock).
+  --concurrency <N>    Extract up to N targets in parallel (default 1, max 4).
   --json               Print JSON instead of human-readable text.
   --help               Show this help text.`;
 
@@ -85,6 +194,10 @@ function parseArgs(argv) {
     profileName: DEFAULT_PROFILE,
     json: false,
     help: false,
+    noCache: false,
+    refreshCache: false,
+    quick: false,
+    concurrency: 1,
     files: [],
   };
 
@@ -143,6 +256,31 @@ function parseArgs(argv) {
 
     if (arg === '--profile') {
       config.profileName = argv[index + 1] ?? DEFAULT_PROFILE;
+      index += 1;
+      continue;
+    }
+
+    if (arg === '--no-cache') {
+      config.noCache = true;
+      continue;
+    }
+
+    if (arg === '--refresh-cache') {
+      config.refreshCache = true;
+      continue;
+    }
+
+    if (arg === '--quick') {
+      config.quick = true;
+      continue;
+    }
+
+    if (arg === '--concurrency') {
+      const value = Number.parseInt(argv[index + 1] ?? '', 10);
+      if (!Number.isFinite(value) || value < 1) {
+        throw new Error('Expected a positive integer after --concurrency.');
+      }
+      config.concurrency = Math.min(MAX_CONCURRENCY, value);
       index += 1;
       continue;
     }
@@ -374,6 +512,20 @@ function summarizeThemes(snippets) {
   return [...themes.values()].sort((left, right) => right.hits - left.hits);
 }
 
+async function autoScrollForMoreResults(page, maxScrolls = MAX_SCROLLS_PER_PAGE) {
+  for (let pass = 0; pass < maxScrolls; pass += 1) {
+    const beforeHeight = await page.evaluate(() => document.body?.scrollHeight ?? 0).catch(() => 0);
+    await page.evaluate(() => {
+      window.scrollTo({ top: document.body.scrollHeight, behavior: 'instant' });
+    }).catch(() => {});
+    await randomDelay(SCROLL_PAUSE_MIN_MS, SCROLL_PAUSE_MAX_MS);
+    const afterHeight = await page.evaluate(() => document.body?.scrollHeight ?? 0).catch(() => 0);
+    if (afterHeight <= beforeHeight) {
+      break;
+    }
+  }
+}
+
 async function collectPageData(page) {
   return page.evaluate(() => {
     const normalize = (value) => String(value ?? '').replace(/\u00a0/g, ' ').replace(/\s+/g, ' ').trim();
@@ -423,8 +575,9 @@ function detectBlockedReason(pageData) {
   return match ? match.source : null;
 }
 
-async function extractSourceQuery(context, source, query) {
+async function extractSourceQuery(context, source, query, options = {}) {
   const attempts = [];
+  const maxScrolls = options.quick ? QUICK_MAX_SCROLLS_PER_PAGE : MAX_SCROLLS_PER_PAGE;
 
   for (const searchUrl of buildSearchUrlCandidates(source.key, query)) {
     const page = await context.newPage();
@@ -433,6 +586,9 @@ async function extractSourceQuery(context, source, query) {
       await page.goto(searchUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
       await page.waitForTimeout(2500);
       await page.waitForSelector('article, [role="article"]', { timeout: 4000 }).catch(() => {});
+      // Automated crawl: load more posts past the initial viewport so the
+      // snippet pool reflects recent activity, not just the first page.
+      await autoScrollForMoreResults(page, maxScrolls);
       const pageData = await collectPageData(page);
       const blockedReason = detectBlockedReason(pageData);
 
@@ -495,14 +651,110 @@ function buildTargetOutputPath(target) {
   return join(OUTPUT_DIR, `${slug}.json`);
 }
 
-async function extractTarget(context, target, researchContext) {
+function rollupKpiScores(sourceResults, weights = {}) {
+  const categories = new Map();
+  for (const source of sourceResults) {
+    for (const query of source.queryResults ?? []) {
+      if (query.status !== 'ok') continue;
+      for (const theme of query.themes ?? []) {
+        const entry = categories.get(theme.category) ?? {
+          category: theme.category,
+          hits: 0,
+          recentHits: 0,
+          positiveHits: 0,
+          negativeHits: 0,
+          contributingSources: new Set(),
+          examples: [],
+        };
+        entry.hits += Number(theme.hits ?? 0);
+        entry.recentHits += Number(theme.recentHits ?? 0);
+        entry.positiveHits += Number(theme.positiveHits ?? 0);
+        entry.negativeHits += Number(theme.negativeHits ?? 0);
+        entry.contributingSources.add(source.key);
+        entry.examples.push(...(theme.examples ?? []).slice(0, 2));
+        categories.set(theme.category, entry);
+      }
+    }
+  }
+
+  return [...categories.values()].map((entry) => {
+    const weight = Number(weights?.[entry.category] ?? 0);
+    // Signal: negatives subtract from positives; recency acts as a 1.5x multiplier.
+    const rawDirection = entry.positiveHits - entry.negativeHits;
+    const recencyMultiplier = entry.hits > 0 ? 1 + 0.5 * (entry.recentHits / entry.hits) : 1;
+    const signalScore = Number((rawDirection * recencyMultiplier).toFixed(3));
+    const weightedScore = Number((signalScore * (weight || 0)).toFixed(3));
+    return {
+      category: entry.category,
+      weight,
+      hits: entry.hits,
+      recentHits: entry.recentHits,
+      positiveHits: entry.positiveHits,
+      negativeHits: entry.negativeHits,
+      signalScore,
+      weightedScore,
+      contributingSources: [...entry.contributingSources],
+      examples: dedupeStrings(entry.examples).slice(0, 2),
+    };
+  }).sort((a, b) => Math.abs(b.weightedScore) - Math.abs(a.weightedScore));
+}
+
+function normalizeCacheToken(value) {
+  return String(value ?? '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+}
+
+function buildSentimentCacheKey(target, sentimentPlan) {
+  const hint = sentimentPlan?.subdivisionHints?.[0] || target.address || '';
+  const city = target.city || '';
+  const state = target.state || '';
+  const key = `${normalizeCacheToken(hint)}::${normalizeCacheToken(city)}::${normalizeCacheToken(state)}`;
+  return key === '::' + '::' ? '' : key;
+}
+
+async function extractTarget(context, target, researchContext, cacheState, options = {}) {
+  const quick = Boolean(options.quick);
+  const maxQueries = quick ? QUICK_MAX_QUERIES_PER_SOURCE : MAX_QUERIES_PER_SOURCE;
   const sentimentPlan = buildSentimentSourcePlan(target, researchContext);
+  const cacheKey = buildSentimentCacheKey(target, sentimentPlan);
+
+  if (cacheState?.cache && !cacheState.disabled && !cacheState.refresh && cacheKey) {
+    const existing = getCacheEntry(cacheState.cache, cacheKey);
+    if (existing && isCacheFresh(existing, CACHE_TTL.SENTIMENT_MS) && existing.sources) {
+      cacheState.hits += 1;
+      const cachedOutput = {
+        generatedAt: new Date().toISOString(),
+        address: target.address,
+        city: target.city,
+        state: target.state,
+        reportPath: target.relativePath,
+        subdivisionHints: sentimentPlan.subdivisionHints,
+        roadHints: sentimentPlan.roadHints,
+        schoolNames: sentimentPlan.schoolNames,
+        kpiWeights: existing.kpiWeights ?? {},
+        kpiRollup: existing.kpiRollup ?? {},
+        sources: existing.sources,
+        fromCache: true,
+        cachedFrom: existing.cacheKey ?? cacheKey,
+      };
+      const outputPath = buildTargetOutputPath(target);
+      await mkdir(OUTPUT_DIR, { recursive: true });
+      await writeFile(outputPath, `${JSON.stringify(cachedOutput, null, 2)}\n`, 'utf8');
+      return { ...cachedOutput, outputPath };
+    }
+  }
+
   const sourceResults = [];
 
   for (const source of sentimentPlan.entries.filter((entry) => entry.browserSupported && SUPPORTED_BROWSER_SOURCES.has(entry.key))) {
     const queryResults = [];
-    for (const query of source.recommendedQueries.slice(0, 4)) {
-      queryResults.push(await extractSourceQuery(context, source, query));
+    const queries = source.recommendedQueries.slice(0, maxQueries);
+    for (let index = 0; index < queries.length; index += 1) {
+      if (index > 0) {
+        // Pause between queries so burst rate stays low -- reduces risk of
+        // account-level rate limits kicking in mid-run.
+        await randomDelay(QUERY_PAUSE_MIN_MS, QUERY_PAUSE_MAX_MS);
+      }
+      queryResults.push(await extractSourceQuery(context, source, queries[index], { quick }));
     }
 
     sourceResults.push({
@@ -515,6 +767,9 @@ async function extractTarget(context, target, researchContext) {
     });
   }
 
+  const kpiWeights = researchContext.profile?.sentiment?.weights ?? {};
+  const kpiRollup = rollupKpiScores(sourceResults, kpiWeights);
+
   const output = {
     generatedAt: new Date().toISOString(),
     address: target.address,
@@ -524,12 +779,25 @@ async function extractTarget(context, target, researchContext) {
     subdivisionHints: sentimentPlan.subdivisionHints,
     roadHints: sentimentPlan.roadHints,
     schoolNames: sentimentPlan.schoolNames,
+    kpiWeights,
+    kpiRollup,
     sources: sourceResults,
   };
 
   const outputPath = buildTargetOutputPath(target);
   await mkdir(OUTPUT_DIR, { recursive: true });
   await writeFile(outputPath, `${JSON.stringify(output, null, 2)}\n`, 'utf8');
+
+  if (cacheState?.cache && !cacheState.disabled && cacheKey) {
+    putCacheEntry(cacheState.cache, cacheKey, {
+      kpiWeights,
+      kpiRollup,
+      sources: sourceResults,
+      cacheKey,
+    });
+    cacheState.dirty = true;
+    cacheState.misses += 1;
+  }
 
   return {
     ...output,
@@ -585,23 +853,58 @@ async function main() {
   const session = await ensureHostedSession(config.profileName);
   const browser = await chromium.connectOverCDP(session.cdpUrl, { timeout: 30000, isLocal: true });
 
+  const sentimentCache = config.noCache ? { entries: {} } : await loadCache(SENTIMENT_CACHE_NAME);
+  if (!config.noCache) {
+    pruneCache(sentimentCache, CACHE_TTL.DEFAULT_PRUNE_MS);
+  }
+  const cacheState = {
+    cache: sentimentCache,
+    disabled: Boolean(config.noCache),
+    refresh: Boolean(config.refreshCache),
+    hits: 0,
+    misses: 0,
+    dirty: false,
+  };
+
   try {
     const context = browser.contexts()[0];
     if (!context) {
       throw new Error('Hosted browser session is running, but no default context was exposed.');
     }
 
-    const results = [];
-    for (const target of targets) {
-      results.push(await extractTarget(context, target, researchContext));
+    const results = new Array(targets.length);
+    let nextIndex = 0;
+    const workerCount = Math.min(config.concurrency, targets.length) || 1;
+    const workers = Array.from({ length: workerCount }, async () => {
+      while (true) {
+        const index = nextIndex;
+        nextIndex += 1;
+        if (index >= targets.length) {
+          return;
+        }
+        results[index] = await extractTarget(context, targets[index], researchContext, cacheState, { quick: config.quick });
+      }
+    });
+    await Promise.all(workers);
+
+    if (!config.noCache && cacheState.dirty) {
+      await saveCache(SENTIMENT_CACHE_NAME, sentimentCache);
     }
 
     if (config.json) {
-      console.log(JSON.stringify({ profile: config.profileName, count: results.length, results }, null, 2));
+      console.log(JSON.stringify({
+        profile: config.profileName,
+        count: results.length,
+        cache: { hits: cacheState.hits, misses: cacheState.misses },
+        results,
+      }, null, 2));
       return;
     }
 
     printSummary(results);
+    if (!config.noCache) {
+      console.log(`Sentiment cache: ${cacheState.hits} hit(s), ${cacheState.misses} miss(es)`);
+    }
   } finally {
     await browser.close().catch(() => {});
   }
