@@ -36,7 +36,7 @@ Options:
   --profile <name>   Hosted browser profile to reuse. Defaults to chrome-host.
   --group <name>     Optional Chrome tab-group title.
   --color <name>     Chrome tab-group color. Defaults to blue.
-  --replace          Close all other tabs in the hosted Chrome window before opening targets.
+  --replace          Close all other top-level tabs across the hosted Chrome session before opening targets.
   --skip-finalist-gate  Allow shortlist-top3 to bypass the strict research gate.
   --dry-run          Resolve the target URLs and print them without changing Chrome.
   --help             Show this help text.
@@ -350,8 +350,92 @@ function isBridgeBlockedError(error) {
     || message.includes('window.homeOpsReviewTabs');
 }
 
-async function openReviewTabsDirectly(context, urls, config, session) {
-  const existingPages = context.pages().filter((page) => !page.isClosed());
+async function fetchCdpJson(cdpUrl, endpoint, init = {}) {
+  const response = await fetch(`${cdpUrl}${endpoint}`, init);
+  const text = await response.text();
+
+  if (!response.ok) {
+    throw new Error(`CDP request failed for ${endpoint}: ${response.status} ${response.statusText}`);
+  }
+
+  if (!text.trim()) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(text);
+  } catch {
+    return text;
+  }
+}
+
+async function listTopLevelPageTargets(cdpUrl) {
+  const targets = await fetchCdpJson(cdpUrl, '/json/list');
+  return Array.isArray(targets)
+    ? targets.filter((target) => target?.type === 'page' && target.id)
+    : [];
+}
+
+async function openPageTarget(cdpUrl, url) {
+  const encodedUrl = encodeURIComponent(url);
+
+  try {
+    return await fetchCdpJson(cdpUrl, `/json/new?${encodedUrl}`, { method: 'PUT' });
+  } catch (error) {
+    const message = String(error?.message ?? error);
+    if (!message.includes('405')) {
+      throw error;
+    }
+
+    return fetchCdpJson(cdpUrl, `/json/new?${encodedUrl}`);
+  }
+}
+
+async function closePageTarget(cdpUrl, id) {
+  await fetchCdpJson(cdpUrl, `/json/close/${id}`);
+}
+
+async function activatePageTarget(cdpUrl, id) {
+  await fetchCdpJson(cdpUrl, `/json/activate/${id}`);
+}
+
+async function replaceHostedTabsViaCdp(cdpUrl, urls, session) {
+  const existingTargets = await listTopLevelPageTargets(cdpUrl);
+  const createdTargets = [];
+
+  for (const url of urls) {
+    const target = await openPageTarget(cdpUrl, url);
+    if (target?.id) {
+      createdTargets.push(target);
+    }
+  }
+
+  for (const target of existingTargets) {
+    await closePageTarget(cdpUrl, target.id).catch(() => {});
+  }
+
+  const createdTargetIds = new Set(createdTargets.map((target) => target.id).filter(Boolean));
+  const lingeringTargets = (await listTopLevelPageTargets(cdpUrl))
+    .filter((target) => target.id && !createdTargetIds.has(target.id));
+
+  for (const target of lingeringTargets) {
+    await closePageTarget(cdpUrl, target.id).catch(() => {});
+  }
+
+  if (createdTargets[0]?.id) {
+    await activatePageTarget(cdpUrl, createdTargets[0].id).catch(() => {});
+  }
+
+  console.log(`Opened ${createdTargets.length} finalist tabs in hosted Chrome.`);
+  console.log(`Closed ${existingTargets.length + lingeringTargets.length} non-finalist hosted tabs across the session.`);
+  console.log(`Hosted session: ${session.reusedExisting ? 'reused' : 'reopened'}`);
+  console.log('Review helper: raw CDP replacement');
+}
+
+async function openReviewTabsDirectly(browser, context, urls, config, session) {
+  const existingPages = browser.contexts()
+    .flatMap((currentContext) => currentContext.pages())
+    .filter((page) => !page.isClosed());
   const openedPages = [];
 
   for (const url of urls) {
@@ -371,6 +455,9 @@ async function openReviewTabsDirectly(context, urls, config, session) {
   }
 
   console.log(`Opened ${openedPages.length} review tabs in hosted Chrome.`);
+  if (config.replaceExisting) {
+    console.log(`Closed ${existingPages.length} existing hosted tabs before leaving the finalists.`);
+  }
   if (config.groupTitle) {
     console.log(`Tab group skipped because the review extension bridge was unavailable: ${config.groupTitle}`);
   }
@@ -417,6 +504,12 @@ async function run() {
   }
 
   const session = await ensureHostedBrowserSession(projectRoot, config.profileName);
+
+  if (config.replaceExisting) {
+    await replaceHostedTabsViaCdp(session.cdpUrl, urls, session);
+    return;
+  }
+
   const browser = await chromium.connectOverCDP(session.cdpUrl, {
     timeout: DEFAULT_TIMEOUT_MS,
     isLocal: true,
@@ -455,7 +548,7 @@ async function run() {
 
         console.warn('Review extension bridge unavailable; falling back to direct tab control.');
         await bridgePage.close().catch(() => {});
-        await openReviewTabsDirectly(context, urls, {
+        await openReviewTabsDirectly(browser, context, urls, {
           replaceExisting: config.replaceExisting,
           groupTitle: effectiveGroupTitle,
         }, session);

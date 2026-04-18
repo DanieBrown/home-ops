@@ -121,6 +121,7 @@ const scripts = [
   'research-source-plan.mjs --top3 --type development',
   'research-source-plan.mjs --top3 --type sentiment',
   'sentiment-browser-extract.mjs --help',
+  'deep-research-packet.mjs --top3',
   'shortlist-finalist-gate.mjs --help',
   'doctor.mjs',
   'profile-sync-check.mjs',

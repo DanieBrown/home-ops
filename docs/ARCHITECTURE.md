@@ -27,7 +27,7 @@ Expected behavior:
 4. Update `buyer-profile.md`, `config/profile.yml`, and `modes/_profile.md`.
 5. Run `profile-sync-check.mjs`.
 
-The normalized weights currently influence agent judgment and research emphasis. They are not yet backed by a separate deterministic scoring engine that consumes structured neighborhood, school, and development source records.
+The normalized weights currently influence agent judgment and research emphasis. They are not yet backed by a separate deterministic scoring engine that consumes structured neighborhood, school, and development source records. Deep mode now bridges that gap with per-home packets under `output/deep-packets/` so workers receive explicit source coverage, captured browser evidence, and weighted signal rollups before reranking.
 
 ## Hunt Flow
 
@@ -103,8 +103,9 @@ Expected behavior:
 2. Evaluate with no explicit target can write up to the top ten viable homes into `data/shortlist.md` as the latest saved review cohort, and compare can overwrite that same file with a comparison-derived top ten.
 3. Deep reads that current shortlist file when the user asks for a batch deep dive on the saved top ten.
 4. Deep can run a hosted-browser Facebook and Nextdoor extraction pass against that shortlist before the worker research begins.
-5. Deep launches one subagent per shortlisted home, writes a combined brief such as `reports/deep-shortlist-{YYYY-MM-DD}.md`, and keeps the final rerank in the main agent.
-6. Deep reruns the compare framework on that shortlisted set using the new research, updates `data/shortlist.md` with the refined top three, validates them with `shortlist-finalist-gate.mjs`, and only then opens the refined finalists in separate browser tabs.
+5. Deep materializes one packet per shortlisted home under `output/deep-packets/` with the report baseline, research-audit blockers, source-plan entries, configured weights, and any captured Facebook or Nextdoor summary so workers do not have to infer those metrics.
+6. Deep launches one subagent per shortlisted home, requires source-coverage and weighted-metric fields in each worker result, writes a combined brief such as `reports/deep-shortlist-{YYYY-MM-DD}.md`, and keeps the final rerank in the main agent.
+7. Deep reruns the compare framework on that shortlisted set using the new research, updates `data/shortlist.md` with the refined top three, validates them with `shortlist-finalist-gate.mjs`, and only then opens the refined finalists in separate browser tabs.
 
 ## Tracker Model
 

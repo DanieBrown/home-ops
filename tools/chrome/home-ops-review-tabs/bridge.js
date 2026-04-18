@@ -64,10 +64,10 @@ async function openReviewTabs({ urls, groupTitle = null, groupColor = 'blue', re
     throw new Error('Could not resolve the current Chrome window for review tab management.');
   }
 
-  const existingTabs = await queryTabs({ windowId: currentTab.windowId });
+  const existingWindowTabs = await queryTabs({ windowId: currentTab.windowId });
 
   if (replaceExisting) {
-    const removableTabIds = existingTabs
+    const removableTabIds = (await queryTabs({}))
       .map((tab) => tab.id)
       .filter((tabId) => Number.isInteger(tabId) && tabId !== currentTab.id);
 
@@ -76,6 +76,10 @@ async function openReviewTabs({ urls, groupTitle = null, groupColor = 'blue', re
 
   const createdTabs = [];
   let nextIndex = Number.isInteger(currentTab.index) ? currentTab.index + 1 : undefined;
+
+  if (!Number.isInteger(nextIndex)) {
+    nextIndex = existingWindowTabs.length;
+  }
 
   for (let index = 0; index < normalizedUrls.length; index += 1) {
     const createdTab = await createTab({
