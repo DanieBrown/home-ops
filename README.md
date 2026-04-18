@@ -1,28 +1,14 @@
 # Home-Ops
 
-Home-Ops is an AI-assisted home search pipeline for evaluating listings, comparing tradeoffs, scanning portals, tracking decisions, and researching neighborhoods.
+An AI-assisted home search pipeline built on Claude Code. It helps you evaluate listings, compare tradeoffs, scan portals, track decisions, and research neighborhoods — designed for decision quality, not inventory volume.
 
-Phase 1 is intentionally lean:
-- guided buyer-profile setup and weighting refresh
-- evaluate one listing or batch-evaluate the pending pipeline
-- run the full hunt workflow as one reset-scan-evaluate sequence
-- compare multiple homes
-- scan configured portals
-- track listing status
-- run deeper neighborhood or school research
+## Highlights
 
-The system is built for decision quality, not volume. It should help the buyer reject weak listings quickly and focus energy on the few homes worth touring.
-
-## Core Features
-
-- Interactive buyer-profile capture that updates the buyer-layer files
-- Listing evaluation with hard-requirement gating and 1.0 to 5.0 scoring
-- Batch evaluation of pending pipeline homes with dedupe and safe tracker merges
-- One-command hunt workflow for reset, scan, and evaluate
-- Neighborhood, school, and development-risk research
-- Portal scanning through saved Zillow, Redfin, and Realtor.com searches
-- Markdown tracker with status normalization, deduplication, and verification scripts
-- Go dashboard for a terminal-based view of the pipeline
+- Guided buyer-profile setup with weighted scoring that adapts to what you care about
+- One-command hunt workflow that resets state, scans portals, and evaluates in a single run
+- Hosted Chrome session so Zillow, Redfin, Realtor.com, Facebook, and Nextdoor logins survive across scans
+- Deep-research workflow that fans out one subagent per shortlisted home and produces a clickable top-3 briefing PDF
+- Markdown tracker with dedup, status normalization, and a Go-based terminal dashboard
 
 ## Quick Start
 
@@ -36,165 +22,167 @@ cp templates/portals.example.yml portals.yml
 cp modes/_profile.template.md modes/_profile.md
 ```
 
-If Zillow, Redfin, or Realtor.com reject the default Playwright browser during sign-in, use the hosted real-Chrome setup path instead of logging in inside a Playwright-launched browser:
+Then set up the hosted browser session so portal logins persist:
 
 ```bash
 /home-ops init
-
-# low-level terminal equivalent
-npm run browser:setup
 ```
 
-`browser:setup` reads `portals.yml`, launches a real local hosted browser window with a separate repo-local user-data-dir under `output/browser-sessions/chrome-host`, opens the configured login-required browser targets such as Zillow, Redfin, Realtor.com, Facebook, and Nextdoor, writes session state to `output/browser-sessions/chrome-host/session-state.json`, and appends lifecycle entries to `batch/logs/browser-sessions.tsv`. It prefers local Chrome, but now falls back to Edge or Chromium when Chrome is not installed. Playwright can later attach to that running browser over CDP instead of forcing login to happen inside an automated browser instance.
+From there, you can paste a listing URL, run a scan, or kick off a full hunt. If you'd rather answer a few questions than hand-edit config, run `/home-ops profile`.
 
-If you only need to refresh one platform, run a targeted bootstrap such as:
+> On Windows PowerShell, use `npm.cmd` instead of `npm` if execution policy blocks `npm.ps1`.
 
-```bash
-/home-ops init --zillow --redfin --relator
-/home-ops init --facebook --nextdoor
-/home-ops init --greatschools
+## Slash Commands
 
-# low-level terminal equivalents
-npm run browser:session -- --hosted --zillow --channel chrome
-npm run browser:session -- --hosted --redfin --channel chrome
-npm run browser:session -- --hosted --relator --channel chrome
-npm run browser:session -- --hosted --facebook --nextdoor --channel chrome
-npm run browser:session -- --hosted --greatschools --channel chrome
-```
+The main command surface. Each one routes through the Home-Ops skill.
 
-`--greatschools` is the direct school-research bootstrap path. It does not change the default `browser:setup` target set, but it gives the hosted Playwright/CDP session a first-class GreatSchools target when you want direct school pages available in the browser instead of falling back to search snippets.
+| Command | What it does |
+|---|---|
+| `/home-ops` | Show the menu, or evaluate a listing when given a URL |
+| `/home-ops {listing-url}` | Evaluate a single listing |
+| `/home-ops profile` | Interview-style buyer-profile setup with multi-select defaults |
+| `/home-ops init` | Launch or refresh the hosted Chrome session for portal logins |
+| `/home-ops hunt` | Reset → scan → evaluate in one pass (requires an open hosted session) |
+| `/home-ops evaluate` | Batch-evaluate the pending pipeline |
+| `/home-ops evaluate {url-or-address}` | Evaluate one listing directly |
+| `/home-ops compare` | Compare multiple homes and pick a top 10 |
+| `/home-ops scan` | Scan configured portal searches for new listings |
+| `/home-ops scan --zillow --redfin --relator` | Scope a scan to specific portals |
+| `/home-ops reset` | Clear generated state (reports, tracker rows, pipeline, scan history) |
+| `/home-ops tracker` | Show or update listing status |
+| `/home-ops deep` | Deep dive on a property, area, or the current shortlist |
 
-Leave the hosted browser running while you scan or verify listings. Check the current repo-local session status with `npm run browser:status`. Reuse that session in Playwright-backed checks with `node check-liveness.mjs --profile chrome-host <listing-url>`. Realtor.com may still return a block page even with a real browser session; treat that as blocked rather than active.
+`/home-ops init` accepts the same portal flags as scan (`--zillow`, `--redfin`, `--relator`, `--facebook`, `--nextdoor`, `--greatschools`) when you only need to refresh one platform's login.
 
-To launch the terminal dashboard with one repo-level command, run `npm run dashboard`. To build a standalone dashboard binary, run `npm run dashboard:build`.
+## npm Scripts
 
-On Windows PowerShell, use `npm.cmd` instead of `npm` if execution policy blocks `npm.ps1`.
+Lower-level scripts used by the slash commands or run directly when you want fine-grained control.
 
-Then create or customize:
-- `buyer-profile.md`
-- `config/profile.yml`
-- `portals.yml`
+### Hosted browser session
 
-If you want guided setup instead of manual edits, run `/home-ops profile` and let Home-Ops interview you and map the answers back into the buyer files.
+| Script | Purpose |
+|---|---|
+| `npm run browser:setup` | Launch the hosted Chrome session (Chrome → Edge → Chromium fallback) |
+| `npm run browser:setup:edge` | Launch the hosted session on Microsoft Edge |
+| `npm run browser:status` | Show status of the `chrome-host` session |
+| `npm run browser:session` | Low-level session control — see `--help` |
+| `npm run browser:review -- <command>` | Open review tabs in the hosted session (used by `deep`) |
 
-## Commands
+### Evaluate and scan
 
-The main command surface is:
+| Script | Purpose |
+|---|---|
+| `npm run scan` | Run a portal scan from the terminal |
+| `npm run evaluate:pending` | Deterministic batch evaluator for the pending pipeline |
+| `npm run liveness` | Playwright-backed listing liveness check |
+| `npm run reset:data` | Low-level equivalent of `/home-ops reset` |
 
-```text
-/home-ops {listing-url}
-/home-ops profile
-/home-ops init
-/home-ops hunt
-/home-ops init --zillow --redfin --relator
-/home-ops evaluate
-/home-ops evaluate {listing-url-or-address}
-/home-ops compare
-/home-ops scan
-/home-ops scan --zillow --redfin --relator
-/home-ops reset
-/home-ops tracker
-/home-ops deep
-```
+### Research pipeline
 
-`/home-ops {listing-url}` or `/home-ops evaluate {listing-url-or-address}` evaluates one property.
+| Script | Purpose |
+|---|---|
+| `npm run plan:research` | Build a sentiment/school/development lookup plan from `portals.yml` |
+| `npm run extract:sentiment` | Capture Facebook and Nextdoor evidence through the hosted session |
+| `npm run check:construction` | Fetch NCDOT project-index pages and score construction pressure |
+| `npm run prepare:deep` | Assemble a per-home packet for deep-mode subagents |
+| `npm run audit:research` | Audit whether evidence was actually sourced vs. merely expected |
+| `npm run gate:finalists` | Gate the refined top 3 against the strict research evidence bar |
+| `npm run brief:top3` | Render the top-3 finalist PDF briefing and open it in hosted Chrome |
 
-`/home-ops profile` asks a guided series of questions using short default option sets, multi-select preference lists, and custom follow-ups when needed, then converts the answers into normalized weights and updates `buyer-profile.md`, `config/profile.yml`, and `modes/_profile.md`. Scan now syncs the portal filter ranges from `config/profile.yml` at runtime, so `portals.yml` mainly needs to keep the right area paths, source settings, and login prompts. The stored neighborhood and school weights currently guide evaluator judgment and research emphasis; phase 1 does not yet have a separate deterministic scoring engine that computes every subscore directly from structured source data. Deep mode now materializes one packet per shortlisted home under `output/deep-packets/` so subagents receive the configured source plan, captured Facebook or Nextdoor summaries, audit blockers, and weighted metric context explicitly instead of relying on a loose narrative handoff.
+Add `--no-open` to `brief:top3` to render without opening a tab. Add `--shortlist` or `--top3` to the research scripts to scope them to the current cohort.
 
-`/home-ops hunt` runs `reset`, then `scan`, then `evaluate` in sequence. It requires that `/home-ops init` has already been run and that the hosted browser session is still open. Hunt is intentionally opinionated and destructive to generated state because it starts with reset; use the separate commands when you want finer control.
+### Tracker maintenance
 
-`/home-ops evaluate` with no explicit target reads unchecked entries from `data/pipeline.md`, deduplicates the same property across Zillow, Redfin, and Realtor.com links, keeps browser-backed verification and normalized fact extraction serialized in the main agent, and then assigns one report-writing subagent per canonical property. If the queue is large, those per-home workers can be dispatched in waves of up to five. The main agent then merges the results into `data/listings.md`, updates the pipeline, and clearly reports any backlog left behind by blockers or runtime limits.
+| Script | Purpose |
+|---|---|
+| `npm run normalize` | Normalize listing statuses against `templates/states.yml` |
+| `npm run dedup` | Remove duplicate rows from the tracker |
+| `npm run merge` | Merge staged tracker additions from `batch/tracker-additions/` |
+| `npm run sync-check` | Verify profile files stay in sync |
+| `npm run verify` | Pipeline health check |
 
-For the checked-in deterministic side of that batch flow, use `node evaluate-pending.mjs` or `npm.cmd run evaluate:pending` on Windows PowerShell. It prepares one packet per canonical home under `output/evaluate-packets/`, writes reports when needed, stages tracker additions, rewrites the pipeline, refreshes `data/shortlist.md`, and replaces the one-off recovery helpers that were previously created ad hoc during large evaluate runs.
+### Caches
 
-After a no-target evaluate batch finishes, Home-Ops should rank up to ten viable review candidates from that completed batch and open them in the hosted Chrome session inside one tab group named `Top 10`. Use `npm run browser:review -- reports <report-paths...> --group "Top 10"` or `npm.cmd run browser:review -- reports <report-paths...> --group "Top 10"` on Windows PowerShell.
+| Script | Purpose |
+|---|---|
+| `npm run cache:stats` | Show extraction cache hit rate and entry count |
+| `npm run cache:clear` | Clear the extraction cache |
+| `npm run cache:sentiment:stats` | Show sentiment cache stats |
+| `npm run cache:sentiment:clear` | Clear the sentiment cache |
 
-Use `/home-ops init` to create or refresh the hosted browser session first. Scan flags now narrow the scan scope only; they no longer bootstrap login sessions. `--relator` is the preferred flag for Realtor.com.
-For portals that reject automated sign-in, prefer the hosted real-Chrome setup path over the Playwright-managed login path.
-When a scan reuses a hosted search-results tab, Home-Ops refreshes that exact tab before extracting cards. If Zillow responds with a press-and-hold challenge, the refreshed tab is brought to the front and Home-Ops tells you to clear it manually before rerunning the scan.
-Scan mode keeps at most 3 unchecked pending homes per source per configured area. If a Zillow, Redfin, or Realtor.com area bucket already has 3 or more pending homes, Home-Ops clears that source-area bucket and refreshes it with up to 3 current homes from that engine for that area. The pending list may contain the same home from multiple sources at once, but it does not keep duplicate URLs or same-source duplicate homes.
-Bucket refill uses the current search results instead of suppressing older URLs from `data/scan-history.tsv`, so each engine can repopulate its own area buckets on later scans.
-If Zillow hits a sign-in, press-and-hold, or similar human-verification blocker during scan mode, Home-Ops skips Zillow for the rest of that scan, continues with the other platforms, and tells you to clear the blocker before rerunning `/home-ops scan --zillow`.
+### System
 
-`/home-ops reset` clears generated reports, tracker rows, staged tracker TSVs, pipeline items, and scan history while keeping buyer profiles, portal configuration, and browser session data. If `config/profile.yml` sets `workflow.shortlist.preserve_on_reset: true`, reset also leaves `data/shortlist.md` alone so recurring hunt runs do not churn shortlist state. The low-level terminal equivalent is `npm run reset:data` or `npm.cmd run reset:data` on Windows PowerShell.
-
-Batch evaluation should stage tracker additions through `batch/tracker-additions/` and merge them with `merge-tracker.mjs` instead of having multiple workers edit `data/listings.md` directly. Browser-backed listing verification should remain serialized even when report drafting fans out across multiple per-home workers. `merge-tracker.mjs` now accepts either one staged row per TSV or multiple staged rows in the same TSV file so recovery workflows do not need one file per home.
-
-The same modes are available through the OpenCode command wrappers in `.opencode/commands/`.
-
-`/home-ops evaluate` with no explicit target should persist up to ten viable review candidates into `data/shortlist.md` and open that saved top-10 cohort in hosted Chrome. `/home-ops compare` can overwrite the same file with a compare-derived top ten. `/home-ops deep` should then read whichever top-10 cohort is current, run `research-source-plan.mjs`, `sentiment-browser-extract.mjs`, and `deep-research-packet.mjs` for that cohort, launch one subagent per shortlisted home with exactly one packet each, synthesize the returned research in the main agent, rerank the field to a refined top three, and replace the remaining Chrome home tabs with only those finalist tabs.
-
-Before deep promotes that refined top three, run `npm run gate:finalists` or `npm.cmd run gate:finalists`. The final `shortlist-top3` review-tab action now enforces the same strict research gate automatically and will block finalists whose reports still have weak neighborhood, school, or development coverage unless `--skip-finalist-gate` is used explicitly.
+| Script | Purpose |
+|---|---|
+| `npm run doctor` | Diagnose missing dependencies or config |
+| `npm run dashboard` | Launch the Go terminal dashboard |
+| `npm run dashboard:build` | Build a standalone dashboard binary |
+| `npm run update:check` | Check for pipeline updates |
+| `npm run update` | Apply updates |
+| `npm run rollback` | Roll back the last update |
+| `npm test` | Full repository self-test |
 
 ## Data Files
 
-- `buyer-profile.md` — buyer brief and non-structured preferences
-- `config/profile.yml` — structured configuration
-- `portals.yml` — scan targets and platform settings
-- `data/listings.md` — canonical tracker
-- `data/pipeline.md` — pending listing inbox
-- `data/shortlist.md` — latest compare top-10 tags and deep handoff state
-- `data/scan-history.tsv` — scan dedup log
-- `reports/` — saved evaluation reports
+| File | Role |
+|---|---|
+| `buyer-profile.md` | Human-readable buyer brief |
+| `config/profile.yml` | Structured buyer configuration and weights |
+| `portals.yml` | Scan targets, login requirements, research sources |
+| `modes/_profile.md` | Personalized mode guidance layered on top of `_shared.md` |
+| `data/listings.md` | Canonical tracker |
+| `data/pipeline.md` | Pending listings waiting to be evaluated |
+| `data/shortlist.md` | Current top 10 and refined top 3 |
+| `data/scan-history.tsv` | Scan dedup log |
+| `reports/` | Saved evaluation and deep-dive reports |
+| `output/` | Generated artifacts: sessions, packets, briefings, caches |
 
-## Verification Model
+## How Verification Works
 
-Home-Ops uses Playwright to verify whether a listing is still active. Listing facts come from the platform page first. Neighborhood, school, and development context come from public sources such as GreatSchools, Niche, local government sites, local news, and community discussion where available.
+Home-Ops uses Playwright to confirm a listing is still active before reporting on it. Listing facts come from the portal page. Neighborhood, school, and development context come from public sources (GreatSchools, Niche, local government, local news, community posts) plus optional Facebook and Nextdoor evidence through the hosted session.
 
-The source inventories in `portals.yml` are real configuration, but they are not yet a fully automated harvesting pipeline. They now do five jobs: they drive hosted-browser session setup for login-required sentiment sources, they define the expected research surface for evaluate and deep, they power the explicit post-run audit in `research-coverage-audit.mjs`, they feed the deterministic sentiment, school, and development planner in `research-source-plan.mjs`, and they support browser-backed Facebook and Nextdoor extraction through `sentiment-browser-extract.mjs`. Run `npm run plan:research -- --shortlist --type development` or `npm.cmd run plan:research -- --shortlist --type development` when you need a development-first lookup plan from the saved shortlist, run `npm run extract:sentiment -- --shortlist --profile chrome-host` or `npm.cmd run extract:sentiment -- --shortlist --profile chrome-host` when you want deterministic hosted-browser sentiment evidence before deep reranking, and run `npm run audit:research` or `npm.cmd run audit:research` after evaluate or deep when you need to see whether neighborhood, school, and development evidence was actually sourced versus merely expected by the prompts.
+Portal sign-ins, captchas, and press-and-hold checks are handled manually in the hosted Chrome window — Home-Ops does not try to bypass bot checks. The browser session lives in a repo-local user-data-dir under `output/browser-sessions/` and is gitignored so each user keeps their own logins.
 
-For Facebook groups, assume this workflow depends on the hosted Chrome session for manual, user-authenticated lookups. Nextdoor does offer approved developer APIs for public `anyone` content, trending posts, and public-agency feeds, but private neighborhood-feed sentiment still depends on manual, user-authenticated browsing unless an approved integration is added later. In both cases, prioritize the most recent 7 days of posts and comments when the goal is current neighborhood sentiment.
+### Caching
 
-For portal logins and captcha prompts, Home-Ops expects manual completion inside a persistent local browser profile. It does not try to bypass platform bot checks automatically.
+Extraction work is cached under `output/cache/` to keep repeat runs cheap:
 
-The browser-session artifacts are intentionally repo-local and ignored by git so each user can clone the repo, run the same setup command, and keep their platform session isolated.
+- Listings: URL-keyed with status-aware TTL (24h active, 30d inactive, 15m blocked)
+- Sentiment: subdivision-keyed with a 6h TTL so shortlist siblings in the same neighborhood share a single sweep
 
-If a portal still refuses Google or Apple single-sign-on inside the Playwright browser, use the site's direct email/password login path instead of federated OAuth.
-
-The system does not depend on paid listing APIs in phase 1.
+Pass `--no-cache` or `--refresh-cache` to any script that supports them when you need fresh data.
 
 ## Safety Rules
 
-- Never contact an agent, schedule a tour, or submit an offer without the user's review.
-- Never treat missing data as a positive signal.
-- Never recommend a listing that clearly fails multiple hard requirements.
-- Respect the terms of the sites being used.
+- Never contact an agent, schedule a tour, or submit an offer without the user's review
+- Never treat missing data as a positive signal
+- Never recommend a listing that clearly fails multiple hard requirements
+- Respect each portal's terms of service
 
 ## Repo Layout
 
 ```text
 home-ops/
-├── buyer-profile.md
-├── config/
-├── data/
-├── reports/
-├── dashboard/
-├── modes/
-├── templates/
-├── .claude/skills/
-├── .opencode/commands/
-└── *.mjs
+├── buyer-profile.md         # buyer brief (user-layer)
+├── config/                  # profile.yml and examples
+├── data/                    # tracker, pipeline, shortlist
+├── reports/                 # saved evaluations
+├── output/                  # sessions, packets, caches, briefings
+├── modes/                   # prompt-driven workflows
+├── templates/               # canonical states and portal examples
+├── dashboard/               # Go terminal dashboard
+├── .claude/skills/          # Claude Code skill definitions
+├── .opencode/commands/      # OpenCode command wrappers
+└── *.mjs                    # Node utilities
 ```
 
 ## Validation
 
 ```bash
 npm run doctor
-npm run sync-check
 npm run verify
-npm run plan:research -- --top3 --type development
-npm run check:construction -- --top3
-npm run audit:research
-npm run gate:finalists
-npm run brief:top3 -- --no-open
-node test-all.mjs --quick
+npm test -- --quick
 ```
-
-`check:construction` fetches NCDOT public project-index pages and writes a per-home `constructionPressure` record under `output/construction/` that `prepare:deep` then merges into each deep packet. `brief:top3` renders a one-file top-3 finalist briefing PDF under `output/briefings/` and opens it in the hosted Chrome session when the session is live. Pass `--no-open` to render without opening a tab.
-
-### Extraction caches
-
-`evaluate-pending.mjs` and `sentiment-browser-extract.mjs` now reuse prior browser work across runs via JSON caches under `output/cache/`. The extraction cache is URL-keyed with status-aware TTLs (24h for active listings, 30d for inactive, 15m for blocked) so re-running evaluate over a still-open pipeline skips the slow Playwright navigation on unchanged listings. The sentiment cache is subdivision-keyed with a 6-hour TTL so shortlist siblings in the same neighborhood share a single Facebook/Nextdoor pass. Pass `--no-cache` to force fresh work or `--refresh-cache` to re-scrape and overwrite the cache entry. Inspect or clear the caches via `npm run cache:stats`, `npm run cache:clear`, `npm run cache:sentiment:stats`, and `npm run cache:sentiment:clear`.
 
 ## License
 
