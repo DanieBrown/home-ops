@@ -15,6 +15,7 @@ import { mkdir } from 'fs/promises';
 import { join, relative } from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
 import { chromium } from 'playwright';
+import YAML from 'yaml';
 import { readSessionState } from './browser-session.mjs';
 import {
   ROOT,
@@ -101,6 +102,205 @@ function extractBullets(sectionText, maxItems = 5) {
   return bullets;
 }
 
+function loadBuyerProfile() {
+  const profilePath = join(ROOT, 'config', 'profile.yml');
+  if (!existsSync(profilePath)) return null;
+  try {
+    return YAML.parse(readFileSync(profilePath, 'utf8')) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function parseDollarAmount(raw) {
+  const text = String(raw ?? '').toLowerCase();
+  if (!text || text === 'not recorded' || text.includes('n/a')) return null;
+  if (text.includes('none') || text.includes('no hoa')) return 0;
+  const match = text.replace(/,/g, '').match(/\$?\s*(\d+(?:\.\d+)?)\s*(k|m)?/i);
+  if (!match) return null;
+  const value = Number.parseFloat(match[1]);
+  if (!Number.isFinite(value)) return null;
+  const suffix = (match[2] ?? '').toLowerCase();
+  if (suffix === 'k') return value * 1000;
+  if (suffix === 'm') return value * 1_000_000;
+  return value;
+}
+
+function parseBedsNumber(raw) {
+  const match = String(raw ?? '').match(/(\d+)\s*\/?\s*\d+(?:\.\d+)?/);
+  return match ? Number.parseInt(match[1], 10) : null;
+}
+
+function parseSqftNumber(raw) {
+  const cleaned = String(raw ?? '').replace(/,/g, '');
+  const match = cleaned.match(/(\d{3,6})/);
+  return match ? Number.parseInt(match[1], 10) : null;
+}
+
+function parseYearNumber(raw) {
+  const match = String(raw ?? '').match(/(19|20)\d{2}/);
+  return match ? Number.parseInt(match[0], 10) : null;
+}
+
+function formatMoney(value) {
+  if (!Number.isFinite(value)) return 'n/a';
+  if (value >= 1_000_000) return `$${(value / 1_000_000).toFixed(2)}M`;
+  if (value >= 1000) return `$${Math.round(value / 1000)}k`;
+  return `$${value.toLocaleString()}`;
+}
+
+function classifyFitStatus(report, profile) {
+  if (!profile) return [];
+  const hard = profile.search?.hard_requirements ?? {};
+  const soft = profile.search?.soft_preferences ?? {};
+  const dealBreakers = profile.search?.deal_breakers ?? [];
+  const reportBlob = [
+    report.sections['Quick Take'],
+    report.sections['Property Fit'],
+    report.sections['Neighborhood Sentiment'],
+    report.sections['Risks and Open Questions'],
+    report.sections['Hard Requirement Gate'],
+  ].filter(Boolean).join(' \n ').toLowerCase();
+
+  const items = [];
+  const price = parseDollarAmount(report.metadata.price);
+  if (Number.isFinite(price) && (hard.price_min || hard.price_max)) {
+    const min = hard.price_min;
+    const max = hard.price_max;
+    if (Number.isFinite(max) && price > max) {
+      items.push({ status: 'gap', label: `Price ${formatMoney(price)} is above the ${formatMoney(max)} max` });
+    } else if (Number.isFinite(min) && price < min) {
+      items.push({ status: 'gap', label: `Price ${formatMoney(price)} is below the ${formatMoney(min)} target floor` });
+    } else {
+      items.push({ status: 'match', label: `Priced at ${formatMoney(price)} -- inside your ${formatMoney(min ?? 0)}-${formatMoney(max ?? 0)} range` });
+    }
+  }
+
+  const beds = parseBedsNumber(report.metadata.bedsBaths);
+  if (Number.isFinite(beds) && Number.isFinite(hard.beds_min)) {
+    if (beds < hard.beds_min) {
+      items.push({ status: 'gap', label: `Only ${beds} bedroom${beds === 1 ? '' : 's'} -- you need at least ${hard.beds_min}` });
+    } else {
+      items.push({ status: 'match', label: `${beds} bedrooms clears your ${hard.beds_min}+ minimum` });
+    }
+  }
+
+  const sqft = parseSqftNumber(report.metadata.sqft);
+  if (Number.isFinite(sqft) && Number.isFinite(hard.sqft_min)) {
+    if (sqft < hard.sqft_min) {
+      items.push({ status: 'gap', label: `${sqft.toLocaleString()} sqft is under your ${hard.sqft_min.toLocaleString()} minimum` });
+    } else {
+      items.push({ status: 'match', label: `${sqft.toLocaleString()} sqft clears your ${hard.sqft_min.toLocaleString()} floor` });
+    }
+  }
+
+  const year = parseYearNumber(report.metadata.yearBuilt);
+  if (Number.isFinite(year)) {
+    const resalePreferred = String(hard.home_type_preference ?? '').toLowerCase().includes('resale');
+    if (resalePreferred && year >= 2023) {
+      items.push({ status: 'gap', label: `Built ${year} -- leans new-construction, which you prefer to avoid` });
+    } else if (Number.isFinite(soft.year_built_min) && year < soft.year_built_min) {
+      items.push({ status: 'gap', label: `Built ${year} is older than your ${soft.year_built_min}+ soft preference` });
+    } else {
+      items.push({ status: 'match', label: `Built ${year} -- fits your year-built preference` });
+    }
+  }
+
+  const hoa = parseDollarAmount(report.metadata.hoa);
+  if (Number.isFinite(hoa) && Number.isFinite(soft.hoa_max_monthly)) {
+    if (hoa > soft.hoa_max_monthly) {
+      items.push({ status: 'gap', label: `HOA ${formatMoney(hoa)}/mo is above your ${formatMoney(soft.hoa_max_monthly)}/mo cap` });
+    } else {
+      items.push({ status: 'match', label: `HOA ${formatMoney(hoa)}/mo is inside your ${formatMoney(soft.hoa_max_monthly)}/mo cap` });
+    }
+  }
+
+  const garageMatch = reportBlob.match(/(\d)\s*[- ]?car\s*garage/);
+  if (garageMatch && Number.isFinite(hard.garage_min)) {
+    const garage = Number.parseInt(garageMatch[1], 10);
+    if (garage < hard.garage_min) {
+      items.push({ status: 'gap', label: `${garage}-car garage is short of your ${hard.garage_min}+ minimum` });
+    } else {
+      items.push({ status: 'match', label: `${garage}-car garage clears your ${hard.garage_min}+ minimum` });
+    }
+  }
+
+  if (soft.fenced_yard && /fence/.test(reportBlob)) {
+    items.push({ status: 'match', label: 'Fenced yard noted -- matches your family priority' });
+  }
+
+  const flaggedBreakers = dealBreakers
+    .map((entry) => String(entry ?? '').trim())
+    .filter(Boolean)
+    .filter((entry) => {
+      const needle = entry.toLowerCase();
+      if (needle.includes('flood') && /flood/.test(reportBlob)) return true;
+      if (needle.includes('busy road') && /(busy road|highway frontage|traffic noise)/.test(reportBlob)) return true;
+      if (needle.includes('weak') && /(weak school|below.*rating|school concern)/.test(reportBlob)) return true;
+      if (needle.includes('structural') && /(structural|foundation issue|major repair)/.test(reportBlob)) return true;
+      return false;
+    });
+
+  for (const breaker of flaggedBreakers) {
+    items.push({ status: 'gap', label: `Possible match against your deal-breaker: ${breaker}` });
+  }
+
+  return items;
+}
+
+function buildFitNarrative(report, profile) {
+  const items = classifyFitStatus(report, profile);
+  if (items.length === 0) return '';
+
+  const rows = items.slice(0, 8).map((item) => `
+    <li class="fit-row fit-${escapeHtml(item.status)}">
+      <span class="fit-mark" aria-hidden="true">${item.status === 'match' ? '&#10003;' : '!'}</span>
+      <span class="fit-label">${escapeHtml(item.label)}</span>
+    </li>
+  `).join('');
+
+  const buyerName = profile?.buyer?.full_name ? escapeHtml(profile.buyer.full_name.split(/\s+/)[0]) : 'you';
+
+  return `
+    <div class="card fit wide">
+      <h3>Why this fits ${buyerName}</h3>
+      <ul class="fit-list">${rows}</ul>
+    </div>
+  `;
+}
+
+function buildGapList(report, finalist, profile) {
+  const gaps = [];
+
+  if (!finalist.construction) {
+    gaps.push('Construction and road-project pressure has not been captured yet.');
+  }
+  if (!finalist.sentiment) {
+    gaps.push('Neighborhood sentiment from Facebook and Nextdoor has not been pulled yet.');
+  }
+
+  const auditBlockers = finalist.packet?.audit?.criticalFindings ?? [];
+  for (const finding of auditBlockers.slice(0, 4)) {
+    gaps.push(`${finding.heading}: ${finding.message}`);
+  }
+
+  const confidence = String(report.metadata.confidence ?? '').toLowerCase();
+  if (confidence.startsWith('low')) {
+    gaps.push('Report confidence is Low -- several required facts are still missing.');
+  }
+
+  const hardGate = report.sections['Hard Requirement Gate'] ?? '';
+  if (/unknown/i.test(hardGate)) {
+    gaps.push('One or more hard requirements are marked Unknown on the gate table.');
+  }
+
+  if (profile?.search?.hard_requirements?.schools_min_rating && !/greatschools|niche|school rating/i.test(report.sections['School Review'] ?? '')) {
+    gaps.push('Assigned-school ratings have not been cross-checked against an external source.');
+  }
+
+  return Array.from(new Set(gaps));
+}
+
 function classifyRecommendation(text) {
   const value = String(text || '').toLowerCase();
   if (!value || value === 'not recorded') return 'neutral';
@@ -151,7 +351,7 @@ function buildCoverToc(finalists) {
     </div>`;
 }
 
-function buildFinalistSection(finalist) {
+function buildFinalistSection(finalist, profile) {
   const report = finalist.report;
   const construction = finalist.construction;
   const sentiment = finalist.sentiment;
@@ -187,15 +387,14 @@ function buildFinalistSection(finalist) {
       <div class="card construction">
         <h3>Construction Pressure</h3>
         <p class="pressure-level ${escapeHtml(construction.level)}">${escapeHtml(String(construction.level || 'unknown').toUpperCase())}</p>
-        <p class="stat">NCDOT score: <strong>${escapeHtml(String(construction.constructionPressure ?? 'n/a'))}/10</strong></p>
-        <p class="stat">Match count: <strong>${escapeHtml(String(construction.matches?.length ?? 0))}</strong></p>
-        <p class="muted">Sources reachable: ${escapeHtml(String((construction.sourcesChecked ?? []).filter((s) => s.ok).length))}/${escapeHtml(String((construction.sourcesChecked ?? []).length))}</p>
+        <p class="stat">Road-project score: <strong>${escapeHtml(String(construction.constructionPressure ?? 'n/a'))}/10</strong></p>
+        <p class="stat">Active match count: <strong>${escapeHtml(String(construction.matches?.length ?? 0))}</strong></p>
       </div>`
     : `
       <div class="card construction unreviewed">
         <h3>Construction Pressure</h3>
-        <p class="pressure-level unknown">NOT REVIEWED</p>
-        <p class="muted">Run <code>npm run check:construction -- --top3</code> to populate.</p>
+        <p class="pressure-level unknown">NOT YET CAPTURED</p>
+        <p class="muted">Flagged in the research gaps below so it can be filled in before you decide.</p>
       </div>`;
 
   const topKpi = (sentiment?.kpiRollup ?? []).slice(0, 5).map((row) => `
@@ -211,26 +410,28 @@ function buildFinalistSection(finalist) {
   const sentimentBlock = sentiment
     ? `
       <div class="card wide">
-        <h3>Sentiment KPIs <span class="subtle">FB &middot; Nextdoor &middot; profile-weighted</span></h3>
+        <h3>Neighborhood Sentiment <span class="subtle">Facebook &middot; Nextdoor &middot; profile-weighted</span></h3>
         <table>
           <thead>
-            <tr><th>Category</th><th class="num">Weight</th><th class="num">+ Hits</th><th class="num">- Hits</th><th class="num">Weighted</th></tr>
+            <tr><th>Category</th><th class="num">Weight</th><th class="num">+ Mentions</th><th class="num">- Mentions</th><th class="num">Weighted</th></tr>
           </thead>
-          <tbody>${topKpi || '<tr><td colspan="5" class="muted">No KPI rollup captured.</td></tr>'}</tbody>
+          <tbody>${topKpi || '<tr><td colspan="5" class="muted">No rollup captured.</td></tr>'}</tbody>
         </table>
       </div>`
     : `
       <div class="card wide unreviewed">
-        <h3>Sentiment KPIs</h3>
-        <p class="muted">No browser-captured sentiment. Run <code>npm run extract:sentiment -- --top3 --profile chrome-host</code> first.</p>
+        <h3>Neighborhood Sentiment</h3>
+        <p class="muted">Not yet captured from Facebook or Nextdoor. Listed in the research gaps below.</p>
       </div>`;
 
-  const auditBlockers = packet?.audit?.criticalFindings ?? [];
-  const auditBlock = auditBlockers.length > 0
+  const fitNarrative = buildFitNarrative(report, profile);
+  const gapItems = buildGapList(report, finalist, profile);
+  const gapBlock = gapItems.length > 0
     ? `
       <div class="card wide warn">
-        <h3>Open Research Gaps</h3>
-        <ul>${auditBlockers.slice(0, 5).map((f) => `<li><strong>${escapeHtml(f.heading)}:</strong> ${escapeHtml(f.message)}</li>`).join('')}</ul>
+        <h3>Research gaps you may want filled in</h3>
+        <ul>${gapItems.map((item) => `<li>${escapeHtml(item)}</li>`).join('')}</ul>
+        <p class="muted">Ask for a deeper dive on this listing to capture these before a final decision.</p>
       </div>`
     : '';
 
@@ -254,6 +455,7 @@ function buildFinalistSection(finalist) {
           <h3>Quick Take</h3>
           <p>${escapeHtml(summarizeSection(report.sections['Quick Take'], 600))}</p>
         </div>
+        ${fitNarrative}
         <div class="card strengths">
           <h3>Top Strengths</h3>
           <ul>${(strengths.length ? strengths : ['(none captured)']).map((s) => `<li>${escapeHtml(s)}</li>`).join('')}</ul>
@@ -264,7 +466,7 @@ function buildFinalistSection(finalist) {
         </div>
         ${constructionBlock}
         ${sentimentBlock}
-        ${auditBlock}
+        ${gapBlock}
         <div class="card recommendation wide">
           <h3>Recommendation</h3>
           <p>${escapeHtml(summarizeSection(report.sections['Recommendation'], 700))}</p>
@@ -274,10 +476,11 @@ function buildFinalistSection(finalist) {
   `;
 }
 
-function buildHtml(finalists) {
+function buildHtml(finalists, profile) {
   const generatedAt = new Date().toISOString().replace('T', ' ').slice(0, 16);
-  const finalistSections = finalists.map((finalist) => buildFinalistSection(finalist)).join('\n');
+  const finalistSections = finalists.map((finalist) => buildFinalistSection(finalist, profile)).join('\n');
   const toc = buildCoverToc(finalists);
+  const buyerLabel = profile?.buyer?.full_name ? ` &middot; Prepared for ${escapeHtml(profile.buyer.full_name)}` : '';
 
   return `<!doctype html>
 <html lang="en">
@@ -423,10 +626,29 @@ function buildHtml(finalists) {
   .stat { font-size: 9.5pt; color: #4b5563; margin-bottom: 2px; }
   .stat strong { color: #111827; }
   .muted { color: #9ca3af; font-size: 8.5pt; }
-  code {
-    background: #f3f4f6; padding: 1px 5px; border-radius: 4px;
-    font-size: 8.5pt; color: #1f2937; font-family: "SF Mono", Menlo, Consolas, monospace;
+
+  /* Fit narrative */
+  .card.fit {
+    background: linear-gradient(135deg, #ecfdf5 0%, #f0f9ff 100%);
+    border-color: #bbf7d0;
   }
+  .card.fit h3 { color: #166534; }
+  .fit-list { list-style: none; padding: 0; margin: 0; }
+  .fit-row {
+    display: flex; align-items: flex-start; gap: 10px;
+    padding: 4px 0; font-size: 9.5pt;
+    border-bottom: 1px dashed #e5e7eb;
+  }
+  .fit-row:last-child { border-bottom: 0; }
+  .fit-mark {
+    flex-shrink: 0; width: 18px; height: 18px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 10pt; font-weight: 800; color: #ffffff;
+  }
+  .fit-match .fit-mark { background: #16a34a; }
+  .fit-gap .fit-mark { background: #dc2626; }
+  .fit-unknown .fit-mark { background: #9ca3af; }
+  .fit-label { color: #1f2937; line-height: 1.4; }
 
   /* Tables */
   table { width: 100%; border-collapse: collapse; font-size: 9pt; }
@@ -451,11 +673,11 @@ function buildHtml(finalists) {
   <section class="cover">
     <div class="brand">Home-Ops &middot; Decision Brief</div>
     <h1>Top 3 Finalist Briefing</h1>
-    <p class="cover-meta">Generated ${escapeHtml(generatedAt)} UTC &middot; ${escapeHtml(String(finalists.length))} finalist${finalists.length === 1 ? '' : 's'}</p>
+    <p class="cover-meta">Generated ${escapeHtml(generatedAt)} UTC &middot; ${escapeHtml(String(finalists.length))} finalist${finalists.length === 1 ? '' : 's'}${buyerLabel}</p>
     ${toc}
     <div class="cover-legend">
-      <p>Each page summarizes quick take, top strengths and concerns, construction pressure (NCDOT), profile-weighted sentiment KPIs, open research gaps, and the final recommendation from the evaluation report.</p>
-      <p>Signals marked <strong>NOT REVIEWED</strong> have not been captured yet and should be treated as unknown, not favorable. Tap a finalist above to jump to its page; listing links on each page open directly in the browser.</p>
+      <p>Each page shows a quick take, a "why this fits" summary tied to your buyer profile, top strengths and concerns, construction pressure, neighborhood sentiment, research gaps, and the final recommendation.</p>
+      <p>Anything marked <strong>Not yet captured</strong> is unknown, not favorable. Ask for a deeper dive to fill in the research gaps before a final decision. Tap a finalist above to jump to its page; listing links open directly in the browser.</p>
     </div>
   </section>
   ${finalistSections}
@@ -547,7 +769,8 @@ async function run() {
   if (config.help) { console.log(HELP_TEXT); return; }
 
   const finalists = loadFinalists();
-  const html = buildHtml(finalists);
+  const profile = loadBuyerProfile();
+  const html = buildHtml(finalists, profile);
   await mkdir(OUTPUT_DIR, { recursive: true });
   const dateStamp = new Date().toISOString().slice(0, 10);
   const outputPath = join(OUTPUT_DIR, `top3-briefing-${dateStamp}.pdf`);

@@ -4,12 +4,17 @@ Launch or confirm the repo-local hosted browser session that Home-Ops will reuse
 
 ## Read First
 
+- `modes/_preflight.md`
 - `modes/_shared.md`
 - `modes/_profile.md`
 - `config/profile.yml`
 - `portals.yml`
 - `output/browser-sessions/chrome-host/session-state.json` if it exists
 - `batch/logs/browser-sessions.tsv` if it exists
+
+## Prerequisites
+
+Run the environment preflight in `modes/_preflight.md` before anything else. This mode calls `npm run browser:status`, `npm run browser:setup`, and `npm run browser:session`, so Node.js and npm must both be on PATH with `node_modules/` present. If any preflight step fails, halt and surface the install guidance to the user instead of attempting to launch the browser session.
 
 ## Goal
 

@@ -31,6 +31,8 @@
     "dedup": "node dedup-tracker.mjs",
     "merge": "node merge-tracker.mjs",
     "sync-check": "node profile-sync-check.mjs",
+    "profile:wizard": "node tools/profile-wizard/serve.mjs",
+    "profile:wizard:once": "node tools/profile-wizard/serve.mjs --once",
     "update:check": "node update-system.mjs check",
     "update": "node update-system.mjs apply",
     "rollback": "node update-system.mjs rollback",
@@ -45,6 +47,10 @@
     "automation"
   ],
   "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=9.0.0"
+  },
   "dependencies": {
     "playwright": "^1.58.1",
     "yaml": "^2.8.3"

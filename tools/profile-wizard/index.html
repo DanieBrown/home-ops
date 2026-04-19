@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Home-Ops Profile Wizard</title>
+<link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <main class="shell">
+    <header class="topbar">
+      <div class="brand">Home-Ops &middot; Buyer Profile</div>
+      <div class="progress-wrap">
+        <div class="progress-meta"><span id="step-label">Step 1</span> <span id="step-total"></span></div>
+        <div class="progress-bar"><div id="progress-fill"></div></div>
+      </div>
+    </header>
+
+    <section id="tile" class="tile"></section>
+
+    <footer class="nav">
+      <button id="back-btn" type="button" class="ghost">Back</button>
+      <div class="nav-spacer"></div>
+      <button id="next-btn" type="button" class="primary">Next</button>
+      <button id="submit-btn" type="button" class="primary" hidden>Submit profile</button>
+    </footer>
+
+    <section id="done" class="done" hidden>
+      <h2>Profile submitted</h2>
+      <p>Your answers are saved to <code>.home-ops/profile-wizard-submission.json</code>.</p>
+      <p>Return to Claude Code and say: <em>"finish my profile from the wizard submission."</em></p>
+      <p class="muted">You can close this tab.</p>
+    </section>
+  </main>
+
+  <script src="/app.js" defer></script>
+</body>
+</html>

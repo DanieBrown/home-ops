@@ -4,6 +4,7 @@ Use this mode when the user wants to create or revise the buyer profile through 
 
 ## Read First
 
+- `modes/_preflight.md`
 - `buyer-profile.md` if it exists
 - `config/profile.yml` if it exists
 - `modes/_profile.md` if it exists
@@ -11,6 +12,10 @@ Use this mode when the user wants to create or revise the buyer profile through 
 - `modes/_profile.template.md`
 - `DATA_CONTRACT.md`
 - `docs/CUSTOMIZATION.md`
+
+## Prerequisites
+
+Run the environment preflight in `modes/_preflight.md` before anything else. This mode runs `node generate-portals.mjs` and `node profile-sync-check.mjs` at the end, and the optional web-wizard flow in `tools/profile-wizard/` also starts a local Node server. If any preflight step fails, halt and surface the install guidance to the user before attempting to collect or write profile data.
 
 ## Goal
 
@@ -21,6 +26,23 @@ Collect the buyer's search criteria, lifestyle context, and weighting preference
 - `modes/_profile.md`
 
 If any of those files are missing, create them from the checked-in example or template first and then fill them in.
+
+## Flow Options -- Offer the Web Wizard First
+
+Before starting the in-chat Q&A, offer the buyer two ways to go through the profile interview:
+
+1. **Web wizard (preferred on fresh sessions or full rewrites).** A local static page at `tools/profile-wizard/` that mirrors the filter fields on Zillow, Redfin, Realtor.com, and Homes.com, plus slider tiles for sentiment and school weights. The user completes it in a browser and clicks Submit; the answers are written to `.home-ops/profile-wizard-submission.json`.
+2. **In-chat Q&A (good for quick touch-ups).** The existing `vscode_askQuestions` flow below.
+
+Ask which the user prefers. If they pick the web wizard:
+
+1. Start the server: `npm run profile:wizard:once` (in the background if your harness supports it; otherwise run it, print the URL, and tell the user where to find it).
+2. The server prints the URL (default `http://127.0.0.1:4178/`). Open it in the hosted Chrome session via Chrome MCP if available, otherwise ask the user to open it manually.
+3. Wait for the submission file to appear at `.home-ops/profile-wizard-submission.json`. Poll periodically or ask the user to confirm they clicked Submit.
+4. Once the submission file exists, read it and map the answers back into `config/profile.yml`, `buyer-profile.md`, and `modes/_profile.md` using the same file-update rules below. Then delete or rename the submission file so the next run starts clean.
+5. Run the validation steps and output summary as usual.
+
+If the user prefers the in-chat flow (or says "just ask me"), skip the wizard and proceed straight to the question batches.
 
 ## Interaction Rules
 
