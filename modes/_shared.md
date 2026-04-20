@@ -63,6 +63,22 @@ If any step fails because data is unavailable, continue with lower confidence an
 
 ---
 
+## Run-to-Completion Hook (No Mid-Command Re-Prompts)
+
+Before asking the user any follow-up question after a command has started, run this guard:
+
+1. Confirm every required script for the active mode has either run successfully or failed with a concrete blocker that prevents downstream steps.
+2. If a required script has not been run yet, run it now instead of asking the user if you should continue.
+3. Only ask the user a follow-up when one of these is true:
+   - a missing prerequisite must be supplied by the user,
+   - a destructive override decision is required,
+   - a hard external blocker prevents all remaining required steps.
+4. For all other conditions (partial evidence, blocked source, thin worker output, timeout on one source), record the gap and continue the command to completion.
+
+This hook applies to all modes, especially `hunt`, `evaluate`, and `deep`.
+
+---
+
 ## Hard Requirement Gate
 
 Every evaluation must start with a gate table.
