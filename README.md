@@ -1,10 +1,11 @@
 # Home-Ops
+A dedicated home hunting application that takes in your preferences and applys them to multiple search engines to determine the best house on the market for you. Utilizing semantic weight measurements and resources from local information sites (For now, limited to NC).
 
 ## Prerequisites
 - Node.js 18+
 - npm 9+
 - Playwright Chromium (`npx playwright install chromium`)
-- Optional: Go 1.21+ (dashboard only)
+- Optional: Go 1.21+ (For dashboard only)
 
 ## Get started (run in order)
 1. Install dependencies:
@@ -18,19 +19,15 @@ npm run doctor
 npm run sync-check
 npm run verify
 ```
-3. Create/update buyer files (interactive):
+3. Create/update buyer files (Recommend using the dashboard wizard). This also regenerates `portals.yml` from your source picks:
 ```bash
 /home-ops profile
 ```
-4. Generate portal URLs after profile setup:
-```bash
-npm run portals:generate
-```
-5. Start/reuse hosted browser session:
+4. Start/reuse hosted browser session:
 ```bash
 /home-ops init
 ```
-6. Run intake pipeline end-to-end:
+5. Run intake pipeline end-to-end:
 ```bash
 /home-ops hunt
 ```
@@ -49,3 +46,8 @@ npm run portals:generate
 - `npm run brief:top3`: generate top-3 PDF briefing
 
 > On Windows PowerShell, use `npm.cmd` instead of `npm` if `npm.ps1` is blocked.
+
+## Tips
+- `/home-ops` Will print a copy of relevant commands to use
+
+

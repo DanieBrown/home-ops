@@ -99,7 +99,7 @@ Notes:
   - The saved profile can be reused by other Playwright scripts in this repo.`;
 
 function getProjectRoot() {
-  return dirname(fileURLToPath(import.meta.url));
+  return join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 }
 
 export function resolveBrowserProfileDir(projectRoot, profileName = DEFAULT_PROFILE) {

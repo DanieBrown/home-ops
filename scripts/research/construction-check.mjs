@@ -26,6 +26,7 @@ import {
   parseShortlist,
   resolveAreaContext,
 } from './research-utils.mjs';
+import { slugify } from '../shared/text-utils.mjs';
 
 const OUTPUT_DIR = join(ROOT, 'output', 'construction');
 const DEFAULT_TIMEOUT_MS = 20000;
@@ -84,10 +85,6 @@ function parseArgs(argv) {
     config.files.push(arg);
   }
   return config;
-}
-
-function slugify(value) {
-  return String(value ?? '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
 }
 
 function buildOutputPath(target) {

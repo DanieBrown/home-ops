@@ -11,30 +11,15 @@ import { copyFileSync, existsSync, readFileSync, writeFileSync } from 'fs';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 
-const ROOT = dirname(fileURLToPath(import.meta.url));
+import { buildCanonicalLookup, readCanonicalStatuses } from '../shared/states.mjs';
+
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const LISTINGS_FILE = join(ROOT, 'data', 'listings.md');
 const STATES_FILE = join(ROOT, 'templates', 'states.yml');
 const DRY_RUN = process.argv.includes('--dry-run');
 
-function readCanonicalStatuses() {
-  const defaults = ['New', 'Evaluated', 'Interested', 'Tour Scheduled', 'Toured', 'Offer Submitted', 'Under Contract', 'Closed', 'Passed', 'Sold', 'SKIP'];
-  if (!existsSync(STATES_FILE)) {
-    return defaults;
-  }
-
-  const labels = [];
-  const content = readFileSync(STATES_FILE, 'utf-8');
-  for (const line of content.split('\n')) {
-    const match = line.match(/^\s*label:\s*(.+)$/);
-    if (match) {
-      labels.push(match[1].trim().replace(/^['"]|['"]$/g, ''));
-    }
-  }
-  return labels.length > 0 ? labels : defaults;
-}
-
-const canonicalStatuses = readCanonicalStatuses();
-const canonicalLookup = new Map(canonicalStatuses.map((label) => [label.toLowerCase(), label]));
+const canonicalStatuses = readCanonicalStatuses(STATES_FILE);
+const canonicalLookup = buildCanonicalLookup(canonicalStatuses);
 
 function normalizeStatus(raw) {
   const stripped = raw.replace(/\*\*/g, '').trim();

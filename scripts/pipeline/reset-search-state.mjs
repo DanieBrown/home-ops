@@ -5,7 +5,7 @@ import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 import YAML from 'yaml';
 
-const ROOT = dirname(fileURLToPath(import.meta.url));
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const REPORTS_DIR = join(ROOT, 'reports');
 const TRACKER_ADDITIONS_DIR = join(ROOT, 'batch', 'tracker-additions');
 const TRACKER_MERGED_DIR = join(TRACKER_ADDITIONS_DIR, 'merged');

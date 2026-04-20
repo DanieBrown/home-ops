@@ -65,7 +65,7 @@ Rules:
 - Prefer the checked-in script:
   - Windows PowerShell: `npm.cmd run reset:data`
   - Other shells: `npm run reset:data`
-- Run `node verify-pipeline.mjs` after the reset, following the reset-mode instructions.
+- Run `node scripts/pipeline/verify-pipeline.mjs` after the reset, following the reset-mode instructions.
 
 ### 3. Scan Phase
 

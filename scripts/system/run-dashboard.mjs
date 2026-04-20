@@ -5,7 +5,7 @@ import process from "node:process";
 import { fileURLToPath } from "node:url";
 
 const __filename = fileURLToPath(import.meta.url);
-const repoRoot = path.dirname(__filename);
+const repoRoot = path.join(path.dirname(__filename), "..", "..");
 const dashboardDir = path.join(repoRoot, "dashboard");
 const isWindows = process.platform === "win32";
 const exeSuffix = isWindows ? ".exe" : "";

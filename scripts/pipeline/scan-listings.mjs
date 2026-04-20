@@ -5,9 +5,15 @@ import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 import { chromium } from 'playwright';
 import YAML from 'yaml';
-import { readSessionState } from './browser-session.mjs';
+import { readSessionState } from '../browser/browser-session.mjs';
+import {
+  normalizeAddress,
+  normalizeCity,
+  normalizeStreetSuffixes,
+} from '../shared/text-utils.mjs';
+import { parseListingRow as parseListingRowFull } from '../shared/listings.mjs';
 
-const ROOT = dirname(fileURLToPath(import.meta.url));
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const PORTALS_PATH = join(ROOT, 'portals.yml');
 const PROFILE_PATH = join(ROOT, 'config', 'profile.yml');
 const PIPELINE_PATH = join(ROOT, 'data', 'pipeline.md');
@@ -152,34 +158,8 @@ function readYamlFile(filePath) {
   return YAML.parse(readFileSync(filePath, 'utf8')) ?? {};
 }
 
-function normalizeStreetSuffixes(value) {
-  return value
-    .replace(/\bst\b/g, 'street')
-    .replace(/\brd\b/g, 'road')
-    .replace(/\bave\b/g, 'avenue')
-    .replace(/\bblvd\b/g, 'boulevard')
-    .replace(/\bdr\b/g, 'drive')
-    .replace(/\bln\b/g, 'lane')
-    .replace(/\bct\b/g, 'court')
-    .replace(/\bcir\b/g, 'circle')
-    .replace(/\bpkwy\b/g, 'parkway')
-    .replace(/\bpl\b/g, 'place')
-    .replace(/\bhwy\b/g, 'highway');
-}
-
 function normalizeText(value) {
   return String(value ?? '').replace(/\s+/g, ' ').trim();
-}
-
-function normalizeAddress(value) {
-  return normalizeStreetSuffixes(String(value ?? '').toLowerCase())
-    .replace(/[^a-z0-9 ]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
-function normalizeCity(value) {
-  return String(value ?? '').toLowerCase().replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
 function normalizeArea(value) {
@@ -302,21 +282,11 @@ function isLikelyListingUrl(url) {
 }
 
 function parseListingRow(line) {
-  const columns = line.split('|').map((value) => value.trim()).filter(Boolean);
-  if (columns.length !== 11) {
+  const entry = parseListingRowFull(line);
+  if (!entry) {
     return null;
   }
-
-  const num = Number.parseInt(columns[0], 10);
-  if (Number.isNaN(num)) {
-    return null;
-  }
-
-  return {
-    num,
-    address: columns[2],
-    city: columns[3],
-  };
+  return { num: entry.num, address: entry.address, city: entry.city };
 }
 
 function parsePipelineChecklistLine(line) {

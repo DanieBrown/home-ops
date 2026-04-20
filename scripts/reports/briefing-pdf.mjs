@@ -16,12 +16,13 @@ import { join, relative } from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
 import { chromium } from 'playwright';
 import YAML from 'yaml';
-import { readSessionState } from './browser-session.mjs';
+import { readSessionState } from '../browser/browser-session.mjs';
 import {
   ROOT,
   parseReport,
   parseShortlist,
-} from './research-utils.mjs';
+} from '../research/research-utils.mjs';
+import { slugify } from '../shared/text-utils.mjs';
 
 const DEFAULT_PROFILE = 'chrome-host';
 const OUTPUT_DIR = join(ROOT, 'output', 'briefings');
@@ -52,10 +53,6 @@ function parseArgs(argv) {
     if (arg.startsWith('--')) throw new Error(`Unknown option: ${arg}`);
   }
   return config;
-}
-
-function slugify(value) {
-  return String(value ?? '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
 }
 
 function escapeHtml(value) {

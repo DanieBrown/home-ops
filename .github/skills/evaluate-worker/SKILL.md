@@ -45,7 +45,7 @@ The caller should supply as much of this packet as possible:
 - normalized listing facts
 - verification result and confidence clues
 - primary listing URL plus alternate fallback URLs
-- concrete research targets from `research-source-plan.mjs`
+- concrete research targets from `scripts/research/research-source-plan.mjs`
 - gathered neighborhood, school, development, and financial evidence
 - any existing report or tracker context that matters for updates
 

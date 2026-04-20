@@ -30,7 +30,7 @@ Provide one packet per canonical property.
 |---|---|---|
 | `primary_url` | string | Main listing URL used for the first pass |
 | `fallback_urls` | string[] | Alternate URLs for the same home only |
-| `source_plan` | object | Concrete targets produced by `research-source-plan.mjs` |
+| `source_plan` | object | Concrete targets produced by `scripts/research/research-source-plan.mjs` |
 | `existing_context` | object | Prior report, tracker row, or shortlist context |
 | `notes_for_worker` | string | Parent-agent instructions specific to this home |
 

@@ -13,13 +13,6 @@ const state = {
 
 const STEPS = [
   {
-    id: 'identity',
-    title: 'Who are we building this profile for?',
-    hint: 'Basic identity -- we only store this locally in config/profile.yml.',
-    render: renderIdentity,
-    read: readIdentity,
-  },
-  {
     id: 'areas',
     title: 'Which cities or towns should we search?',
     hint: 'Multi-select. Leave checked items as-is to keep them. Add any custom city below.',
@@ -195,7 +188,7 @@ const STEPS = [
   {
     id: 'financial',
     title: 'Financial posture',
-    hint: 'HOA cap, down payment, loan type, and closing-cost expectation.',
+    hint: 'HOA cap, down payment, and closing-cost expectation. These numbers feed the mortgage estimate on each listing report.',
     render: () => renderMultipleSingleChoice({
       questions: [
         {
@@ -213,12 +206,6 @@ const STEPS = [
           currentSuffix: '%',
         },
         {
-          field: 'loan_type',
-          label: 'Loan type',
-          options: ['30-year fixed', '15-year fixed', 'ARM', 'Cash'],
-          current: state.profile?.financial?.loan_type,
-        },
-        {
           field: 'closing_pct',
           label: 'Closing costs expectation',
           options: ['1-2%', '2-3%', '3-4%', '4%+'],
@@ -229,7 +216,6 @@ const STEPS = [
     read: () => ({
       hoa_max: state.answers.hoa_max,
       down_payment_pct: state.answers.down_payment_pct,
-      loan_type: state.answers.loan_type,
       closing_pct: state.answers.closing_pct,
     }),
   },
@@ -271,6 +257,13 @@ const STEPS = [
       allowCustom: true,
     }),
     read: () => ({ commute: state.answers.commute ?? [] }),
+  },
+  {
+    id: 'research-sources',
+    title: 'Which sources should power your research?',
+    hint: 'Pick the listing portals and background-research sites Home-Ops should use. Each affects one stage of the pipeline -- see the short note under each group.',
+    render: renderResearchSources,
+    read: () => ({ research_sources: state.answers.research_sources ?? {} }),
   },
   {
     id: 'sentiment-weights',
@@ -358,45 +351,6 @@ function findAnswerFromCurrent(options, current, prefix = '', suffix = '') {
   if (current === null || current === undefined) return null;
   const formatted = `${prefix}${current}${suffix}`.toLowerCase();
   return options.find((opt) => opt.toLowerCase() === formatted) ?? null;
-}
-
-function renderIdentity() {
-  const buyer = state.profile?.buyer ?? {};
-  const target = document.getElementById('tile');
-  target.innerHTML = `
-    <h2>Who are we building this profile for?</h2>
-    <p class="tile-hint">Basic identity -- stored locally in config/profile.yml only.</p>
-    <div class="identity-grid">
-      <label class="full">Full name
-        <input class="text-input" type="text" id="f-name" value="${escapeAttr(state.answers.identity?.full_name ?? buyer.full_name ?? '')}" />
-      </label>
-      <label>Email
-        <input class="text-input" type="email" id="f-email" value="${escapeAttr(state.answers.identity?.email ?? buyer.email ?? '')}" />
-      </label>
-      <label>Phone
-        <input class="text-input" type="tel" id="f-phone" value="${escapeAttr(state.answers.identity?.phone ?? buyer.phone ?? '')}" />
-      </label>
-      <label>Current location
-        <input class="text-input" type="text" id="f-location" value="${escapeAttr(state.answers.identity?.location ?? buyer.location ?? '')}" />
-      </label>
-      <label>Timezone
-        <input class="text-input" type="text" id="f-timezone" value="${escapeAttr(state.answers.identity?.timezone ?? buyer.timezone ?? '')}" />
-      </label>
-    </div>
-    <div class="validation" id="validation"></div>
-  `;
-}
-
-function readIdentity() {
-  const identity = {
-    full_name: document.getElementById('f-name').value.trim(),
-    email: document.getElementById('f-email').value.trim(),
-    phone: document.getElementById('f-phone').value.trim(),
-    location: document.getElementById('f-location').value.trim(),
-    timezone: document.getElementById('f-timezone').value.trim(),
-  };
-  state.answers.identity = identity;
-  return { identity };
 }
 
 function renderMultiSelect({ field, currentValues, suggestions, allowCustom }) {
@@ -633,6 +587,110 @@ function renderSliders({ field, factors, currentValues }) {
   });
 }
 
+const RESEARCH_SOURCE_GROUPS = [
+  {
+    key: 'portals',
+    title: 'Listing portals',
+    note: 'Drives /home-ops scan. Unchecked portals are skipped when Home-Ops looks for new listings.',
+    sources: [
+      { key: 'zillow', label: 'Zillow', defaultOn: true },
+      { key: 'redfin', label: 'Redfin', defaultOn: true },
+      { key: 'realtor', label: 'Realtor.com', defaultOn: true },
+      { key: 'homes', label: 'Homes.com', defaultOn: false },
+    ],
+  },
+  {
+    key: 'sentiment',
+    title: 'Neighborhood sentiment',
+    note: 'Drives /home-ops deep and the sentiment extract. Used to pull community sentiment about subdivisions, schools, and streets.',
+    sources: [
+      { key: 'reddit', label: 'Reddit (local subreddits)', defaultOn: true },
+      { key: 'nextdoor', label: 'Nextdoor', defaultOn: true },
+      { key: 'facebook', label: 'Facebook neighborhood groups', defaultOn: true },
+      { key: 'google_maps', label: 'Google Maps reviews', defaultOn: true },
+    ],
+  },
+  {
+    key: 'schools',
+    title: 'Schools',
+    note: 'Drives school sentiment and the hard-requirement gate. Picking more sources improves the school evidence coverage score.',
+    sources: [
+      { key: 'greatschools', label: 'GreatSchools', defaultOn: true },
+      { key: 'niche', label: 'Niche', defaultOn: true },
+      { key: 'state_report_cards', label: 'State report cards', defaultOn: true },
+      { key: 'schooldigger', label: 'SchoolDigger', defaultOn: false },
+    ],
+  },
+  {
+    key: 'development',
+    title: 'Development and infrastructure',
+    note: 'Drives construction-pressure checks. Picks up planned roads, subdivisions, and rezonings near a property.',
+    sources: [
+      { key: 'state_dot', label: 'State DOT project list', defaultOn: true },
+      { key: 'county_planning', label: 'County planning department', defaultOn: true },
+      { key: 'municipal_planning', label: 'Municipal planning', defaultOn: true },
+      { key: 'mpo', label: 'Regional MPO (transportation planning)', defaultOn: false },
+    ],
+  },
+];
+
+function collectCurrentResearchSources() {
+  const stored = state.profile?.research_sources;
+  const result = {};
+  for (const group of RESEARCH_SOURCE_GROUPS) {
+    const currentForGroup = stored?.[group.key];
+    for (const source of group.sources) {
+      const key = `${group.key}.${source.key}`;
+      if (currentForGroup && typeof currentForGroup === 'object' && source.key in currentForGroup) {
+        result[key] = Boolean(currentForGroup[source.key]);
+      } else if (Array.isArray(currentForGroup)) {
+        result[key] = currentForGroup.includes(source.key);
+      } else {
+        result[key] = source.defaultOn;
+      }
+    }
+  }
+  return result;
+}
+
+function renderResearchSources() {
+  state.answers.research_sources = state.answers.research_sources ?? collectCurrentResearchSources();
+  const checks = state.answers.research_sources;
+  const target = document.getElementById('tile');
+  const blocks = RESEARCH_SOURCE_GROUPS.map((group) => {
+    const rows = group.sources.map((source) => {
+      const id = `${group.key}.${source.key}`;
+      const isChecked = Boolean(checks[id]);
+      return `
+        <label class="option ${isChecked ? 'checked' : ''}" data-source-id="${escapeAttr(id)}">
+          <input type="checkbox" ${isChecked ? 'checked' : ''} />
+          <span class="label">${escapeHtml(source.label)}</span>
+        </label>
+      `;
+    }).join('');
+    return `
+      <div class="sub-question" data-source-group="${escapeAttr(group.key)}">
+        <h3 class="tile-subtitle">${escapeHtml(group.title)}</h3>
+        <p class="tile-hint" style="margin: 0 0 10px;">${escapeHtml(group.note)}</p>
+        <div class="options">${rows}</div>
+      </div>
+    `;
+  }).join('');
+  target.innerHTML = `
+    <h2>${escapeHtml(CURRENT_STEP.title)}</h2>
+    <p class="tile-hint">${escapeHtml(CURRENT_STEP.hint ?? '')}</p>
+    ${blocks}
+  `;
+  target.querySelectorAll('.option[data-source-id]').forEach((node) => {
+    node.addEventListener('click', (event) => {
+      const checkbox = node.querySelector('input');
+      if (event.target !== checkbox) checkbox.checked = !checkbox.checked;
+      node.classList.toggle('checked', checkbox.checked);
+      state.answers.research_sources[node.dataset.sourceId] = checkbox.checked;
+    });
+  });
+}
+
 function renderNarrative() {
   const target = document.getElementById('tile');
   target.innerHTML = `
@@ -677,10 +735,6 @@ function renderReview() {
 function buildSummary() {
   const lines = [];
   const push = (label, value) => { if (value !== undefined && value !== null && value !== '' && !(Array.isArray(value) && value.length === 0)) lines.push(`${label}: ${Array.isArray(value) ? value.join(', ') : value}`); };
-  const id = state.answers.identity ?? {};
-  push('Name', id.full_name);
-  push('Email', id.email);
-  push('Phone', id.phone);
   push('Areas', state.answers.areas);
   if (state.answers.price) push('Price', `${state.answers.price.min ?? '?'} - ${state.answers.price.max ?? '?'}`);
   push('Beds min', state.answers.beds_min);
@@ -696,11 +750,14 @@ function buildSummary() {
   push('Deal-breakers', state.answers.deal_breakers);
   push('HOA max', state.answers.hoa_max);
   push('Down payment', state.answers.down_payment_pct);
-  push('Loan', state.answers.loan_type);
   push('Closing costs', state.answers.closing_pct);
   push('School min', state.answers.schools_min_rating);
   push('Max DOM', state.answers.max_listing_age);
   push('Commute destinations', state.answers.commute);
+  if (state.answers.research_sources && Object.keys(state.answers.research_sources).length) {
+    const on = Object.entries(state.answers.research_sources).filter(([, value]) => value).map(([key]) => key);
+    if (on.length) lines.push(`Research sources: ${on.join(', ')}`);
+  }
   if (state.answers.sentiment_weights) lines.push(`Neighborhood weights: ${JSON.stringify(state.answers.sentiment_weights)}`);
   if (state.answers.school_weights) lines.push(`School weights: ${JSON.stringify(state.answers.school_weights)}`);
   if (state.answers.narrative?.family) push('Family', state.answers.narrative.family);

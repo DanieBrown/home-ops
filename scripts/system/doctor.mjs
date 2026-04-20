@@ -10,7 +10,7 @@ import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const projectRoot = __dirname;
+const projectRoot = join(__dirname, '..', '..');
 
 const isTTY = process.stdout.isTTY;
 const green = (value) => (isTTY ? `\x1b[32m${value}\x1b[0m` : value);

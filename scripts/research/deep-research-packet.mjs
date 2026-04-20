@@ -15,6 +15,7 @@ import {
   parseShortlist,
 } from './research-utils.mjs';
 import { readConstructionRecord } from './construction-check.mjs';
+import { slugify } from '../shared/text-utils.mjs';
 
 const OUTPUT_DIR = join(ROOT, 'output', 'deep-packets');
 const SENTIMENT_DIR = join(ROOT, 'output', 'sentiment');
@@ -88,10 +89,6 @@ function normalizeText(value) {
 
 function dedupeStrings(values) {
   return [...new Set(values.map((value) => normalizeText(value)).filter(Boolean))];
-}
-
-function slugify(value) {
-  return normalizeText(value).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
 }
 
 function toWorkspacePath(filePath) {

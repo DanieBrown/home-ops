@@ -16,7 +16,11 @@ import { existsSync, readFileSync, readdirSync } from 'fs';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 
-const ROOT = dirname(fileURLToPath(import.meta.url));
+import { normalizeAddress, normalizeCity } from '../shared/text-utils.mjs';
+import { parseListingRow } from '../shared/listings.mjs';
+import { DEFAULT_STATUSES, readCanonicalStatuses } from '../shared/states.mjs';
+
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const LISTINGS_FILE = join(ROOT, 'data', 'listings.md');
 const PIPELINE_FILE = join(ROOT, 'data', 'pipeline.md');
 const ADDITIONS_DIR = join(ROOT, 'batch', 'tracker-additions');
@@ -39,77 +43,15 @@ function ok(message) {
   console.log(`✅ ${message}`);
 }
 
-function readCanonicalStatuses() {
-  const defaults = ['New', 'Evaluated', 'Interested', 'Tour Scheduled', 'Toured', 'Offer Submitted', 'Under Contract', 'Closed', 'Passed', 'Sold', 'SKIP'];
+function loadStatuses() {
   if (!existsSync(STATES_FILE)) {
     warn('templates/states.yml not found, using fallback status list');
-    return defaults;
+    return DEFAULT_STATUSES;
   }
-
-  const labels = [];
-  const content = readFileSync(STATES_FILE, 'utf-8');
-  for (const line of content.split('\n')) {
-    const match = line.match(/^\s*label:\s*(.+)$/);
-    if (match) {
-      labels.push(match[1].trim().replace(/^['"]|['"]$/g, ''));
-    }
-  }
-  return labels.length > 0 ? labels : defaults;
+  return readCanonicalStatuses(STATES_FILE);
 }
 
-function normalizeStreetSuffixes(value) {
-  return value
-    .replace(/\bst\b/g, 'street')
-    .replace(/\brd\b/g, 'road')
-    .replace(/\bave\b/g, 'avenue')
-    .replace(/\bblvd\b/g, 'boulevard')
-    .replace(/\bdr\b/g, 'drive')
-    .replace(/\bln\b/g, 'lane')
-    .replace(/\bct\b/g, 'court')
-    .replace(/\bcir\b/g, 'circle')
-    .replace(/\bpkwy\b/g, 'parkway')
-    .replace(/\bpl\b/g, 'place')
-    .replace(/\bhwy\b/g, 'highway');
-}
-
-function normalizeAddress(value) {
-  return normalizeStreetSuffixes(value.toLowerCase())
-    .replace(/[^a-z0-9 ]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
-function normalizeCity(value) {
-  return value.toLowerCase().replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
-}
-
-function parseListingRow(line) {
-  const columns = line.split('|').map((value) => value.trim()).filter(Boolean);
-  if (columns.length !== 11) {
-    return null;
-  }
-
-  const num = Number.parseInt(columns[0], 10);
-  if (Number.isNaN(num)) {
-    return null;
-  }
-
-  return {
-    num,
-    date: columns[1],
-    address: columns[2],
-    city: columns[3],
-    price: columns[4],
-    bedsBaths: columns[5],
-    sqft: columns[6],
-    score: columns[7],
-    status: columns[8],
-    report: columns[9],
-    notes: columns[10] || '',
-  };
-}
-
-const canonicalStatuses = new Set(readCanonicalStatuses().map((value) => value.toLowerCase()));
+const canonicalStatuses = new Set(loadStatuses().map((value) => value.toLowerCase()));
 
 if (!existsSync(LISTINGS_FILE)) {
   console.log('\n📊 No data/listings.md found. This is normal for a fresh setup.\n');

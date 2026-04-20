@@ -3,7 +3,7 @@ import { dirname, isAbsolute, join, relative } from 'path';
 import { fileURLToPath } from 'url';
 import YAML from 'yaml';
 
-export const ROOT = dirname(fileURLToPath(import.meta.url));
+export const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 export const REPORTS_DIR = join(ROOT, 'reports');
 export const SHORTLIST_PATH = join(ROOT, 'data', 'shortlist.md');
 export const PROFILE_PATH = join(ROOT, 'config', 'profile.yml');

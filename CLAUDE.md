@@ -83,22 +83,21 @@ Create `buyer-profile.md` in clean markdown.
 ### Step 2: Profile Config
 
 If `config/profile.yml` is missing, copy from `config/profile.example.yml` and then collect:
-- full name and email
-- location and timezone
 - search areas
 - hard requirements
-- financial assumptions
+- financial assumptions (down payment and closing-cost range only)
+- research sources (portals, sentiment, schools, development)
 - sentiment weighting changes if any
 
 ### Step 3: Portal Searches
 
-`portals.yml` is generated from `config/profile.yml` and `config/city-registry.yml`. Once the profile has search areas, run:
+`portals.yml` is generated from `config/profile.yml` and `config/city-registry.yml`. Once the profile has search areas and research sources, run:
 
 ```
-node generate-portals.mjs
+node scripts/config/generate-portals.mjs
 ```
 
-This writes Zillow, Redfin, and Realtor.com base URLs for every configured area, plus NC-aware sentiment, school, and development sources. Rerun it any time search areas change. If the generator warns about an unmatched city, add its `redfin_city_id` and `primary_zip` to `config/city-registry.yml` and rerun.
+This honors the `research_sources` block in the profile: only the portals the buyer opted into are written to `portals.yml`, and only the sentiment, school, and development sources they picked are included. Rerun it any time search areas or research sources change. If the generator warns about an unmatched city, add its `redfin_city_id` and `primary_zip` to `config/city-registry.yml` and rerun.
 
 Do not copy `templates/portals.example.yml` directly -- it is kept only as a shape reference for the generator output.
 
@@ -200,11 +199,11 @@ If verification is blocked, mark it as unconfirmed rather than claiming it is ac
 Rules:
 1. A single listing should appear once.
 2. Direct evaluations may update `data/listings.md` directly.
-3. Batch or external worker output should go through `batch/tracker-additions/` and `merge-tracker.mjs`.
+3. Batch or external worker output should go through `batch/tracker-additions/` and `scripts/pipeline/merge-tracker.mjs`.
 4. All statuses must match `templates/states.yml`.
-5. Health check: `node verify-pipeline.mjs`
-6. Normalize states: `node normalize-statuses.mjs`
-7. Dedup rows: `node dedup-tracker.mjs`
+5. Health check: `node scripts/pipeline/verify-pipeline.mjs`
+6. Normalize states: `node scripts/pipeline/normalize-statuses.mjs`
+7. Dedup rows: `node scripts/pipeline/dedup-tracker.mjs`
 
 ## TSV Format for Tracker Additions
 

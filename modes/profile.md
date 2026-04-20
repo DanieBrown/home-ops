@@ -15,7 +15,7 @@ Use this mode when the user wants to create or revise the buyer profile through 
 
 ## Prerequisites
 
-Run the environment preflight in `modes/_preflight.md` before anything else. This mode runs `node generate-portals.mjs` and `node profile-sync-check.mjs` at the end, and the optional web-wizard flow in `tools/profile-wizard/` also starts a local Node server. If any preflight step fails, halt and surface the install guidance to the user before attempting to collect or write profile data.
+Run the environment preflight in `modes/_preflight.md` before anything else. This mode runs `node scripts/config/generate-portals.mjs` and `node scripts/config/profile-sync-check.mjs` at the end, and the optional web-wizard flow in `tools/profile-wizard/` also starts a local Node server. If any preflight step fails, halt and surface the install guidance to the user before attempting to collect or write profile data.
 
 ## Goal
 
@@ -92,18 +92,7 @@ When a selected item maps cleanly into `config/profile.yml`, store it there. If 
 
 Ask the profile questions in these batches.
 
-### 1. Buyer Identity
-
-Collect:
-- full name
-- email
-- phone
-- location
-- timezone
-
-When the current profile already has any of these values, pre-fill them as the default answer on each question. Offer `Keep current` as the first option so the user can accept an unchanged identity field without retyping anything. Identity fields are free-text by nature, so the only goal here is to minimize retyping for the refresh flow.
-
-### 2. Search Areas And Hard Requirements
+### 1. Search Areas And Hard Requirements
 
 Collect:
 - target areas
@@ -151,7 +140,7 @@ The full set is:
 - listing-age maximum
 - home-type preference
 
-### 3. Soft Preferences And Features
+### 2. Soft Preferences And Features
 
 This batch replaces the old set of individual yes/no questions about fenced yards, updated kitchens, pools, floor-plan style, and street type. Those preferences are captured inside the multi-select below, so do not also ask them as separate soft-preference questions.
 
@@ -177,9 +166,9 @@ Then ask three short single-choice questions that genuinely do not fit the multi
 
 Pre-select the current value on each of the three single-choice questions. Every multi-select selection should land in a structured `config/profile.yml` field where one exists; anything nuanced should also be reflected in `buyer-profile.md` and `modes/_profile.md`.
 
-### 4. Deal-Breakers And Lifestyle Context
+### 3. Deal-Breakers And Lifestyle Context
 
-Several dimensions that used to live here (street noise, lot and yard priorities, resale-vs-new-construction tolerance) are already captured by the deal-breaker multi-select or by Section 2's home-type preference. Do not re-ask them.
+Several dimensions that used to live here (street noise, lot and yard priorities, resale-vs-new-construction tolerance) are already captured by the deal-breaker multi-select or by Section 1's home-type preference. Do not re-ask them.
 
 Ask one multi-select for deal-breakers (current profile selections pre-checked, curated suggestions below, `Add custom` at the bottom). Curated defaults:
 
@@ -194,9 +183,9 @@ Ask one multi-select for deal-breakers (current profile selections pre-checked, 
 - `Builder-heavy new construction`
 
 Notes:
-- `HOA above budget` was intentionally dropped -- Section 3 already captures the HOA monthly cap, which is how this constraint gets enforced.
+- `HOA above budget` was intentionally dropped -- Section 2 already captures the HOA monthly cap, which is how this constraint gets enforced.
 - If the user unchecks `Busy road or cut-through traffic`, that implicitly answers street-noise tolerance; no separate question needed.
-- If the user's home-type preference in Section 2 is `Resale strongly preferred` or `Resale only`, pre-check `Builder-heavy new construction` here so the two signals stay consistent.
+- If the user's home-type preference in Section 1 is `Resale strongly preferred` or `Resale only`, pre-check `Builder-heavy new construction` here so the two signals stay consistent.
 
 Then collect the narrative-only lifestyle fields that do not map to any pick-list:
 
@@ -205,19 +194,18 @@ Then collect the narrative-only lifestyle fields that do not map to any pick-lis
 
 Pre-fill the current value on each question where the profile already has one.
 
-### 5. Commute And Financial Assumptions
+### 4. Commute And Financial Assumptions
 
 Collect:
 - commute destinations and priority (daily / occasional / rare)
 - down-payment percentage
-- loan type
 - closing-cost minimum and maximum percentages
 
 #### Commute destinations (multi-select)
 
 Render a multi-select seeded from:
 
-1. The user's current `financial.commute_destinations` (pre-checked, with priority shown next to each).
+1. The user's current `commute.destinations` (pre-checked, with priority shown next to each).
 2. Unchecked regional suggestions the profile does not already include. Defaults: `Downtown Raleigh`, `Research Triangle Park`, `Cary office parks`, `Durham`, `Chapel Hill`, `Apex`.
 3. An `Add custom destination` row.
 
@@ -227,9 +215,28 @@ After the user confirms the set, ask one follow-up assigning `daily`, `occasiona
 
 - down payment: `10%`, `15%`, `20%`, `25%+`, `Keep current`, `Custom`
 - closing costs: `1-2%`, `2-3%`, `3-4%`, `4%+`, `Keep current`, `Custom`
-- loan type: `30-year fixed`, `15-year fixed`, `ARM`, `Keep current`, `Custom`
 
-Pre-select the bucket that matches the current profile value on every question.
+Pre-select the bucket that matches the current profile value on every question. `loan_type` is intentionally not asked; the evaluator does not read it, and asking adds noise without changing any downstream math.
+
+### 5. Research Sources
+
+Pick the listing portals and background-research sites Home-Ops should use. Each group maps to a specific pipeline stage, so tell the buyer what each one affects before asking.
+
+Render one multi-select per group. Pre-check each source from the current `research_sources` block in `config/profile.yml`; when nothing exists yet, pre-check the defaults listed below.
+
+- **Listing portals -- drives `/home-ops scan`.** Unchecked portals are skipped at scan time, so `portals.yml` only contains what the buyer picked here.
+  - Defaults on: `Zillow`, `Redfin`, `Realtor.com`
+  - Default off: `Homes.com`
+- **Neighborhood sentiment -- drives `/home-ops deep` and the sentiment extract.** Pulls community posts about subdivisions, schools, and streets.
+  - Defaults on: `Reddit`, `Nextdoor`, `Facebook groups`, `Google Maps reviews`
+- **Schools -- feeds the school-sentiment roll-up and the hard-requirement gate.** More sources means a higher school evidence-coverage score.
+  - Defaults on: `GreatSchools`, `Niche`, `State report cards`
+  - Default off: `SchoolDigger`
+- **Development and infrastructure -- drives construction-pressure checks.** Picks up planned roads, subdivisions, and rezonings near a property.
+  - Defaults on: `State DOT`, `County planning`, `Municipal planning`
+  - Default off: `Regional MPO`
+
+Map the user's picks into `config/profile.yml` under `research_sources.<group>.<source>: true|false` using the group/source keys in `config/profile.example.yml`. Then rerun `node scripts/config/generate-portals.mjs` so `portals.yml` reflects the current selection.
 
 ### 6. Neighborhood Weight Scores
 
@@ -294,13 +301,13 @@ For both weight groups:
 ### `config/profile.yml`
 
 Update the structured fields for:
-- buyer identity
 - search areas
 - hard requirements
 - soft preferences
 - deal-breakers
 - commute destinations
-- financial assumptions
+- financial assumptions (down payment and closing-cost range only)
+- research sources (portals, sentiment, schools, development)
 - normalized neighborhood weights
 - normalized school weights
 
@@ -346,10 +353,10 @@ Rules:
 
 After updating the files, run:
 
-- `node generate-portals.mjs` -- regenerates `portals.yml` from the updated `config/profile.yml` and `config/city-registry.yml`. Always run this when search areas change so Zillow, Redfin, and Realtor.com base URLs stay in sync with the profile.
-- `node profile-sync-check.mjs`
+- `node scripts/config/generate-portals.mjs` -- regenerates `portals.yml` from the updated `config/profile.yml` and `config/city-registry.yml`. Always run this when search areas change so Zillow, Redfin, and Realtor.com base URLs stay in sync with the profile.
+- `node scripts/config/profile-sync-check.mjs`
 
-If `generate-portals.mjs` emits a warning for an unmatched city, add the missing `redfin_city_id` and `primary_zip` to `config/city-registry.yml` and rerun the generator before continuing.
+If `scripts/config/generate-portals.mjs` emits a warning for an unmatched city, add the missing `redfin_city_id` and `primary_zip` to `config/city-registry.yml` and rerun the generator before continuing.
 
 ## Output Summary
 
@@ -357,6 +364,6 @@ Return a concise summary with:
 - which buyer-layer files were updated
 - the biggest profile changes captured
 - whether the weight scores were re-normalized
-- whether `generate-portals.mjs` ran cleanly, plus any unmatched-city warnings it surfaced
-- whether `profile-sync-check.mjs` passed
+- whether `scripts/config/generate-portals.mjs` ran cleanly, plus any unmatched-city warnings it surfaced
+- whether `scripts/config/profile-sync-check.mjs` passed
 - and an explicit next-step line telling the user to run `/home-ops init` next

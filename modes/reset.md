@@ -39,7 +39,7 @@ If the user wants a preview first, use:
 - Windows PowerShell: `npm.cmd run reset:data -- --dry-run`
 - Other shells: `npm run reset:data -- --dry-run`
 
-After the reset, run `node verify-pipeline.mjs`.
+After the reset, run `node scripts/pipeline/verify-pipeline.mjs`.
 
 ## Output Summary
 

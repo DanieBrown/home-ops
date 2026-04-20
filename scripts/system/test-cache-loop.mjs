@@ -22,7 +22,7 @@ import {
   ttlForVerification,
 } from './cache-utils.mjs';
 
-const ROOT = dirname(fileURLToPath(import.meta.url));
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const CACHE_DIR = join(ROOT, 'output', 'cache');
 const TEST_CACHE_NAME = '__test_cache_loop__';
 const TEST_CACHE_FILE = join(CACHE_DIR, `${TEST_CACHE_NAME}.json`);

@@ -10,7 +10,7 @@ import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const ROOT = __dirname;
+const ROOT = join(__dirname, '..', '..');
 
 // System layer paths — ONLY these files get updated
 const SYSTEM_PATHS = [
@@ -24,14 +24,7 @@ const SYSTEM_PATHS = [
   'modes/tracker.md',
   'CLAUDE.md',
   'AGENTS.md',
-  'doctor.mjs',
-  'merge-tracker.mjs',
-  'verify-pipeline.mjs',
-  'dedup-tracker.mjs',
-  'normalize-statuses.mjs',
-  'profile-sync-check.mjs',
-  'check-liveness.mjs',
-  'update-system.mjs',
+  'scripts/',
   'dashboard/',
   'templates/',
   'fonts/',
@@ -273,7 +266,7 @@ async function apply() {
 
     console.log(`\nUpdate complete: v${local} → v${remote}`);
     console.log(`Updated ${updated.length} system paths.`);
-    console.log(`Rollback available: node update-system.mjs rollback`);
+    console.log(`Rollback available: node scripts/system/update-system.mjs rollback`);
 
   } finally {
     // Remove lock
@@ -323,7 +316,7 @@ function rollback() {
 
 function dismiss() {
   writeFileSync(join(ROOT, '.update-dismissed'), new Date().toISOString());
-  console.log('Update check dismissed. Run "node update-system.mjs check" or say "check for updates" to re-enable.');
+  console.log('Update check dismissed. Run "node scripts/system/update-system.mjs check" or say "check for updates" to re-enable.');
 }
 
 // ── MAIN ────────────────────────────────────────────────────────

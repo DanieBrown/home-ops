@@ -125,7 +125,8 @@ async function handleSubmit(req, res, options) {
     writeFileSync(SUBMISSION_FILE, `${JSON.stringify(wrapped, null, 2)}\n`, 'utf8');
     sendJson(res, 200, { ok: true, file: '.home-ops/profile-wizard-submission.json' });
     console.log(`\nWizard submission written to .home-ops/profile-wizard-submission.json`);
-    console.log('Return to your chat and say: finish my profile from the wizard submission.\n');
+    console.log('Return to your chat and say: finish my profile from the wizard submission.');
+    console.log('Home-Ops will regenerate portals.yml from your selections.\n');
     if (options.once) {
       setTimeout(() => process.exit(0), 250);
     }

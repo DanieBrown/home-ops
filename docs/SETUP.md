@@ -59,7 +59,7 @@ On Windows PowerShell, use `npm.cmd` instead of `npm` if execution policy blocks
 ### 2. Run the repo health check
 
 ```bash
-node doctor.mjs
+node scripts/system/doctor.mjs
 ```
 
 This validates the expected folders and creates missing system directories.
@@ -80,8 +80,8 @@ If you want guided setup instead of manual editing, run `/home-ops profile` and 
 ### 4. Verify the buyer configuration
 
 ```bash
-node profile-sync-check.mjs
-node verify-pipeline.mjs
+node scripts/config/profile-sync-check.mjs
+node scripts/pipeline/verify-pipeline.mjs
 ```
 
 ### 5. Start using the workflow
@@ -106,7 +106,7 @@ Use `npm run browser:review` or `npm.cmd run browser:review` on Windows PowerShe
 
 When `/home-ops evaluate` runs without a target, Home-Ops should deduplicate the pending pipeline by property, keep browser-backed verification and normalized fact extraction serialized in the main agent, create one report-writing subagent per canonical home, stage tracker additions under `batch/tracker-additions/`, merge them into `data/listings.md`, and move handled items into the `Processed` section of `data/pipeline.md`. If the queue is large, dispatch the per-home workers in waves of up to 5. The main agent should keep dispatching those workers until the full pending set has been attempted.
 
-After evaluate or deep writes reports, run `node research-coverage-audit.mjs` or `npm.cmd run audit:research` on Windows PowerShell to check whether neighborhood, school, and development evidence was actually sourced. If the audit or finalist gate flags school or development gaps, run `node research-source-plan.mjs <report-path> --type all` or `npm.cmd run plan:research -- <report-path> --type all` to turn the configured `portals.yml` inventories into concrete source URLs and lookup targets.
+After evaluate or deep writes reports, run `node scripts/research/research-coverage-audit.mjs` or `npm.cmd run audit:research` on Windows PowerShell to check whether neighborhood, school, and development evidence was actually sourced. If the audit or finalist gate flags school or development gaps, run `node scripts/research/research-source-plan.mjs <report-path> --type all` or `npm.cmd run plan:research -- <report-path> --type all` to turn the configured `portals.yml` inventories into concrete source URLs and lookup targets.
 
 When `/home-ops scan` runs, Home-Ops should keep at most 3 unchecked pending listings per source per configured area. If a Zillow, Redfin, or Realtor.com area bucket already has 3 or more pending entries, Home-Ops should clear that source-area bucket first and then refresh it with up to 3 current homes from that source and area.
 The pending list may contain the same home from multiple sources at once, but it should not keep duplicate URLs or same-source duplicate homes. `data/scan-history.tsv` should continue to log scan outcomes, but it should not block later area-bucket refills.
@@ -115,7 +115,7 @@ If Zillow blocks on sign-in or human verification during scan mode, Home-Ops sho
 When you need a saved browser session for Playwright-backed checks, reuse it with:
 
 ```bash
-node check-liveness.mjs --profile chrome-host <listing-url>
+node scripts/browser/check-liveness.mjs --profile chrome-host <listing-url>
 ```
 
 ## Buyer Files
@@ -161,11 +161,11 @@ Run it from the dashboard directory with:
 ## Recommended Checks Before Use
 
 ```bash
-node doctor.mjs
-node profile-sync-check.mjs
-node verify-pipeline.mjs
-node research-coverage-audit.mjs
-node test-all.mjs --quick
+node scripts/system/doctor.mjs
+node scripts/config/profile-sync-check.mjs
+node scripts/pipeline/verify-pipeline.mjs
+node scripts/research/research-coverage-audit.mjs
+node scripts/system/test-all.mjs --quick
 ```
 
 ## Reset Generated State

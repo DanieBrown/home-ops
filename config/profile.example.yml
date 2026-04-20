@@ -80,9 +80,37 @@ commute:
 
 financial:
   down_payment_pct: 20
-  loan_type: "30-year fixed"
   closing_cost_pct_min: 2
   closing_cost_pct_max: 3
+
+# research_sources controls which listing portals and background-research sites
+# Home-Ops uses. Each group maps to a specific pipeline stage:
+#   portals      -> /home-ops scan (which portals get scanned for new listings)
+#   sentiment    -> /home-ops deep + sentiment extract (community posts)
+#   schools      -> school sentiment + hard-requirement gate (evidence coverage)
+#   development  -> construction-pressure check (planned roads, rezonings)
+# generate-portals.mjs honors these toggles when rebuilding portals.yml.
+research_sources:
+  portals:
+    zillow: true
+    redfin: true
+    realtor: true
+    homes: false
+  sentiment:
+    reddit: true
+    nextdoor: true
+    facebook: true
+    google_maps: true
+  schools:
+    greatschools: true
+    niche: true
+    state_report_cards: true
+    schooldigger: false
+  development:
+    state_dot: true
+    county_planning: true
+    municipal_planning: true
+    mpo: false
 
 workflow:
   shortlist:

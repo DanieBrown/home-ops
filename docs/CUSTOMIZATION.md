@@ -52,7 +52,7 @@ Customize:
 
 Scan syncs the numeric portal filters from `config/profile.yml` at runtime, so `portals.yml` does not need to mirror every price, bed, garage, and square-foot threshold by hand.
 
-The source inventories in `portals.yml` are both configuration and audit surface. Home-Ops uses them to define what the evaluator should look for, and `research-coverage-audit.mjs` uses report content to tell you whether those evidence classes were actually covered.
+The source inventories in `portals.yml` are both configuration and audit surface. Home-Ops uses them to define what the evaluator should look for, and `scripts/research/research-coverage-audit.mjs` uses report content to tell you whether those evidence classes were actually covered.
 
 ## Prompt Overrides
 
@@ -69,7 +69,7 @@ Avoid putting those preferences into `modes/_shared.md`, which should remain reu
 If you change tracker states, update all three of these together:
 
 1. `templates/states.yml`
-2. `normalize-statuses.mjs`
+2. `scripts/pipeline/normalize-statuses.mjs`
 3. any prompt text that references status names
 
 ## Dashboard Theme

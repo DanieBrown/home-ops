@@ -12,111 +12,19 @@ import { copyFileSync, existsSync, readFileSync, writeFileSync } from 'fs';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 
-const ROOT = dirname(fileURLToPath(import.meta.url));
+import { normalizeAddress, normalizeCity } from '../shared/text-utils.mjs';
+import {
+  STATUS_RANK,
+  chooseBetterStatus,
+  mergeNotes,
+  parseListingRow,
+  parseScore,
+  serializeListing,
+} from '../shared/listings.mjs';
+
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const LISTINGS_FILE = join(ROOT, 'data', 'listings.md');
 const DRY_RUN = process.argv.includes('--dry-run');
-
-const STATUS_RANK = {
-  'new': 0,
-  'evaluated': 1,
-  'passed': 1,
-  'skip': 0,
-  'interested': 2,
-  'tour scheduled': 3,
-  'toured': 4,
-  'offer submitted': 5,
-  'under contract': 6,
-  'closed': 7,
-  'sold': 7,
-};
-
-function normalizeStreetSuffixes(value) {
-  return value
-    .replace(/\bst\b/g, 'street')
-    .replace(/\brd\b/g, 'road')
-    .replace(/\bave\b/g, 'avenue')
-    .replace(/\bblvd\b/g, 'boulevard')
-    .replace(/\bdr\b/g, 'drive')
-    .replace(/\bln\b/g, 'lane')
-    .replace(/\bct\b/g, 'court')
-    .replace(/\bcir\b/g, 'circle')
-    .replace(/\bpkwy\b/g, 'parkway')
-    .replace(/\bpl\b/g, 'place')
-    .replace(/\bhwy\b/g, 'highway');
-}
-
-function normalizeAddress(value) {
-  return normalizeStreetSuffixes(value.toLowerCase())
-    .replace(/[^a-z0-9 ]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
-function normalizeCity(value) {
-  return value.toLowerCase().replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
-}
-
-function parseScore(value) {
-  const match = value.replace(/\*\*/g, '').match(/([\d.]+)/);
-  return match ? Number.parseFloat(match[1]) : 0;
-}
-
-function mergeNotes(...values) {
-  const seen = new Set();
-  const merged = [];
-
-  values
-    .flatMap((value) => (value || '').split(/\s*\.\s*/))
-    .map((value) => value.trim())
-    .filter(Boolean)
-    .forEach((value) => {
-      const key = value.toLowerCase();
-      if (seen.has(key)) {
-        return;
-      }
-      seen.add(key);
-      merged.push(value);
-    });
-
-  return merged.join('. ');
-}
-
-function chooseBetterStatus(left, right) {
-  const leftRank = STATUS_RANK[left.toLowerCase()] ?? 0;
-  const rightRank = STATUS_RANK[right.toLowerCase()] ?? 0;
-  return rightRank > leftRank ? right : left;
-}
-
-function parseListingRow(line, lineIndex = -1) {
-  const columns = line.split('|').map((value) => value.trim()).filter(Boolean);
-  if (columns.length !== 11) {
-    return null;
-  }
-
-  const num = Number.parseInt(columns[0], 10);
-  if (Number.isNaN(num)) {
-    return null;
-  }
-
-  return {
-    num,
-    date: columns[1],
-    address: columns[2],
-    city: columns[3],
-    price: columns[4],
-    bedsBaths: columns[5],
-    sqft: columns[6],
-    score: columns[7],
-    status: columns[8],
-    report: columns[9],
-    notes: columns[10] || '',
-    lineIndex,
-  };
-}
-
-function serializeListing(entry) {
-  return `| ${entry.num} | ${entry.date} | ${entry.address} | ${entry.city} | ${entry.price} | ${entry.bedsBaths} | ${entry.sqft} | ${entry.score} | ${entry.status} | ${entry.report} | ${entry.notes} |`;
-}
 
 if (!existsSync(LISTINGS_FILE)) {
   console.log('No data/listings.md found. Nothing to deduplicate.');

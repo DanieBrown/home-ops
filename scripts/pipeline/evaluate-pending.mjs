@@ -8,7 +8,7 @@ import { fileURLToPath } from 'url';
 import {
   connectToSavedBrowserSession,
   readSessionState,
-} from './browser-session.mjs';
+} from '../browser/browser-session.mjs';
 import {
   extractRoadHints,
   extractSchoolNames,
@@ -17,7 +17,7 @@ import {
   normalizeKey,
   parseReport,
   parseShortlist,
-} from './research-utils.mjs';
+} from '../research/research-utils.mjs';
 import {
   CACHE_TTL,
   getCacheEntry,
@@ -27,9 +27,10 @@ import {
   putCacheEntry,
   saveCache,
   ttlForVerification,
-} from './cache-utils.mjs';
+} from '../system/cache-utils.mjs';
+import { slugify as slugifyBase } from '../shared/text-utils.mjs';
 
-const ROOT = dirname(fileURLToPath(import.meta.url));
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const PIPELINE_PATH = join(ROOT, 'data', 'pipeline.md');
 const LISTINGS_PATH = join(ROOT, 'data', 'listings.md');
 const REPORTS_DIR = join(ROOT, 'reports');
@@ -202,11 +203,7 @@ function formatRunId(date = new Date()) {
 }
 
 function slugify(value) {
-  return String(value ?? '')
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 80) || 'listing';
+  return slugifyBase(value).slice(0, 80) || 'listing';
 }
 
 function detectPlatformFromUrl(value) {

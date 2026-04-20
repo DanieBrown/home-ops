@@ -15,7 +15,7 @@ import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const projectRoot = __dirname;
+const projectRoot = join(__dirname, '..', '..');
 
 const warnings = [];
 const errors = [];
@@ -36,9 +36,6 @@ if (!existsSync(profilePath)) {
 } else {
   const profile = readFileSync(profilePath, 'utf-8');
   const requiredMarkers = [
-    'full_name:',
-    'email:',
-    'location:',
     'price_min:',
     'price_max:',
     'beds_min:',

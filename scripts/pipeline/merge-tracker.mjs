@@ -19,7 +19,18 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, writeFile
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 
-const ROOT = dirname(fileURLToPath(import.meta.url));
+import { normalizeAddress, normalizeCity } from '../shared/text-utils.mjs';
+import {
+  chooseBetterStatus as chooseBetterStatusBase,
+  mergeNotes,
+  parseListingRow as parseListingRowRaw,
+  parseReportNumber,
+  parseScore,
+  serializeListing,
+} from '../shared/listings.mjs';
+import { buildCanonicalLookup, readCanonicalStatuses } from '../shared/states.mjs';
+
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const LISTINGS_FILE = join(ROOT, 'data', 'listings.md');
 const ADDITIONS_DIR = join(ROOT, 'batch', 'tracker-additions');
 const MERGED_DIR = join(ADDITIONS_DIR, 'merged');
@@ -27,117 +38,11 @@ const STATES_FILE = join(ROOT, 'templates', 'states.yml');
 const DRY_RUN = process.argv.includes('--dry-run');
 const VERIFY = process.argv.includes('--verify');
 
-const DEFAULT_STATUSES = [
-  'New',
-  'Evaluated',
-  'Interested',
-  'Tour Scheduled',
-  'Toured',
-  'Offer Submitted',
-  'Under Contract',
-  'Closed',
-  'Passed',
-  'Sold',
-  'SKIP',
-];
-
-const STATUS_RANK = {
-  'new': 0,
-  'evaluated': 1,
-  'interested': 2,
-  'tour scheduled': 3,
-  'toured': 4,
-  'offer submitted': 5,
-  'under contract': 6,
-  'closed': 7,
-  'sold': 7,
-  'passed': 1,
-  'skip': 0,
-};
-
-function readCanonicalStatuses() {
-  if (!existsSync(STATES_FILE)) {
-    return DEFAULT_STATUSES;
-  }
-
-  const labels = [];
-  const content = readFileSync(STATES_FILE, 'utf-8');
-  for (const line of content.split('\n')) {
-    const match = line.match(/^\s*label:\s*(.+)$/);
-    if (!match) {
-      continue;
-    }
-    labels.push(match[1].trim().replace(/^['"]|['"]$/g, ''));
-  }
-
-  return labels.length > 0 ? labels : DEFAULT_STATUSES;
-}
-
-const CANONICAL_STATUSES = readCanonicalStatuses();
-const CANONICAL_LOOKUP = new Map(CANONICAL_STATUSES.map((label) => [label.toLowerCase(), label]));
-
-function normalizeStreetSuffixes(value) {
-  return value
-    .replace(/\bst\b/g, 'street')
-    .replace(/\brd\b/g, 'road')
-    .replace(/\bave\b/g, 'avenue')
-    .replace(/\bblvd\b/g, 'boulevard')
-    .replace(/\bdr\b/g, 'drive')
-    .replace(/\bln\b/g, 'lane')
-    .replace(/\bct\b/g, 'court')
-    .replace(/\bcir\b/g, 'circle')
-    .replace(/\bpkwy\b/g, 'parkway')
-    .replace(/\bpl\b/g, 'place')
-    .replace(/\bhwy\b/g, 'highway');
-}
-
-function normalizeAddress(value) {
-  return normalizeStreetSuffixes(value.toLowerCase())
-    .replace(/[^a-z0-9 ]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
-function normalizeCity(value) {
-  return value.toLowerCase().replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
-}
-
-function parseScore(value) {
-  const match = value.replace(/\*\*/g, '').match(/([\d.]+)/);
-  return match ? Number.parseFloat(match[1]) : 0;
-}
-
-function parseReportNumber(value) {
-  const match = value.match(/\[(\d+)\]/);
-  return match ? Number.parseInt(match[1], 10) : null;
-}
-
-function mergeNotes(...values) {
-  const seen = new Set();
-  const merged = [];
-
-  values
-    .flatMap((value) => (value || '').split(/\s*\.\s*/))
-    .map((value) => value.trim())
-    .filter(Boolean)
-    .forEach((value) => {
-      const key = value.toLowerCase();
-      if (seen.has(key)) {
-        return;
-      }
-      seen.add(key);
-      merged.push(value);
-    });
-
-  return merged.join('. ');
-}
+const CANONICAL_STATUSES = readCanonicalStatuses(STATES_FILE);
+const CANONICAL_LOOKUP = buildCanonicalLookup(CANONICAL_STATUSES);
 
 function chooseBetterStatus(left, right) {
-  const resolvedLeft = canonicalizeStatus(left);
-  const resolvedRight = canonicalizeStatus(right);
-  const leftRank = STATUS_RANK[resolvedLeft.toLowerCase()] ?? 0;
-  const rightRank = STATUS_RANK[resolvedRight.toLowerCase()] ?? 0;
-  return rightRank > leftRank ? resolvedRight : resolvedLeft;
+  return chooseBetterStatusBase(canonicalizeStatus(left), canonicalizeStatus(right));
 }
 
 function looksLikeScore(value) {
@@ -195,34 +100,12 @@ function canonicalizeStatus(value) {
 }
 
 function parseListingRow(line, lineIndex = -1) {
-  const columns = line.split('|').map((value) => value.trim()).filter(Boolean);
-  if (columns.length !== 11) {
+  const entry = parseListingRowRaw(line, lineIndex);
+  if (!entry) {
     return null;
   }
-
-  const num = Number.parseInt(columns[0], 10);
-  if (Number.isNaN(num)) {
-    return null;
-  }
-
-  return {
-    num,
-    date: columns[1],
-    address: columns[2],
-    city: columns[3],
-    price: columns[4],
-    bedsBaths: columns[5],
-    sqft: columns[6],
-    score: columns[7],
-    status: canonicalizeStatus(columns[8]),
-    report: columns[9],
-    notes: columns[10] || '',
-    lineIndex,
-  };
-}
-
-function serializeListing(entry) {
-  return `| ${entry.num} | ${entry.date} | ${entry.address} | ${entry.city} | ${entry.price} | ${entry.bedsBaths} | ${entry.sqft} | ${entry.score} | ${entry.status} | ${entry.report} | ${entry.notes} |`;
+  entry.status = canonicalizeStatus(entry.status);
+  return entry;
 }
 
 function parseAdditionLine(content, filename, lineNumber) {

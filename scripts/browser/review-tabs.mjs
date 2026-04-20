@@ -19,7 +19,7 @@ import {
   parseReport,
   parseShortlist,
   resolveWorkspacePath,
-} from './research-utils.mjs';
+} from '../research/research-utils.mjs';
 
 const DEFAULT_PROFILE = 'chrome-host';
 const DEFAULT_TIMEOUT_MS = 30000;
@@ -43,7 +43,7 @@ Options:
 `;
 
 function getProjectRoot() {
-  return dirname(fileURLToPath(import.meta.url));
+  return join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 }
 
 function parseArgs(argv) {
@@ -183,7 +183,7 @@ function validateFinalistGate(projectRoot, rows, config) {
   throw new Error(
     'Refined top 3 failed the strict finalist research gate.\n'
     + `${details}\n`
-    + 'Run node shortlist-finalist-gate.mjs for a full report, or rerun with --skip-finalist-gate only if you intentionally want to bypass the evidence gate.',
+    + 'Run node scripts/research/shortlist-finalist-gate.mjs for a full report, or rerun with --skip-finalist-gate only if you intentionally want to bypass the evidence gate.',
   );
 }
 

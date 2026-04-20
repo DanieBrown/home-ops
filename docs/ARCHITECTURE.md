@@ -25,7 +25,7 @@ Expected behavior:
 2. Ask 0-100 importance questions for the neighborhood and school weighting factors.
 3. Normalize those raw scores into `config/profile.yml` weights.
 4. Update `buyer-profile.md`, `config/profile.yml`, and `modes/_profile.md`.
-5. Run `profile-sync-check.mjs`.
+5. Run `scripts/config/profile-sync-check.mjs`.
 
 The normalized weights currently influence agent judgment and research emphasis. They are not yet backed by a separate deterministic scoring engine that consumes structured neighborhood, school, and development source records. Deep mode now bridges that gap with per-home packets under `output/deep-packets/` so workers receive explicit source coverage, captured browser evidence, and weighted signal rollups before reranking.
 
@@ -67,7 +67,7 @@ templates/states.yml     -> canonical status model
 7. Estimate financial fit using the buyer profile.
 8. Score the listing from 1.0 to 5.0.
 9. Save a markdown report and update `data/listings.md`.
-10. Audit the generated report with `research-coverage-audit.mjs` when you need to confirm whether neighborhood, school, and development evidence was actually sourced.
+10. Audit the generated report with `scripts/research/research-coverage-audit.mjs` when you need to confirm whether neighborhood, school, and development evidence was actually sourced.
 
 When `evaluate` is invoked with no explicit listing target, the mode should switch to a pipeline-batch branch:
 
@@ -77,7 +77,7 @@ When `evaluate` is invoked with no explicit listing target, the mode should swit
 4. Keep browser-backed verification and normalized fact extraction serialized in the main agent across the run.
 5. Create one report-writing subagent per canonical property. If there are many homes, dispatch those workers in waves of up to 5, but keep the unit of work at one home per agent.
 6. Stage tracker additions in `batch/tracker-additions/`.
-7. Merge the staged results into `data/listings.md` with `merge-tracker.mjs`.
+7. Merge the staged results into `data/listings.md` with `scripts/pipeline/merge-tracker.mjs`.
 8. Move handled items to the `Processed` section of `data/pipeline.md`.
 
 ## Scan Flow
@@ -105,7 +105,7 @@ Expected behavior:
 4. Deep can run a hosted-browser Facebook and Nextdoor extraction pass against that shortlist before the worker research begins.
 5. Deep materializes one packet per shortlisted home under `output/deep-packets/` with the report baseline, research-audit blockers, source-plan entries, configured weights, and any captured Facebook or Nextdoor summary so workers do not have to infer those metrics.
 6. Deep launches one subagent per shortlisted home, requires source-coverage and weighted-metric fields in each worker result, writes a combined brief such as `reports/deep-shortlist-{YYYY-MM-DD}.md`, and keeps the final rerank in the main agent.
-7. Deep reruns the compare framework on that shortlisted set using the new research, updates `data/shortlist.md` with the refined top three, validates them with `shortlist-finalist-gate.mjs`, and only then opens the refined finalists in separate browser tabs.
+7. Deep reruns the compare framework on that shortlisted set using the new research, updates `data/shortlist.md` with the refined top three, validates them with `scripts/research/shortlist-finalist-gate.mjs`, and only then opens the refined finalists in separate browser tabs.
 
 ## Tracker Model
 
@@ -131,16 +131,16 @@ Canonical statuses come from `templates/states.yml` and currently cover:
 
 | Script | Purpose |
 |--------|---------|
-| `browser-session.mjs` | Opens either a Playwright-managed persistent profile or a hosted real-Chrome profile, derives targets from `portals.yml`, and records repo-local session state |
-| `doctor.mjs` | Validates required files and creates missing system directories |
-| `profile-sync-check.mjs` | Checks buyer-layer consistency |
-| `verify-pipeline.mjs` | Validates tracker rows, links, statuses, and duplicates |
-| `research-coverage-audit.mjs` | Audits evaluation reports for explicit neighborhood, school, and development evidence coverage |
-| `sentiment-browser-extract.mjs` | Reuses the hosted browser session over CDP and captures deterministic Facebook and Nextdoor sentiment evidence into `output/sentiment/` |
-| `normalize-statuses.mjs` | Normalizes status aliases to canonical states |
-| `dedup-tracker.mjs` | Removes duplicate listings keyed by address and city |
-| `merge-tracker.mjs` | Merges staged tracker additions into `data/listings.md` |
-| `check-liveness.mjs` | Uses Playwright to verify listing activity |
+| `scripts/browser/browser-session.mjs` | Opens either a Playwright-managed persistent profile or a hosted real-Chrome profile, derives targets from `portals.yml`, and records repo-local session state |
+| `scripts/system/doctor.mjs` | Validates required files and creates missing system directories |
+| `scripts/config/profile-sync-check.mjs` | Checks buyer-layer consistency |
+| `scripts/pipeline/verify-pipeline.mjs` | Validates tracker rows, links, statuses, and duplicates |
+| `scripts/research/research-coverage-audit.mjs` | Audits evaluation reports for explicit neighborhood, school, and development evidence coverage |
+| `scripts/research/sentiment-browser-extract.mjs` | Reuses the hosted browser session over CDP and captures deterministic Facebook and Nextdoor sentiment evidence into `output/sentiment/` |
+| `scripts/pipeline/normalize-statuses.mjs` | Normalizes status aliases to canonical states |
+| `scripts/pipeline/dedup-tracker.mjs` | Removes duplicate listings keyed by address and city |
+| `scripts/pipeline/merge-tracker.mjs` | Merges staged tracker additions into `data/listings.md` |
+| `scripts/browser/check-liveness.mjs` | Uses Playwright to verify listing activity |
 
 ## Dashboard
 

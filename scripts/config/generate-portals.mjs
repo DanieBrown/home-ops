@@ -16,7 +16,9 @@ import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 import YAML from 'yaml';
 
-const ROOT = dirname(fileURLToPath(import.meta.url));
+import { slugify as slugifyLower } from '../shared/text-utils.mjs';
+
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const PROFILE_PATH = join(ROOT, 'config', 'profile.yml');
 const REGISTRY_PATH = join(ROOT, 'config', 'city-registry.yml');
 const PORTALS_PATH = join(ROOT, 'portals.yml');
@@ -119,13 +121,6 @@ function normalizeKey(name, state) {
   return `${String(name ?? '').trim().toLowerCase()}|${String(state ?? '').trim().toLowerCase()}`;
 }
 
-function slugifyLower(value) {
-  return String(value ?? '')
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '');
-}
-
 function slugifyTitleDashed(value) {
   return String(value ?? '')
     .trim()
@@ -194,56 +189,108 @@ function redfinUrl(slugs, warnings, areaName) {
   return `https://www.redfin.com/city/search?q=${encodeURIComponent(`${areaName}, ${slugs.state}`)}`;
 }
 
-function buildPlatforms(areas, registryIndex, warnings) {
-  const zillowSearches = [];
-  const redfinSearches = [];
-  const realtorSearches = [];
-
-  for (const area of areas) {
-    const registryEntry = registryIndex.get(normalizeKey(area.name, area.state ?? 'NC'));
-    if (!registryEntry) {
-      warnings.push(
-        `"${area.name}, ${area.state ?? '??'}" is not in config/city-registry.yml. Falling back to derived slugs -- verify the generated URLs.`,
-      );
-    }
-    const slugs = resolvePlatformSlugs(area, registryEntry);
-    zillowSearches.push({ area: area.name, url: zillowUrl(slugs) });
-    redfinSearches.push({ area: area.name, url: redfinUrl(slugs, warnings, area.name) });
-    realtorSearches.push({ area: area.name, url: realtorUrl(slugs) });
-  }
-
-  return {
-    zillow: {
-      name: 'Zillow',
-      base_url: 'https://www.zillow.com',
-      login_required: true,
-      login_prompt:
-        'I need the saved Zillow browser session. Run /home-ops init --zillow if needed, sign in manually in the hosted Chrome window, then confirm.',
-      search_urls: zillowSearches,
-    },
-    redfin: {
-      name: 'Redfin',
-      base_url: 'https://www.redfin.com',
-      login_required: true,
-      login_prompt:
-        'I need the saved Redfin browser session. Run /home-ops init --redfin if needed, sign in manually in the hosted Chrome window, then confirm.',
-      search_urls: redfinSearches,
-    },
-    realtor: {
-      name: 'Realtor.com',
-      base_url: 'https://www.realtor.com',
-      login_required: true,
-      login_prompt:
-        'I need the saved Realtor.com browser session. Run /home-ops init --relator if needed, sign in manually in the hosted Chrome window, then confirm.',
-      search_urls: realtorSearches,
-    },
-  };
+function homesUrl(slugs) {
+  return `https://www.homes.com/${slugs.zillowSlug}/houses-for-sale/`;
 }
 
-function buildResearchSources(areas) {
+const PORTAL_DEFINITIONS = {
+  zillow: {
+    name: 'Zillow',
+    base_url: 'https://www.zillow.com',
+    login_prompt:
+      'I need the saved Zillow browser session. Run /home-ops init --zillow if needed, sign in manually in the hosted Chrome window, then confirm.',
+    buildUrl: (slugs) => zillowUrl(slugs),
+  },
+  redfin: {
+    name: 'Redfin',
+    base_url: 'https://www.redfin.com',
+    login_prompt:
+      'I need the saved Redfin browser session. Run /home-ops init --redfin if needed, sign in manually in the hosted Chrome window, then confirm.',
+    buildUrl: (slugs, warnings, areaName) => redfinUrl(slugs, warnings, areaName),
+  },
+  realtor: {
+    name: 'Realtor.com',
+    base_url: 'https://www.realtor.com',
+    login_prompt:
+      'I need the saved Realtor.com browser session. Run /home-ops init --relator if needed, sign in manually in the hosted Chrome window, then confirm.',
+    buildUrl: (slugs) => realtorUrl(slugs),
+  },
+  homes: {
+    name: 'Homes.com',
+    base_url: 'https://www.homes.com',
+    login_prompt:
+      'I need the saved Homes.com browser session. Run /home-ops init --homes if needed, sign in manually in the hosted Chrome window, then confirm.',
+    buildUrl: (slugs) => homesUrl(slugs),
+  },
+};
+
+const DEFAULT_PORTAL_SELECTION = { zillow: true, redfin: true, realtor: true, homes: false };
+
+function resolvePortalSelection(profile) {
+  const configured = profile?.research_sources?.portals;
+  if (!configured || typeof configured !== 'object') {
+    return { ...DEFAULT_PORTAL_SELECTION };
+  }
+  const resolved = { ...DEFAULT_PORTAL_SELECTION };
+  for (const key of Object.keys(PORTAL_DEFINITIONS)) {
+    if (key in configured) {
+      resolved[key] = Boolean(configured[key]);
+    }
+  }
+  return resolved;
+}
+
+function buildPlatforms(areas, registryIndex, warnings, selection) {
+  const platforms = {};
+  for (const [key, definition] of Object.entries(PORTAL_DEFINITIONS)) {
+    if (!selection[key]) continue;
+    const searches = areas.map((area) => {
+      const registryEntry = registryIndex.get(normalizeKey(area.name, area.state ?? 'NC'));
+      if (!registryEntry && key === 'zillow') {
+        warnings.push(
+          `"${area.name}, ${area.state ?? '??'}" is not in config/city-registry.yml. Falling back to derived slugs -- verify the generated URLs.`,
+        );
+      }
+      const slugs = resolvePlatformSlugs(area, registryEntry);
+      return { area: area.name, url: definition.buildUrl(slugs, warnings, area.name) };
+    });
+    platforms[key] = {
+      name: definition.name,
+      base_url: definition.base_url,
+      login_required: true,
+      login_prompt: definition.login_prompt,
+      search_urls: searches,
+    };
+  }
+  return platforms;
+}
+
+const DEFAULT_SENTIMENT_SELECTION = { reddit: true, nextdoor: true, facebook: true, google_maps: true };
+const DEFAULT_SCHOOL_SELECTION = { greatschools: true, niche: true, state_report_cards: true, schooldigger: false };
+const DEFAULT_DEVELOPMENT_SELECTION = { state_dot: true, county_planning: true, municipal_planning: true, mpo: false };
+
+function resolveGroupSelection(profile, group, defaults) {
+  const configured = profile?.research_sources?.[group];
+  if (!configured || typeof configured !== 'object') {
+    return { ...defaults };
+  }
+  const resolved = { ...defaults };
+  for (const key of Object.keys(defaults)) {
+    if (key in configured) {
+      resolved[key] = Boolean(configured[key]);
+    }
+  }
+  return resolved;
+}
+
+function buildResearchSources(areas, profile) {
   const states = new Set(areas.map((area) => (area.state ?? 'NC').toUpperCase()));
   const primaryState = areas[0]?.state?.toUpperCase() ?? 'NC';
   const defaults = STATE_RESEARCH_DEFAULTS[primaryState];
+
+  const sentimentSelection = resolveGroupSelection(profile, 'sentiment', DEFAULT_SENTIMENT_SELECTION);
+  const schoolSelection = resolveGroupSelection(profile, 'schools', DEFAULT_SCHOOL_SELECTION);
+  const developmentSelection = resolveGroupSelection(profile, 'development', DEFAULT_DEVELOPMENT_SELECTION);
 
   const countyNames = new Set();
   for (const area of areas) {
@@ -278,46 +325,60 @@ function buildResearchSources(areas) {
     }
   }
 
-  const sentimentSources = {
-    reddit: {
+  const sentimentSources = {};
+  if (sentimentSelection.reddit) {
+    sentimentSources.reddit = {
       subreddits: defaults?.reddit_subreddits ?? ['r/RealEstate'],
       login_required: false,
-    },
-    google_maps: {
+    };
+  }
+  if (sentimentSelection.google_maps) {
+    sentimentSources.google_maps = {
       login_required: false,
       note: `Use local review patterns for subdivisions, schools, parks, and anchor businesses around ${areas.map((area) => area.name).join(', ') || 'the configured areas'}.`,
-    },
-    facebook: {
+    };
+  }
+  if (sentimentSelection.facebook) {
+    sentimentSources.facebook = {
       base_url: 'https://www.facebook.com/',
       login_required: true,
       lookback_days: 7,
       login_prompt:
         'I need Facebook login to search for local neighborhood groups. Please log in and confirm.',
       note: 'Search the subdivision name, nearby schools, and major roads. Prefer the last 7 days of posts and comments.',
-    },
-    nextdoor: {
+    };
+  }
+  if (sentimentSelection.nextdoor) {
+    sentimentSources.nextdoor = {
       base_url: 'https://nextdoor.com/',
       login_required: true,
       lookback_days: 7,
       login_prompt:
         'I need Nextdoor login to view neighborhood discussion. Please log in and confirm.',
       note: 'Use recent neighborhood posts for traffic, construction, safety, noise, and community-maintenance signals.',
-    },
-  };
+    };
+  }
 
-  const schoolSources = {
-    greatschools: { url: 'https://www.greatschools.org', login_required: false },
-    niche: { url: 'https://www.niche.com', login_required: false },
-    state_report_cards: {
+  const schoolSources = {};
+  if (schoolSelection.greatschools) {
+    schoolSources.greatschools = { url: 'https://www.greatschools.org', login_required: false };
+  }
+  if (schoolSelection.niche) {
+    schoolSources.niche = { url: 'https://www.niche.com', login_required: false };
+  }
+  if (schoolSelection.state_report_cards) {
+    schoolSources.state_report_cards = {
       url: defaults?.state_report_card?.url ?? 'https://nces.ed.gov/ccd/schoolsearch/',
       login_required: false,
-    },
-    schooldigger: { url: 'https://www.schooldigger.com', login_required: false },
-  };
-  if (defaults?.state_report_card?.note) {
-    schoolSources.state_report_cards.note = defaults.state_report_card.note;
+    };
+    if (defaults?.state_report_card?.note) {
+      schoolSources.state_report_cards.note = defaults.state_report_card.note;
+    }
   }
-  if (primaryState === 'NC' && [...states].every((s) => s === 'NC')) {
+  if (schoolSelection.schooldigger) {
+    schoolSources.schooldigger = { url: 'https://www.schooldigger.com', login_required: false };
+  }
+  if (schoolSelection.greatschools && primaryState === 'NC' && [...states].every((s) => s === 'NC')) {
     schoolSources.wcpss = {
       url: 'https://www.wcpss.net/domain/12171',
       login_required: false,
@@ -325,28 +386,33 @@ function buildResearchSources(areas) {
     };
   }
 
-  const developmentSources = {
-    county: counties.length > 0 ? counties : [
-      {
-        name: 'Local County Planning (add entry in config/city-registry.yml context)',
-        url: '',
-      },
-    ],
-    municipality: municipalities.length > 0 ? municipalities : [
-      {
-        name: 'Municipal Planning (add entry)',
-        url: '',
-      },
-    ],
-    transportation: defaults?.transportation ?? [
+  const developmentSources = {};
+  if (developmentSelection.county_planning) {
+    developmentSources.county = counties.length > 0 ? counties : [
+      { name: 'Local County Planning (add entry in config/city-registry.yml context)', url: '' },
+    ];
+  }
+  if (developmentSelection.municipal_planning) {
+    developmentSources.municipality = municipalities.length > 0 ? municipalities : [
+      { name: 'Municipal Planning (add entry)', url: '' },
+    ];
+  }
+  if (developmentSelection.state_dot) {
+    developmentSources.transportation = defaults?.transportation ?? [
       { name: 'State DOT Projects', url: '' },
-    ],
-  };
+    ];
+  }
+  if (developmentSelection.mpo) {
+    const mpoEntry = (defaults?.transportation ?? []).find((entry) => /mpo/i.test(entry.name));
+    developmentSources.mpo = mpoEntry
+      ? [mpoEntry]
+      : [{ name: 'Regional MPO (add entry)', url: '' }];
+  }
 
   return { sentimentSources, schoolSources, developmentSources };
 }
 
-function buildSearchQueries(areas, hardRequirements) {
+function buildSearchQueries(areas, hardRequirements, selection) {
   const priceMin = Number.parseInt(hardRequirements?.price_min ?? 0, 10);
   const priceMax = Number.parseInt(hardRequirements?.price_max ?? 0, 10);
   const bedsMin = Number.parseFloat(hardRequirements?.beds_min ?? 0);
@@ -356,11 +422,13 @@ function buildSearchQueries(areas, hardRequirements) {
     : '';
   const bedsFragment = bedsMin ? `${bedsMin} bed` : '';
 
-  const platforms = [
-    { label: 'Zillow', host: 'zillow.com' },
-    { label: 'Redfin', host: 'redfin.com' },
-    { label: 'Realtor.com', host: 'realtor.com' },
+  const allPlatforms = [
+    { key: 'zillow', label: 'Zillow', host: 'zillow.com' },
+    { key: 'redfin', label: 'Redfin', host: 'redfin.com' },
+    { key: 'realtor', label: 'Realtor.com', host: 'realtor.com' },
+    { key: 'homes', label: 'Homes.com', host: 'homes.com' },
   ];
+  const platforms = allPlatforms.filter((platform) => selection[platform.key]);
 
   const queries = [];
   for (const platform of platforms) {
@@ -401,9 +469,15 @@ function buildPortalsDocument(profile, registry) {
 
   const warnings = [];
   const registryIndex = buildRegistryIndex(registry);
-  const platforms = buildPlatforms(areas, registryIndex, warnings);
-  const research = buildResearchSources(areas);
-  const queries = buildSearchQueries(areas, profile.search?.hard_requirements);
+  const portalSelection = resolvePortalSelection(profile);
+  const platforms = buildPlatforms(areas, registryIndex, warnings, portalSelection);
+  if (Object.keys(platforms).length === 0) {
+    warnings.push(
+      'No listing portals are enabled in research_sources.portals. Scan will have nothing to fetch.',
+    );
+  }
+  const research = buildResearchSources(areas, profile);
+  const queries = buildSearchQueries(areas, profile.search?.hard_requirements, portalSelection);
 
   const document = {
     platforms,
@@ -442,7 +516,10 @@ function main() {
   const yamlText = serialize(document);
   writeFileSync(PORTALS_PATH, yamlText, 'utf8');
 
-  console.log(`Wrote portals.yml with ${document.platforms.zillow.search_urls.length} area(s) per platform.`);
+  const platformKeys = Object.keys(document.platforms);
+  const areaCount = platformKeys.length > 0 ? document.platforms[platformKeys[0]].search_urls.length : 0;
+  const platformSummary = platformKeys.length > 0 ? platformKeys.join(', ') : '(none enabled)';
+  console.log(`Wrote portals.yml with ${areaCount} area(s) across platforms: ${platformSummary}.`);
   if (warnings.length > 0) {
     console.log('\nWarnings:');
     for (const warning of warnings) {

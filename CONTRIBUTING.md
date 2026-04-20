@@ -40,7 +40,7 @@ npx playwright install chromium
 npm run doctor
 npm run verify
 npm run sync-check
-node test-all.mjs --quick
+node scripts/system/test-all.mjs --quick
 
 # optional dashboard build
 cd dashboard && go build ./...

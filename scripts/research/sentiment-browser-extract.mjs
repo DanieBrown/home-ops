@@ -3,7 +3,7 @@
 import { mkdir, writeFile } from 'fs/promises';
 import { join } from 'path';
 import { chromium } from 'playwright';
-import { readSessionState } from './browser-session.mjs';
+import { readSessionState } from '../browser/browser-session.mjs';
 import {
   ROOT,
   buildSentimentSourcePlan,
@@ -19,7 +19,8 @@ import {
   pruneCache,
   putCacheEntry,
   saveCache,
-} from './cache-utils.mjs';
+} from '../system/cache-utils.mjs';
+import { slugify } from '../shared/text-utils.mjs';
 
 const SENTIMENT_CACHE_NAME = 'sentiment';
 
@@ -313,10 +314,6 @@ function determineDefaultConcurrency(config, targetCount) {
 
 function normalizeText(value) {
   return String(value ?? '').replace(/\u00a0/g, ' ').replace(/\s+/g, ' ').trim();
-}
-
-function slugify(value) {
-  return normalizeText(value).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
 }
 
 function dedupeStrings(values) {

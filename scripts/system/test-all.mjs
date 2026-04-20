@@ -10,7 +10,7 @@ import { dirname, extname, join, relative } from 'path';
 import { fileURLToPath } from 'url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const ROOT = __dirname;
+const ROOT = join(__dirname, '..', '..');
 const QUICK = process.argv.includes('--quick');
 
 let passed = 0;
@@ -115,25 +115,25 @@ for (const file of mjsFiles) {
 console.log('\n2. Script execution');
 
 const scripts = [
-  'browser-session.mjs --status',
-  'review-tabs.mjs --help',
-  'research-coverage-audit.mjs',
-  'research-source-plan.mjs --top3 --type development',
-  'research-source-plan.mjs --top3 --type sentiment',
-  'sentiment-browser-extract.mjs --help',
-  'construction-check.mjs --help',
-  'briefing-pdf.mjs --help',
-  'cache-utils.mjs --help',
-  'test-cache-loop.mjs',
-  'deep-research-packet.mjs --top3',
-  'shortlist-finalist-gate.mjs --help',
-  'doctor.mjs',
-  'profile-sync-check.mjs',
-  'verify-pipeline.mjs',
-  'normalize-statuses.mjs',
-  'dedup-tracker.mjs',
-  'merge-tracker.mjs',
-  'update-system.mjs check',
+  'scripts/browser/browser-session.mjs --status',
+  'scripts/browser/review-tabs.mjs --help',
+  'scripts/research/research-coverage-audit.mjs',
+  'scripts/research/research-source-plan.mjs --top3 --type development',
+  'scripts/research/research-source-plan.mjs --top3 --type sentiment',
+  'scripts/research/sentiment-browser-extract.mjs --help',
+  'scripts/research/construction-check.mjs --help',
+  'scripts/reports/briefing-pdf.mjs --help',
+  'scripts/system/cache-utils.mjs --help',
+  'scripts/system/test-cache-loop.mjs',
+  'scripts/research/deep-research-packet.mjs --top3',
+  'scripts/research/shortlist-finalist-gate.mjs --help',
+  'scripts/system/doctor.mjs',
+  'scripts/config/profile-sync-check.mjs',
+  'scripts/pipeline/verify-pipeline.mjs',
+  'scripts/pipeline/normalize-statuses.mjs',
+  'scripts/pipeline/dedup-tracker.mjs',
+  'scripts/pipeline/merge-tracker.mjs',
+  'scripts/system/update-system.mjs check',
 ];
 
 for (const script of scripts) {
@@ -241,7 +241,7 @@ const textFiles = walk(ROOT, new Set(['.md', '.mjs', '.go', '.yml', '.yaml', '.j
   .filter((file) => !file.startsWith('reports/'));
 
 const legacyHits = scanForPatterns(textFiles, legacyPatterns)
-  .filter(({ file }) => file !== 'test-all.mjs');
+  .filter(({ file }) => !file.endsWith('test-all.mjs'));
 
 if (legacyHits.length === 0) {
   pass('No stale career-era references found');
