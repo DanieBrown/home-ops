@@ -43,6 +43,9 @@ const MAX_QUERIES_PER_SOURCE = 6;
 const QUICK_MAX_SCROLLS_PER_PAGE = 1;
 const QUICK_MAX_QUERIES_PER_SOURCE = 3;
 const MAX_CONCURRENCY = 4;
+const SHORTLIST_SIZE_THRESHOLD = 5;
+const HIGH_CONCURRENCY = 4;
+const LOW_CONCURRENCY = 2;
 
 const BLOCK_PATTERNS = [
   /log in/i,
@@ -198,6 +201,7 @@ function parseArgs(argv) {
     refreshCache: false,
     quick: false,
     concurrency: 1,
+    concurrencyProvided: false,
     files: [],
   };
 
@@ -281,6 +285,7 @@ function parseArgs(argv) {
         throw new Error('Expected a positive integer after --concurrency.');
       }
       config.concurrency = Math.min(MAX_CONCURRENCY, value);
+      config.concurrencyProvided = true;
       index += 1;
       continue;
     }
@@ -293,6 +298,17 @@ function parseArgs(argv) {
   }
 
   return config;
+}
+
+function determineDefaultConcurrency(config, targetCount) {
+  if (!(config.shortlist || config.top3)) {
+    return 1;
+  }
+
+  const shortlistConcurrency = targetCount >= SHORTLIST_SIZE_THRESHOLD
+    ? HIGH_CONCURRENCY
+    : LOW_CONCURRENCY;
+  return Math.min(MAX_CONCURRENCY, shortlistConcurrency);
 }
 
 function normalizeText(value) {
@@ -717,6 +733,31 @@ async function extractTarget(context, target, researchContext, cacheState, optio
   const sentimentPlan = buildSentimentSourcePlan(target, researchContext);
   const cacheKey = buildSentimentCacheKey(target, sentimentPlan);
 
+  const materializeSharedResult = async (sharedOutput, cachedFromKey = cacheKey) => {
+    const outputPath = buildTargetOutputPath(target);
+    const reusedOutput = {
+      generatedAt: new Date().toISOString(),
+      address: target.address,
+      city: target.city,
+      state: target.state,
+      reportPath: target.relativePath,
+      subdivisionHints: sentimentPlan.subdivisionHints,
+      roadHints: sentimentPlan.roadHints,
+      schoolNames: sentimentPlan.schoolNames,
+      kpiWeights: sharedOutput?.kpiWeights ?? {},
+      kpiRollup: sharedOutput?.kpiRollup ?? [],
+      sources: sharedOutput?.sources ?? [],
+      fromCache: true,
+      cachedFrom: cachedFromKey || cacheKey,
+    };
+    await mkdir(OUTPUT_DIR, { recursive: true });
+    await writeFile(outputPath, `${JSON.stringify(reusedOutput, null, 2)}\n`, 'utf8');
+    if (cacheState && !cacheState.disabled) {
+      cacheState.hits += 1;
+    }
+    return { ...reusedOutput, outputPath };
+  };
+
   if (cacheState?.cache && !cacheState.disabled && !cacheState.refresh && cacheKey) {
     const existing = getCacheEntry(cacheState.cache, cacheKey);
     if (existing && isCacheFresh(existing, CACHE_TTL.SENTIMENT_MS) && existing.sources) {
@@ -743,66 +784,88 @@ async function extractTarget(context, target, researchContext, cacheState, optio
     }
   }
 
-  const sourceResults = [];
+  const runFreshExtraction = async () => {
+    const sourceResults = [];
 
-  for (const source of sentimentPlan.entries.filter((entry) => entry.browserSupported && SUPPORTED_BROWSER_SOURCES.has(entry.key))) {
-    const queryResults = [];
-    const queries = source.recommendedQueries.slice(0, maxQueries);
-    for (let index = 0; index < queries.length; index += 1) {
-      if (index > 0) {
-        // Pause between queries so burst rate stays low -- reduces risk of
-        // account-level rate limits kicking in mid-run.
-        await randomDelay(QUERY_PAUSE_MIN_MS, QUERY_PAUSE_MAX_MS);
+    for (const source of sentimentPlan.entries.filter((entry) => entry.browserSupported && SUPPORTED_BROWSER_SOURCES.has(entry.key))) {
+      const queryResults = [];
+      const queries = source.recommendedQueries.slice(0, maxQueries);
+      for (let index = 0; index < queries.length; index += 1) {
+        if (index > 0) {
+          // Pause between queries so burst rate stays low -- reduces risk of
+          // account-level rate limits kicking in mid-run.
+          await randomDelay(QUERY_PAUSE_MIN_MS, QUERY_PAUSE_MAX_MS);
+        }
+        queryResults.push(await extractSourceQuery(context, source, queries[index], { quick }));
       }
-      queryResults.push(await extractSourceQuery(context, source, queries[index], { quick }));
+
+      sourceResults.push({
+        key: source.key,
+        name: source.name,
+        url: source.url,
+        note: source.note,
+        lookbackDays: source.lookbackDays,
+        queryResults,
+      });
     }
 
-    sourceResults.push({
-      key: source.key,
-      name: source.name,
-      url: source.url,
-      note: source.note,
-      lookbackDays: source.lookbackDays,
-      queryResults,
-    });
-  }
+    const kpiWeights = researchContext.profile?.sentiment?.weights ?? {};
+    const kpiRollup = rollupKpiScores(sourceResults, kpiWeights);
 
-  const kpiWeights = researchContext.profile?.sentiment?.weights ?? {};
-  const kpiRollup = rollupKpiScores(sourceResults, kpiWeights);
-
-  const output = {
-    generatedAt: new Date().toISOString(),
-    address: target.address,
-    city: target.city,
-    state: target.state,
-    reportPath: target.relativePath,
-    subdivisionHints: sentimentPlan.subdivisionHints,
-    roadHints: sentimentPlan.roadHints,
-    schoolNames: sentimentPlan.schoolNames,
-    kpiWeights,
-    kpiRollup,
-    sources: sourceResults,
-  };
-
-  const outputPath = buildTargetOutputPath(target);
-  await mkdir(OUTPUT_DIR, { recursive: true });
-  await writeFile(outputPath, `${JSON.stringify(output, null, 2)}\n`, 'utf8');
-
-  if (cacheState?.cache && !cacheState.disabled && cacheKey) {
-    putCacheEntry(cacheState.cache, cacheKey, {
+    const output = {
+      generatedAt: new Date().toISOString(),
+      address: target.address,
+      city: target.city,
+      state: target.state,
+      reportPath: target.relativePath,
+      subdivisionHints: sentimentPlan.subdivisionHints,
+      roadHints: sentimentPlan.roadHints,
+      schoolNames: sentimentPlan.schoolNames,
       kpiWeights,
       kpiRollup,
       sources: sourceResults,
-      cacheKey,
-    });
-    cacheState.dirty = true;
-    cacheState.misses += 1;
+    };
+
+    const outputPath = buildTargetOutputPath(target);
+    await mkdir(OUTPUT_DIR, { recursive: true });
+    await writeFile(outputPath, `${JSON.stringify(output, null, 2)}\n`, 'utf8');
+
+    if (cacheState?.cache && !cacheState.disabled && cacheKey) {
+      putCacheEntry(cacheState.cache, cacheKey, {
+        kpiWeights,
+        kpiRollup,
+        sources: sourceResults,
+        cacheKey,
+      });
+      cacheState.dirty = true;
+      cacheState.misses += 1;
+    }
+
+    return {
+      ...output,
+      outputPath,
+    };
+  };
+
+  if (cacheKey && options.inFlightByCacheKey) {
+    const inFlight = options.inFlightByCacheKey.get(cacheKey);
+    if (inFlight) {
+      const sharedOutput = await inFlight;
+      return materializeSharedResult(sharedOutput, sharedOutput?.cachedFrom ?? cacheKey);
+    }
+
+    const currentRun = runFreshExtraction();
+    options.inFlightByCacheKey.set(cacheKey, currentRun);
+    try {
+      return await currentRun;
+    } finally {
+      if (options.inFlightByCacheKey.get(cacheKey) === currentRun) {
+        options.inFlightByCacheKey.delete(cacheKey);
+      }
+    }
   }
 
-  return {
-    ...output,
-    outputPath,
-  };
+  return runFreshExtraction();
 }
 
 function printSummary(results) {
@@ -873,8 +936,11 @@ async function main() {
     }
 
     const results = new Array(targets.length);
+    const inFlightByCacheKey = new Map();
     let nextIndex = 0;
-    const workerCount = Math.min(config.concurrency, targets.length) || 1;
+    const defaultConcurrency = determineDefaultConcurrency(config, targets.length);
+    const effectiveConcurrency = config.concurrencyProvided ? config.concurrency : defaultConcurrency;
+    const workerCount = Math.min(effectiveConcurrency, targets.length);
     const workers = Array.from({ length: workerCount }, async () => {
       while (true) {
         const index = nextIndex;
@@ -882,7 +948,10 @@ async function main() {
         if (index >= targets.length) {
           return;
         }
-        results[index] = await extractTarget(context, targets[index], researchContext, cacheState, { quick: config.quick });
+        results[index] = await extractTarget(context, targets[index], researchContext, cacheState, {
+          quick: config.quick,
+          inFlightByCacheKey,
+        });
       }
     });
     await Promise.all(workers);

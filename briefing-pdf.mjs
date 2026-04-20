@@ -81,6 +81,34 @@ function findCompanionJson(target, dir) {
   return readJsonIfExists(join(dir, `${slug}.json`));
 }
 
+function normalizeLocationField(value) {
+  return String(value ?? '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+}
+
+function companionMatchesReport(companion, report) {
+  if (!companion || !report) return false;
+  return normalizeLocationField(companion.address) === normalizeLocationField(report.address)
+    && normalizeLocationField(companion.city) === normalizeLocationField(report.city)
+    && normalizeLocationField(companion.state || 'NC') === normalizeLocationField(report.state || 'NC');
+}
+
+function loadCompanionForReport(report, dir, label) {
+  const payload = findCompanionJson(report, dir);
+  if (!payload) {
+    return { data: null, mismatch: false, mismatchMessage: '' };
+  }
+
+  if (companionMatchesReport(payload, report)) {
+    return { data: payload, mismatch: false, mismatchMessage: '' };
+  }
+
+  return {
+    data: null,
+    mismatch: true,
+    mismatchMessage: `${label} capture exists but does not match this report address; ignored for safety.`,
+  };
+}
+
 function summarizeSection(sectionText, maxLength = 900) {
   if (!sectionText) return '';
   const compact = sectionText.replace(/\s+/g, ' ').trim();
@@ -278,6 +306,15 @@ function buildGapList(report, finalist, profile) {
   if (!finalist.sentiment) {
     gaps.push('Neighborhood sentiment from Facebook and Nextdoor has not been pulled yet.');
   }
+  if (finalist.sentimentMismatch) {
+    gaps.push(finalist.sentimentMismatch);
+  }
+  if (finalist.constructionMismatch) {
+    gaps.push(finalist.constructionMismatch);
+  }
+  if (finalist.packetMismatch) {
+    gaps.push(finalist.packetMismatch);
+  }
 
   const auditBlockers = finalist.packet?.audit?.criticalFindings ?? [];
   for (const finding of auditBlockers.slice(0, 4)) {
@@ -381,6 +418,13 @@ function buildFinalistSection(finalist, profile) {
 
   const strengths = extractBullets(report.sections['Quick Take']).slice(0, 3);
   const concerns = extractBullets(report.sections['Risks and Open Questions']).slice(0, 3);
+  /**
+   * phaseTotals.active is the total count of snippets that matched active-project
+   * phase keywords. matches.length is the total captured snippet count across all
+   * phases and signals.
+   */
+  const activePhaseHits = construction?.phaseTotals?.active ?? 0;
+  const matchedSnippets = construction?.matches?.length ?? 0;
 
   const constructionBlock = construction
     ? `
@@ -388,7 +432,8 @@ function buildFinalistSection(finalist, profile) {
         <h3>Construction Pressure</h3>
         <p class="pressure-level ${escapeHtml(construction.level)}">${escapeHtml(String(construction.level || 'unknown').toUpperCase())}</p>
         <p class="stat">Road-project score: <strong>${escapeHtml(String(construction.constructionPressure ?? 'n/a'))}/10</strong></p>
-        <p class="stat">Active match count: <strong>${escapeHtml(String(construction.matches?.length ?? 0))}</strong></p>
+        <p class="stat">Active-phase hits: <strong>${escapeHtml(String(activePhaseHits))}</strong></p>
+        <p class="stat">Matched snippets: <strong>${escapeHtml(String(matchedSnippets))}</strong></p>
       </div>`
     : `
       <div class="card construction unreviewed">
@@ -693,13 +738,18 @@ function loadFinalists() {
 
   return shortlist.refinedTop3.map((row, index) => {
     const report = parseReport(ROOT, row.reportPath);
-    const slug = slugify(`${report.address}-${report.city}-${report.state || 'NC'}`);
+    const constructionCompanion = loadCompanionForReport(report, CONSTRUCTION_DIR, 'Construction');
+    const sentimentCompanion = loadCompanionForReport(report, SENTIMENT_DIR, 'Sentiment');
+    const packetCompanion = loadCompanionForReport(report, DEEP_PACKET_DIR, 'Deep packet');
     return {
       rank: row.rank || index + 1,
       report,
-      construction: readJsonIfExists(join(CONSTRUCTION_DIR, `${slug}.json`)),
-      sentiment: readJsonIfExists(join(SENTIMENT_DIR, `${slug}.json`)),
-      packet: readJsonIfExists(join(DEEP_PACKET_DIR, `${slug}.json`)),
+      construction: constructionCompanion.data,
+      sentiment: sentimentCompanion.data,
+      packet: packetCompanion.data,
+      constructionMismatch: constructionCompanion.mismatchMessage,
+      sentimentMismatch: sentimentCompanion.mismatchMessage,
+      packetMismatch: packetCompanion.mismatchMessage,
     };
   });
 }
