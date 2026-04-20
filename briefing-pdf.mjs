@@ -81,15 +81,15 @@ function findCompanionJson(target, dir) {
   return readJsonIfExists(join(dir, `${slug}.json`));
 }
 
-function normalizeLocationToken(value) {
+function normalizeLocationField(value) {
   return String(value ?? '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
 }
 
 function companionMatchesReport(companion, report) {
   if (!companion || !report) return false;
-  return normalizeLocationToken(companion.address) === normalizeLocationToken(report.address)
-    && normalizeLocationToken(companion.city) === normalizeLocationToken(report.city)
-    && normalizeLocationToken(companion.state || 'NC') === normalizeLocationToken(report.state || 'NC');
+  return normalizeLocationField(companion.address) === normalizeLocationField(report.address)
+    && normalizeLocationField(companion.city) === normalizeLocationField(report.city)
+    && normalizeLocationField(companion.state || 'NC') === normalizeLocationField(report.state || 'NC');
 }
 
 function loadCompanionForReport(report, dir, label) {
@@ -425,6 +425,7 @@ function buildFinalistSection(finalist, profile) {
         <h3>Construction Pressure</h3>
         <p class="pressure-level ${escapeHtml(construction.level)}">${escapeHtml(String(construction.level || 'unknown').toUpperCase())}</p>
         <p class="stat">Road-project score: <strong>${escapeHtml(String(construction.constructionPressure ?? 'n/a'))}/10</strong></p>
+        <!-- Active-phase hits counts NCDOT phase keyword hits; matched snippets counts captured text hits. -->
         <p class="stat">Active-phase hits: <strong>${escapeHtml(String(construction.phaseTotals?.active ?? 0))}</strong></p>
         <p class="stat">Matched snippets: <strong>${escapeHtml(String(construction.matches?.length ?? 0))}</strong></p>
       </div>`

@@ -43,6 +43,9 @@ const MAX_QUERIES_PER_SOURCE = 6;
 const QUICK_MAX_SCROLLS_PER_PAGE = 1;
 const QUICK_MAX_QUERIES_PER_SOURCE = 3;
 const MAX_CONCURRENCY = 4;
+const SHORTLIST_HIGH_CONCURRENCY_TARGET_COUNT = 5;
+const SHORTLIST_HIGH_CONCURRENCY = 4;
+const SHORTLIST_BASE_CONCURRENCY = 2;
 
 const BLOCK_PATTERNS = [
   /log in/i,
@@ -833,21 +836,20 @@ async function extractTarget(context, target, researchContext, cacheState, optio
     };
   };
 
-  const inFlightByCacheKey = options.inFlightByCacheKey;
-  if (cacheKey && inFlightByCacheKey) {
-    const inFlight = inFlightByCacheKey.get(cacheKey);
+  if (cacheKey && options.inFlightByCacheKey) {
+    const inFlight = options.inFlightByCacheKey.get(cacheKey);
     if (inFlight) {
       const sharedOutput = await inFlight;
       return materializeSharedResult(sharedOutput, sharedOutput?.cachedFrom ?? cacheKey);
     }
 
     const currentRun = runFreshExtraction();
-    inFlightByCacheKey.set(cacheKey, currentRun);
+    options.inFlightByCacheKey.set(cacheKey, currentRun);
     try {
       return await currentRun;
     } finally {
-      if (inFlightByCacheKey.get(cacheKey) === currentRun) {
-        inFlightByCacheKey.delete(cacheKey);
+      if (options.inFlightByCacheKey.get(cacheKey) === currentRun) {
+        options.inFlightByCacheKey.delete(cacheKey);
       }
     }
   }
@@ -926,10 +928,15 @@ async function main() {
     const inFlightByCacheKey = new Map();
     let nextIndex = 0;
     const defaultConcurrency = (config.shortlist || config.top3)
-      ? Math.min(MAX_CONCURRENCY, targets.length >= 5 ? 4 : 2)
+      ? Math.min(
+        MAX_CONCURRENCY,
+        targets.length >= SHORTLIST_HIGH_CONCURRENCY_TARGET_COUNT
+          ? SHORTLIST_HIGH_CONCURRENCY
+          : SHORTLIST_BASE_CONCURRENCY,
+      )
       : 1;
     const effectiveConcurrency = config.concurrencyProvided ? config.concurrency : defaultConcurrency;
-    const workerCount = Math.min(effectiveConcurrency, targets.length) || 1;
+    const workerCount = Math.min(effectiveConcurrency, targets.length);
     const workers = Array.from({ length: workerCount }, async () => {
       while (true) {
         const index = nextIndex;
