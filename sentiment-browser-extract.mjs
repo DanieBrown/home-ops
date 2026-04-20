@@ -43,9 +43,9 @@ const MAX_QUERIES_PER_SOURCE = 6;
 const QUICK_MAX_SCROLLS_PER_PAGE = 1;
 const QUICK_MAX_QUERIES_PER_SOURCE = 3;
 const MAX_CONCURRENCY = 4;
-const SHORTLIST_HIGH_CONCURRENCY_TARGET_COUNT = 5;
-const SHORTLIST_HIGH_CONCURRENCY = 4;
-const SHORTLIST_BASE_CONCURRENCY = 2;
+const SHORTLIST_SIZE_THRESHOLD = 5;
+const HIGH_CONCURRENCY = 4;
+const LOW_CONCURRENCY = 2;
 
 const BLOCK_PATTERNS = [
   /log in/i,
@@ -298,6 +298,17 @@ function parseArgs(argv) {
   }
 
   return config;
+}
+
+function determineDefaultConcurrency(config, targetCount) {
+  if (!(config.shortlist || config.top3)) {
+    return 1;
+  }
+
+  const shortlistConcurrency = targetCount >= SHORTLIST_SIZE_THRESHOLD
+    ? HIGH_CONCURRENCY
+    : LOW_CONCURRENCY;
+  return Math.min(MAX_CONCURRENCY, shortlistConcurrency);
 }
 
 function normalizeText(value) {
@@ -927,14 +938,7 @@ async function main() {
     const results = new Array(targets.length);
     const inFlightByCacheKey = new Map();
     let nextIndex = 0;
-    const defaultConcurrency = (config.shortlist || config.top3)
-      ? Math.min(
-        MAX_CONCURRENCY,
-        targets.length >= SHORTLIST_HIGH_CONCURRENCY_TARGET_COUNT
-          ? SHORTLIST_HIGH_CONCURRENCY
-          : SHORTLIST_BASE_CONCURRENCY,
-      )
-      : 1;
+    const defaultConcurrency = determineDefaultConcurrency(config, targets.length);
     const effectiveConcurrency = config.concurrencyProvided ? config.concurrency : defaultConcurrency;
     const workerCount = Math.min(effectiveConcurrency, targets.length);
     const workers = Array.from({ length: workerCount }, async () => {
