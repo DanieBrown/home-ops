@@ -42,9 +42,21 @@ Ask which the user prefers. If they pick the web wizard:
 4. Once the submission file exists, read it and map the answers back into `config/profile.yml`, `buyer-profile.md`, and `modes/_profile.md` using the same file-update rules below. Then delete or rename the submission file so the next run starts clean.
 5. Run the validation steps and output summary as usual.
 
+### Wizard Submission Shape (Updated)
+
+The wizard no longer asks for features or deal-breakers as separate pick-lists, and the financial tile no longer asks for down payment or closing costs. Its submission payload (under `payload.answers`) is now shaped as:
+
+- `areas_selection`: `{ state, counties: [...], cities: [{ name, county, state, abbr? }] }`. Map every city into `config/profile.yml` `search.areas` as `{ name, state, county, rank }` (rank = order of selection). When a city entry has `custom: true` and no `county`, leave the county blank and add it to `modes/_profile.md` for manual follow-up. After ingestion, if any city is not represented in `config/city-registry.yml`, add a stub row with `redfin_city_id: null` and `primary_zip: <lookup>` before running `generate-portals.mjs`.
+- `price`, `beds_min`, `baths_min`, `sqft_min`, `garage_min`, `lot_min`, `home_type_preference`, `year_built_min`, `stories_preferred`, `property_types`, `hoa_max`, `schools_min_rating`, `max_listing_age`: map into the matching `config/profile.yml` fields exactly as before. Persist `baths_min` into `search.hard_requirements.baths_min` and `lot_min` into `search.hard_requirements.lot_min_acres` (parse `No minimum` as `null`, `0.15+` as `0.15`, etc.) so later wizard sessions can pre-seed these values.
+- `hoa_max` still writes to `search.soft_preferences.hoa_max_monthly`.
+- `down_payment_pct` / `closing_pct` are no longer collected. Do not overwrite the existing `financial` block in `config/profile.yml`; leave it as-is.
+- `research_sources` keys are flat `group.source` pairs. When a whole group has every source set to `false`, that group is intentionally opted out -- set every key in the corresponding `research_sources.<group>` object to `false` in `config/profile.yml`, and update `modes/_profile.md` to note which pipeline stages are now skipped. The one exception is the listing-portals group: an all-off portals group means "use every portal" -- `generate-portals.mjs` already handles this fallback, so still mirror the buyer's picks verbatim into `config/profile.yml`.
+- The development group now has exactly two source keys in the submission: `state_dot` and `local_construction`. Write `state_dot` into `research_sources.development.state_dot` and `local_construction` into `research_sources.development.local_construction`. Map legacy entries (`county_planning`, `municipal_planning`, `mpo`) to `false` on ingestion.
+- `commute` is a list of destination names. Preserve each destination's existing `address` and `priority` in `config/profile.yml` if present; otherwise default `priority` to `occasional` and leave `address` equal to `<name>, <state>`.
+
 ### Wizard Narrative Mapping
 
-The wizard no longer asks for features or deal-breakers as separate pick-lists. It asks the buyer to describe the home they want (and what they want to avoid) in prose, with clickable suggestion chips that pre-fill common phrases. On submit, `tools/profile-wizard/serve.mjs` runs the prose through `tools/profile-wizard/parse-narrative.mjs` and writes the structured result into the submission file as a top-level `narrative_extract` block shaped like:
+On submit, `tools/profile-wizard/serve.mjs` runs the prose through `tools/profile-wizard/parse-narrative.mjs` and writes the structured result into the submission file as a top-level `narrative_extract` block shaped like:
 
 ```
 narrative_extract:
@@ -214,12 +226,12 @@ Then collect the narrative-only lifestyle fields that do not map to any pick-lis
 
 Pre-fill the current value on each question where the profile already has one.
 
-### 4. Commute And Financial Assumptions
+### 4. Commute
 
 Collect:
 - commute destinations and priority (daily / occasional / rare)
-- down-payment percentage
-- closing-cost minimum and maximum percentages
+
+Financial assumptions (down-payment percentage and closing-cost range) are no longer collected by the in-chat flow or the web wizard. The evaluator does not read them for scan or evaluation, and `config/profile.yml` `financial` should be left untouched during profile refreshes.
 
 #### Commute destinations (multi-select)
 
@@ -231,32 +243,23 @@ Render a multi-select seeded from:
 
 After the user confirms the set, ask one follow-up assigning `daily`, `occasional`, or `rare` to any destination where priority is missing. Pre-fill the existing priority for pre-checked rows.
 
-#### Financial assumptions (single-choice, current value pre-selected)
-
-- down payment: `10%`, `15%`, `20%`, `25%+`, `Keep current`, `Custom`
-- closing costs: `1-2%`, `2-3%`, `3-4%`, `4%+`, `Keep current`, `Custom`
-
-Pre-select the bucket that matches the current profile value on every question. `loan_type` is intentionally not asked; the evaluator does not read it, and asking adds noise without changing any downstream math.
-
 ### 5. Research Sources
 
 Pick the listing portals and background-research sites Home-Ops should use. Each group maps to a specific pipeline stage, so tell the buyer what each one affects before asking.
 
-Render one multi-select per group. Pre-check each source from the current `research_sources` block in `config/profile.yml`; when nothing exists yet, pre-check the defaults listed below.
+Render one multi-select per group. **Default every box to unchecked** -- do not pre-check anything in any group. The buyer opts in explicitly, which keeps the pipeline honest about what it can actually rely on.
 
-- **Listing portals -- drives `/home-ops scan`.** Unchecked portals are skipped at scan time, so `portals.yml` only contains what the buyer picked here.
-  - Defaults on: `Zillow`, `Redfin`, `Realtor.com`
-  - Default off: `Homes.com`
-- **Neighborhood sentiment -- drives `/home-ops deep` and the sentiment extract.** Pulls community posts about subdivisions, schools, and streets.
-  - Defaults on: `Reddit`, `Nextdoor`, `Facebook groups`, `Google Maps reviews`
-- **Schools -- feeds the school-sentiment roll-up and the hard-requirement gate.** More sources means a higher school evidence-coverage score.
-  - Defaults on: `GreatSchools`, `Niche`, `State report cards`
-  - Default off: `SchoolDigger`
-- **Development and infrastructure -- drives construction-pressure checks.** Picks up planned roads, subdivisions, and rezonings near a property.
-  - Defaults on: `State DOT`, `County planning`, `Municipal planning`
-  - Default off: `Regional MPO`
+- **Listing portals -- drives `/home-ops scan`.** Unchecked portals are skipped at scan time. If every portal is unchecked, `generate-portals.mjs` falls back to using every supported portal so scan still has something to query.
+  - Options: `Zillow`, `Redfin`, `Realtor.com`, `Homes.com`
+- **Neighborhood sentiment -- drives `/home-ops deep` and the sentiment extract.** If this group is entirely empty, the deep command must skip the sentiment axis and its subagents must emit `sentiment: { status: "skipped-by-profile" }` rather than fake findings.
+  - Options: `Reddit`, `Nextdoor`, `Facebook groups`, `Google Maps reviews`
+- **Schools -- feeds the school-sentiment roll-up and the hard-requirement gate.** If empty, deep mode skips the school axis.
+  - Options: `GreatSchools`, `Niche`, `State report cards`, `SchoolDigger`
+- **Development and infrastructure -- drives construction-pressure checks.** If empty, deep mode skips the development axis. The simplified option set is:
+  - `State DOT project list` (default off until the buyer checks it)
+  - `Also check local construction around the home (permits, nearby builds)` -- when checked, deep mode adds the matching county/municipal planning lookups for each listing.
 
-Map the user's picks into `config/profile.yml` under `research_sources.<group>.<source>: true|false` using the group/source keys in `config/profile.example.yml`. Then rerun `node scripts/config/generate-portals.mjs` so `portals.yml` reflects the current selection.
+Map the user's picks into `config/profile.yml` under `research_sources.<group>.<source>: true|false` using the group/source keys in `config/profile.example.yml`. Legacy development keys that the wizard no longer surfaces (`county_planning`, `municipal_planning`, `mpo`) should be written as `false` during ingestion. Then rerun `node scripts/config/generate-portals.mjs` so `portals.yml` reflects the current selection.
 
 ### 6. Neighborhood Weight Scores
 

@@ -326,5 +326,5 @@ if (DRY_RUN) {
 
 if (VERIFY && !DRY_RUN) {
   console.log('\n--- Running verification ---');
-  execSync(`node "${join(ROOT, 'verify-pipeline.mjs')}"`, { stdio: 'inherit' });
+  execSync(`node "${join(ROOT, 'scripts', 'pipeline', 'verify-pipeline.mjs')}"`, { stdio: 'inherit' });
 }

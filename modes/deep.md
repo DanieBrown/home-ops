@@ -55,7 +55,7 @@ When the user asks for a batch deep dive on the shortlist, or when the latest `e
    - 6c: `node scripts/research/construction-check.mjs --shortlist` fetches the NCDOT project index and writes `output/construction/{slug}.json` for every shortlisted home. Add `--quick` to skip the secondary STIP URL when the primary page is enough.
 7. Wait for all three parallel jobs from step 6 to finish before continuing. If any failed, surface the error in the brief rather than silently proceeding.
 8. Run `node scripts/research/deep-research-packet.mjs --shortlist` or `npm.cmd run prepare:deep -- --shortlist` so every shortlisted home gets one deterministic packet under `output/deep-packets/`. Each packet must carry the baseline evaluation summary, research-audit blockers, configured sentiment, school, and development source plans, profile weights, any matching browser-captured Facebook or Nextdoor evidence, and the construction pressure record from step 6c. If a matching sentiment or construction file is missing, the packet must say that explicitly instead of implying capture.
-9. Launch one subagent per shortlisted home, up to ten homes total. Every Agent call must be issued in a single message so the runtime fans them out in parallel -- never serialize worker launches. Each worker receives exactly one deep packet plus the matching evaluation report path, researches all deep-dive axes for one home, and returns a structured result. Workers must not edit `data/listings.md`, `data/shortlist.md`, or `reports/` directly.
+9. Launch one subagent per shortlisted home, up to ten homes total. Every Agent call must be issued in a single message so the runtime fans them out in parallel -- never serialize worker launches. Each worker receives exactly one deep packet plus the matching evaluation report path, researches all deep-dive axes for one home, and returns a structured result. Workers must follow the Worker Tool Contract below (actual tool calls required per axis -- `WebFetch`/`WebSearch` for public pages, Playwright MCP for Nextdoor/Facebook through the hosted session) and must report a `toolsUsed` ledger. Workers must not edit `data/listings.md`, `data/shortlist.md`, or `reports/` directly.
 10. Stream worker results back into the combined brief as they land so the user sees progress before every worker finishes. Do not wait for the slowest worker before starting the brief skeleton; append each home's section as its Agent call returns. Streaming is for visible progress only -- do not pause for user input between worker returns.
 11. The main agent reviews the worker output internally, resolves conflicts, and writes one combined batch brief to `reports/deep-shortlist-{YYYY-MM-DD}.md`. This review is not a user checkpoint. Writing the brief is not the end of the command; immediately proceed to step 12.
 12. Update `data/shortlist.md` with:
@@ -125,20 +125,55 @@ Organize the deep dive around these sections:
 - why this area does or does not fit Daniel's stated priorities
 - what would need to be validated in person before moving forward
 
+## Worker Tool Contract (Mandatory)
+
+Each shortlist worker is a subagent. The worker is not allowed to hand back prose that was produced from the deep packet alone -- the packet is a starting plan, not a research substitute. The worker MUST actually open sources with its browsing tools before it reports findings, and it MUST tell the main agent which tools it used for every axis.
+
+Required tool usage per axis, honoring the opt-ins recorded in `config/profile.yml` under `research_sources`:
+
+- **Neighborhood sentiment (axes 1, 4, 5).** Only run this axis if `research_sources.sentiment` has at least one source set to `true`. For each opted-in source:
+  - `reddit` / `google_maps`: `WebFetch` and/or `WebSearch` against the URLs in the deep packet's sentiment plan.
+  - `nextdoor` / `facebook`: Playwright MCP against the hosted Chrome session (these cannot be reached with plain `WebFetch` because of login walls). If the hosted session is closed, record that in `sourceCoverage` and continue.
+  - If the sentiment group is fully empty in the profile, skip this axis and emit `sentiment: { status: "skipped-by-profile" }` in the worker result rather than inventing findings.
+- **Schools (axis 2).** Only run if `research_sources.schools` has at least one opted-in source. Hit the specific sources the buyer picked:
+  - `greatschools`: `WebFetch` the GreatSchools URL in the deep packet.
+  - `niche`: `WebFetch` the Niche URL in the deep packet.
+  - `state_report_cards`: `WebFetch` the state report-card URL in the deep packet.
+  - `schooldigger`: `WebFetch` the SchoolDigger URL in the deep packet.
+  - If schools group is empty, skip the axis and emit `schools: { status: "skipped-by-profile" }`.
+- **Development and infrastructure (axis 3).** Only run if `research_sources.development` has at least one opted-in source:
+  - `state_dot`: `WebFetch` the state DOT project page in the deep packet and the NCDOT companion record (for NC) captured in step 6c. Confirm by snippet which specific projects were reviewed.
+  - `local_construction` (when the buyer opted in): additionally hit the linked county or municipal planning page from the deep packet and summarize any active rezonings, subdivisions, or permits within a mile of the listing.
+  - If the development group is empty, skip the axis and emit `development: { status: "skipped-by-profile" }`.
+- **Commute and daily convenience (axis 4).** Always allowed. Use `WebSearch` and/or `WebFetch` for drive-time estimates and nearby amenity presence against the buyer's `commute.destinations`.
+
+Workers must NOT return findings for any axis where their own `toolsUsed` array for that axis is empty and the status is not `skipped-by-profile`. If a fetch fails, record the failure in `sourceCoverage` for that source and report the axis with `status: "tool-failure"` plus the error; do not fabricate evidence.
+
+Workers must NOT edit `data/listings.md`, `data/shortlist.md`, or `reports/` directly.
+
 ## Output Requirements For Shortlist Batches
 
 Each worker result must include these fields, even when some sources are blocked or missing:
 
 1. `address`
-2. `sourceCoverage` with explicit statuses for Facebook, Nextdoor, Reddit or public sentiment fallback, NCDOT, county planning, municipal planning, and school sources. Use `captured`, `blocked`, `no-match`, `reviewed`, or `missing` instead of vague language.
-3. `sentimentMetrics` mapped to the configured `config/profile.yml` weights for `crime_safety`, `traffic_commute`, `community`, `school_quality`, and `livability`, including the source used for each metric.
-4. `schoolMetrics` mapped to the configured school-sentiment weights, including rating evidence and parent or community confidence.
-5. `developmentMetrics` that explicitly call out whether NCDOT and local planning sources were reviewed, what they showed, and how they affect traffic, crowding, or resale risk.
-6. `deepScoreAdjustments` that explain how the deeper evidence changes the prior evaluation score or ranking position.
-7. `keyPositives`
-8. `keyNegatives`
-9. `unresolvedQuestions`
-10. `tentativeVerdict`
+2. `toolsUsed` -- an object keyed by axis (`sentiment`, `schools`, `development`, `commute`, `verdict`) whose values are arrays of `{ tool, url, status }` entries recording each tool call the worker made. Missing entries mean the worker did not browse; the main agent will flag that as unsupported.
+3. `sourceCoverage` with explicit statuses for Facebook, Nextdoor, Reddit or public sentiment fallback, NCDOT, county planning, municipal planning, and school sources. Use `captured`, `blocked`, `no-match`, `reviewed`, `tool-failure`, `skipped-by-profile`, or `missing` instead of vague language.
+4. `sentimentMetrics` mapped to the configured `config/profile.yml` weights for `crime_safety`, `traffic_commute`, `community`, `school_quality`, and `livability`, including the source used for each metric. Omit this key entirely when sentiment is `skipped-by-profile`.
+5. `schoolMetrics` mapped to the configured school-sentiment weights, including rating evidence and parent or community confidence. Omit when schools is `skipped-by-profile`.
+6. `developmentMetrics` that explicitly call out whether the opted-in state DOT and local construction sources were reviewed, what they showed, and how they affect traffic, crowding, or resale risk. Omit when development is `skipped-by-profile`.
+7. `deepScoreAdjustments` that explain how the deeper evidence changes the prior evaluation score or ranking position.
+8. `keyPositives`
+9. `keyNegatives`
+10. `unresolvedQuestions`
+11. `tentativeVerdict`
+
+## Main-Agent Verification Before Accepting A Worker's Output
+
+After each worker returns, the main agent MUST:
+
+1. Check that every non-skipped axis has at least one entry in `toolsUsed` for that axis. If an axis is marked `skipped-by-profile` but the profile's corresponding group is non-empty, treat the worker result as unreliable and rerun it.
+2. For every `status: "captured"` or `status: "reviewed"` entry in `sourceCoverage`, confirm the matching `toolsUsed` entry exists. If not, downgrade that coverage entry to `missing` in the combined brief and call it out.
+3. Surface the count of empty-axis workers in the combined brief's "Source coverage" section so the user can see at a glance which homes actually got browsed.
 
 When deep mode is operating on the current compare shortlist, the final brief should contain:
 

@@ -225,6 +225,7 @@ const PORTAL_DEFINITIONS = {
 };
 
 const DEFAULT_PORTAL_SELECTION = { zillow: true, redfin: true, realtor: true, homes: false };
+const ALL_PORTALS_ON = { zillow: true, redfin: true, realtor: true, homes: true };
 
 function resolvePortalSelection(profile) {
   const configured = profile?.research_sources?.portals;
@@ -236,6 +237,12 @@ function resolvePortalSelection(profile) {
     if (key in configured) {
       resolved[key] = Boolean(configured[key]);
     }
+  }
+  // If the buyer opted everything off, fall back to every supported portal
+  // instead of emitting an empty portals.yml that would leave /home-ops scan
+  // with nothing to query.
+  if (Object.values(resolved).every((value) => value === false)) {
+    return { ...ALL_PORTALS_ON };
   }
   return resolved;
 }

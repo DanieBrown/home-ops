@@ -2459,7 +2459,7 @@ async function main() {
     stagedTsvPath = join(ADDITIONS_DIR, `evaluate-pending-${runId}.tsv`);
     await writeFile(stagedTsvPath, `${trackerRows.join('\n')}\n`, 'utf8');
     if (!config.skipMerge) {
-      await runNodeScript('merge-tracker.mjs', ['--verify'], true);
+      await runNodeScript('scripts/pipeline/merge-tracker.mjs', ['--verify'], true);
     }
   }
 
@@ -2491,11 +2491,11 @@ async function main() {
 
   const newlyWrittenReportArgs = reportWrites.map((entry) => entry.filePath.replace(`${ROOT}\\`, '').replace(/\\/g, '/'));
   if (!config.skipAudit && newlyWrittenReportArgs.length > 0) {
-    await runNodeScript('research-coverage-audit.mjs', newlyWrittenReportArgs, false);
+    await runNodeScript('scripts/research/research-coverage-audit.mjs', newlyWrittenReportArgs, false);
   }
 
   if (!config.skipReviewTabs && shortlist.top10.length > 0) {
-    await runNodeScript('review-tabs.mjs', ['shortlist-top10', '--profile', config.profileName, '--group', 'Top 10'], false);
+    await runNodeScript('scripts/browser/review-tabs.mjs', ['shortlist-top10', '--profile', config.profileName, '--group', 'Top 10'], false);
   }
 
   if (session?.browser) {

@@ -349,6 +349,70 @@ function buildMapsUrl(address, city, state) {
   return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`;
 }
 
+function buildDirectionsUrl(origin, destination) {
+  if (!origin || !destination) return '';
+  return `https://www.google.com/maps/dir/?api=1&travelmode=driving&origin=${encodeURIComponent(origin)}&destination=${encodeURIComponent(destination)}`;
+}
+
+function resolveCommuteDestinationAddress(dest) {
+  if (!dest) return '';
+  // Only render a destination when the user provided an address. If it's
+  // blank we skip the row entirely rather than falling back to a coarser
+  // location -- state + county alone is not precise enough for a drive-time
+  // comparison to be meaningful.
+  if (dest.address && String(dest.address).trim().length > 0) {
+    const addr = String(dest.address).trim();
+    // If the user omitted the state, append it so Maps disambiguates.
+    if (dest.state && !addr.toLowerCase().includes(String(dest.state).toLowerCase())) {
+      return `${addr}, ${dest.state}`;
+    }
+    return addr;
+  }
+  // Legacy shape fallback (pre-wizard buyer profiles).
+  const legacy = String(dest.name ?? '').trim();
+  return legacy;
+}
+
+function resolveCommuteDestinationLabel(dest) {
+  if (!dest) return 'Commute destination';
+  if (dest.label) return dest.label;
+  if (dest.county) return `${dest.county} County`;
+  return dest.name ?? 'Commute destination';
+}
+
+function buildCommuteCard(report, profile) {
+  const destinations = profile?.commute?.destinations ?? [];
+  if (!Array.isArray(destinations) || destinations.length === 0) return '';
+  const origin = [report.address, report.city, report.state].filter(Boolean).join(', ');
+  // Only render destinations that have a resolvable address. Entries where
+  // the user left the address blank are skipped entirely.
+  const renderable = destinations
+    .map((dest) => ({ dest, destAddress: resolveCommuteDestinationAddress(dest) }))
+    .filter(({ destAddress }) => destAddress && destAddress.length > 0);
+  if (renderable.length === 0) return '';
+  const rows = renderable.map(({ dest, destAddress }) => {
+    const label = escapeHtml(resolveCommuteDestinationLabel(dest));
+    const priority = dest.priority ? `<span class="subtle">${escapeHtml(dest.priority)}</span>` : '';
+    const directions = buildDirectionsUrl(origin, destAddress);
+    const link = directions
+      ? `<a class="pill-link" href="${escapeHtml(directions)}">Light-traffic drive &#8599;</a>`
+      : '<span class="muted">N/A</span>';
+    return `
+      <li class="commute-row">
+        <span class="commute-label">${label} ${priority}</span>
+        ${link}
+      </li>
+    `;
+  }).join('');
+  return `
+    <div class="card wide commute">
+      <h3>Commute map links <span class="subtle">light traffic assumed</span></h3>
+      <ul class="commute-list">${rows}</ul>
+      <p class="muted">Each link opens Google Maps driving directions from the listing to the destination. Custom destinations that cannot be resolved will show N/A.</p>
+    </div>
+  `;
+}
+
 function finalistAnchor(rank) {
   return `finalist-${slugify(String(rank)) || 'n'}`;
 }
@@ -508,6 +572,7 @@ function buildFinalistSection(finalist, profile) {
         </div>
         ${constructionBlock}
         ${sentimentBlock}
+        ${buildCommuteCard(report, profile)}
         ${gapBlock}
         <div class="card recommendation wide">
           <h3>Recommendation</h3>
@@ -709,6 +774,20 @@ function buildHtml(finalists, profile) {
 
   .card.unreviewed { background: #f9fafb; border-style: dashed; color: #6b7280; }
   .card.unreviewed h3 { color: #9ca3af; }
+
+  .card.commute h3 { color: #0369a1; }
+  .commute-list { list-style: none; padding: 0; margin: 0; }
+  .commute-row {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 10px; padding: 6px 0; font-size: 9.5pt;
+    border-bottom: 1px dashed #e5e7eb;
+  }
+  .commute-row:last-child { border-bottom: 0; }
+  .commute-label { color: #1f2937; font-weight: 500; }
+  .commute-label .subtle {
+    color: #9ca3af; font-size: 8.5pt; font-weight: 400; margin-left: 6px;
+    text-transform: uppercase; letter-spacing: 0.05em;
+  }
 </style>
 </head>
 <body>

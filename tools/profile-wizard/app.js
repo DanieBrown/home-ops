@@ -3,26 +3,38 @@
  * Renders a progress-based questionnaire that mirrors the filter fields used
  * by Zillow, Redfin, Realtor.com, and Homes.com, plus sentiment and school
  * weight sliders. On submit, POSTs the full answer payload to /api/submit.
+ *
+ * Step 1 is a State -> County -> Cities drill-down that pulls lists from
+ * Wikipedia (proxied through the local server with an on-disk cache). The
+ * wizard also saves answers to the server after each step so re-opening the
+ * flow preserves prior selections.
  */
 
 const state = {
   profile: {},
+  savedAnswers: null,
   answers: {},
   stepIndex: 0,
+  geo: {
+    states: null,
+    countiesByState: {},
+    countyErrorByState: {},
+    townsByKey: {},
+    loadingStates: false,
+    loadingCounties: false,
+    loadingTowns: false,
+    error: '',
+  },
+  visitedSteps: new Set([0]),
 };
 
 const STEPS = [
   {
     id: 'areas',
-    title: 'Which cities or towns should we search?',
-    hint: 'Multi-select. Leave checked items as-is to keep them. Add any custom city below.',
-    render: () => renderMultiSelect({
-      field: 'areas',
-      currentValues: (state.profile?.search?.areas ?? []).map((a) => a.name).filter(Boolean),
-      suggestions: ['Holly Springs', 'Apex', 'Cary', 'Fuquay-Varina', 'Morrisville', 'Wake Forest', 'Willow Springs', 'Durham', 'Raleigh', 'Clayton', 'Garner'],
-      allowCustom: true,
-    }),
-    read: () => ({ areas: state.answers.areas ?? [] }),
+    title: 'Where do you want to move?',
+    hint: 'Pick the state, the counties you want to search inside, and then the specific cities. Lists are pulled from Wikipedia and cached locally.',
+    render: renderAreasStep,
+    read: () => ({ areas_selection: state.answers.areas_selection ?? {} }),
   },
   {
     id: 'price',
@@ -105,8 +117,9 @@ const STEPS = [
         {
           field: 'home_type_preference',
           label: 'Home type preference',
-          options: ['Resale preferred', 'Resale only', 'New construction ok', 'New construction preferred', 'No preference'],
+          options: ['Resale only', 'New construction ok', 'New construction preferred', 'No preference'],
           current: state.profile?.search?.hard_requirements?.home_type_preference,
+          includeCustom: false,
         },
         {
           field: 'year_built_min',
@@ -138,8 +151,8 @@ const STEPS = [
   },
   {
     id: 'financial',
-    title: 'Financial posture',
-    hint: 'HOA cap, down payment, and closing-cost expectation. These numbers feed the mortgage estimate on each listing report.',
+    title: 'HOA maximum',
+    hint: 'HOA cap on monthly dues. Feeds the hard-requirement gate on every listing.',
     render: () => renderMultipleSingleChoice({
       questions: [
         {
@@ -149,26 +162,9 @@ const STEPS = [
           current: state.profile?.search?.soft_preferences?.hoa_max_monthly,
           currentPrefix: '$', currentSuffix: '/mo',
         },
-        {
-          field: 'down_payment_pct',
-          label: 'Down payment percent',
-          options: ['10%', '15%', '20%', '25%+'],
-          current: state.profile?.financial?.down_payment_pct,
-          currentSuffix: '%',
-        },
-        {
-          field: 'closing_pct',
-          label: 'Closing costs expectation',
-          options: ['1-2%', '2-3%', '3-4%', '4%+'],
-          current: formatClosingPct(state.profile?.financial),
-        },
       ],
     }),
-    read: () => ({
-      hoa_max: state.answers.hoa_max,
-      down_payment_pct: state.answers.down_payment_pct,
-      closing_pct: state.answers.closing_pct,
-    }),
+    read: () => ({ hoa_max: state.answers.hoa_max }),
   },
   {
     id: 'schools',
@@ -200,19 +196,14 @@ const STEPS = [
   {
     id: 'commute',
     title: 'Commute destinations',
-    hint: 'Pick each place someone in the household commutes to. Add custom destinations below.',
-    render: () => renderMultiSelect({
-      field: 'commute',
-      currentValues: (state.profile?.commute?.destinations ?? []).map((d) => d.name).filter(Boolean),
-      suggestions: ['Downtown Raleigh', 'Research Triangle Park', 'Cary office parks', 'Durham', 'Chapel Hill', 'Apex', 'Remote / work-from-home'],
-      allowCustom: true,
-    }),
+    hint: 'For each destination, pick the state and county. An address is optional -- if you leave it blank the drive-time link will point at the county; add a street or neighborhood for a more precise comparison.',
+    render: renderCommuteStep,
     read: () => ({ commute: state.answers.commute ?? [] }),
   },
   {
     id: 'research-sources',
     title: 'Which sources should power your research?',
-    hint: 'Pick the listing portals and background-research sites Home-Ops should use. Each affects one stage of the pipeline -- see the short note under each group.',
+    hint: 'Pick the listing portals and background-research sites Home-Ops should use. Nothing is pre-checked -- select only what you want. If you leave a group empty, that stage of the pipeline is skipped (except listing portals, where empty means "use them all").',
     render: renderResearchSources,
     read: () => ({ research_sources: state.answers.research_sources ?? {} }),
   },
@@ -281,14 +272,6 @@ function collectCurrentFeatures() {
   return Array.from(new Set(collected));
 }
 
-function formatClosingPct(financial) {
-  if (!financial) return null;
-  const min = financial.closing_cost_pct_min;
-  const max = financial.closing_cost_pct_max;
-  if (!Number.isFinite(min) && !Number.isFinite(max)) return null;
-  return `${min}-${max}%`;
-}
-
 function normalizedToScale(weights) {
   if (!weights) return {};
   const scaled = {};
@@ -303,6 +286,662 @@ function findAnswerFromCurrent(options, current, prefix = '', suffix = '') {
   const formatted = `${prefix}${current}${suffix}`.toLowerCase();
   return options.find((opt) => opt.toLowerCase() === formatted) ?? null;
 }
+
+/* ---------- Step 1: Areas (state / counties / cities) ---------- */
+
+function ensureAreasSelection() {
+  if (!state.answers.areas_selection) {
+    // Start with an empty state input -- legacy two-letter abbreviations in
+    // config/profile.yml are not valid Wikipedia page keys, so forcing the
+    // user to pick from the autocomplete avoids bogus 429s and a stuck UI.
+    state.answers.areas_selection = {
+      state: '',
+      counties: [],
+      cities: [],
+    };
+  }
+  return state.answers.areas_selection;
+}
+
+async function fetchJson(url) {
+  const response = await fetch(url);
+  if (!response.ok) {
+    let reason = `HTTP ${response.status}`;
+    try {
+      const body = await response.json();
+      if (body?.error) reason = body.error;
+    } catch { /* ignore */ }
+    throw new Error(reason);
+  }
+  return response.json();
+}
+
+async function ensureStatesLoaded() {
+  if (state.geo.states) return;
+  state.geo.loadingStates = true;
+  try {
+    const body = await fetchJson('/api/geo/states');
+    state.geo.states = body.states ?? [];
+  } catch (error) {
+    state.geo.error = `Could not load states list: ${error.message}`;
+  } finally {
+    state.geo.loadingStates = false;
+  }
+}
+
+async function ensureCountiesLoaded(stateName) {
+  if (!stateName) return;
+  if (state.geo.countiesByState[stateName]) return;
+  if (state.geo.countyErrorByState[stateName]) return; // avoid retry loop on 429/404
+  if (state.geo.loadingCounties) return;
+  state.geo.loadingCounties = true;
+  renderStep(); // show loading
+  try {
+    const body = await fetchJson(`/api/geo/counties?state=${encodeURIComponent(stateName)}`);
+    state.geo.countiesByState[stateName] = body.counties ?? [];
+    state.geo.error = '';
+  } catch (error) {
+    state.geo.countyErrorByState[stateName] = error.message;
+    // The dedicated county block renders its own error hint + manual entry,
+    // so we don't also bubble this up to the global banner.
+  } finally {
+    state.geo.loadingCounties = false;
+    renderStep();
+  }
+}
+
+function townKey(stateName, countyName) {
+  return `${stateName}::${countyName}`;
+}
+
+async function ensureTownsLoaded(stateName, countyNames) {
+  const pending = (countyNames ?? []).filter((county) => !state.geo.townsByKey[townKey(stateName, county)]);
+  if (pending.length === 0) return;
+  state.geo.loadingTowns = true;
+  renderStep();
+  for (const county of pending) {
+    try {
+      const body = await fetchJson(`/api/geo/towns?state=${encodeURIComponent(stateName)}&county=${encodeURIComponent(county)}`);
+      state.geo.townsByKey[townKey(stateName, county)] = { abbr: body.abbr, towns: body.towns ?? [] };
+    } catch (error) {
+      state.geo.townsByKey[townKey(stateName, county)] = { abbr: '', towns: [], error: error.message };
+    }
+  }
+  state.geo.loadingTowns = false;
+  renderStep();
+}
+
+function renderAreasStep() {
+  const selection = ensureAreasSelection();
+  const target = document.getElementById('tile');
+
+  if (!state.geo.states && !state.geo.loadingStates) {
+    // kick off states load without blocking
+    ensureStatesLoaded().then(() => renderStep()).catch(() => renderStep());
+  }
+
+  const states = state.geo.states ?? [];
+  const counties = state.geo.countiesByState[selection.state] ?? [];
+  const townsForSelected = (selection.counties ?? []).map((county) => ({
+    county,
+    entry: state.geo.townsByKey[townKey(selection.state, county)],
+  }));
+
+  // City list: de-dup across all selected counties.
+  const cityOptions = [];
+  const seen = new Set();
+  for (const { county, entry } of townsForSelected) {
+    if (!entry || entry.error) continue;
+    for (const town of entry.towns ?? []) {
+      const key = `${town.name}|${county}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      cityOptions.push({ name: town.name, county, state: selection.state, abbr: entry.abbr });
+    }
+  }
+
+  // Sort by name for the searchable list.
+  cityOptions.sort((a, b) => a.name.localeCompare(b.name));
+
+  const citySearchTerm = (state.answers.areas_selection._citySearch ?? '').trim().toLowerCase();
+  const filtered = citySearchTerm
+    ? cityOptions.filter((entry) => entry.name.toLowerCase().includes(citySearchTerm))
+    : cityOptions;
+
+  const selectedCityKeys = new Set(
+    (selection.cities ?? []).map((c) => `${c.name}|${c.county}`),
+  );
+
+  const stateBlock = `
+    <div class="sub-question">
+      <h3 class="tile-subtitle">State</h3>
+      <div class="autocomplete" data-auto="state">
+        <input type="text" class="text-input" id="state-input"
+          placeholder="${state.geo.loadingStates ? 'Loading states...' : 'Start typing a state name...'}"
+          value="${escapeAttr(selection.state ?? '')}"
+          ${state.geo.loadingStates ? 'disabled' : ''} autocomplete="off" />
+        <div class="auto-menu" id="state-menu" hidden></div>
+      </div>
+    </div>
+  `;
+
+  const countyError = state.geo.countyErrorByState[selection.state];
+  const countyPlaceholder = countyError
+    ? 'Type a county name and press Enter (Wikipedia unavailable)'
+    : 'Start typing a county name...';
+  const countyBlock = selection.state ? `
+    <div class="sub-question">
+      <h3 class="tile-subtitle">Counties in ${escapeHtml(selection.state)}</h3>
+      ${state.geo.loadingCounties && counties.length === 0
+        ? '<p class="tile-hint">Loading counties from Wikipedia...</p>'
+        : `
+          ${countyError ? `<p class="tile-hint" style="color: var(--warning, #e0b458);">Wikipedia didn't respond (${escapeHtml(countyError)}). You can still type county names manually and press Enter to add them.</p>` : ''}
+          <div class="chips-selected" id="county-chips">
+            ${[...(selection.counties ?? [])].sort((a, b) => a.localeCompare(b)).map((c) => `
+              <span class="selected-chip" data-county="${escapeAttr(c)}">${escapeHtml(c)} <button type="button" aria-label="Remove">&times;</button></span>
+            `).join('')}
+          </div>
+          <div class="autocomplete" data-auto="county">
+            <input type="text" class="text-input" id="county-input"
+              placeholder="${escapeAttr(countyPlaceholder)}" autocomplete="off" />
+            <div class="auto-menu" id="county-menu" hidden></div>
+          </div>
+          ${countyError ? `<button type="button" class="primary" id="county-retry" style="margin-top: 8px;">Retry Wikipedia lookup</button>` : ''}
+        `}
+    </div>
+  ` : '';
+
+  const citySearchActive = (selection.counties ?? []).length > 0;
+  const cityBlock = citySearchActive ? `
+    <div class="sub-question">
+      <h3 class="tile-subtitle">Cities to search${state.geo.loadingTowns ? ' <span class="loading-tag">Loading...</span>' : ''}</h3>
+      <p class="tile-hint">Pulled from Wikipedia for the counties you picked. Check every place you want the scan to cover.</p>
+      <input type="search" class="text-input" id="city-search"
+        placeholder="Search cities and towns..."
+        value="${escapeAttr(state.answers.areas_selection._citySearch ?? '')}" autocomplete="off" />
+      <div class="city-list">
+        ${filtered.length === 0 && !state.geo.loadingTowns
+          ? `<p class="tile-hint">No matches. ${cityOptions.length === 0 ? 'Wikipedia returned no towns for these counties. Add a custom entry below.' : 'Try a different search term.'}</p>`
+          : filtered.slice(0, 200).map((entry) => {
+              const key = `${entry.name}|${entry.county}`;
+              const isChecked = selectedCityKeys.has(key);
+              return `
+                <label class="option ${isChecked ? 'checked' : ''}" data-city-key="${escapeAttr(key)}"
+                  data-city-name="${escapeAttr(entry.name)}" data-city-county="${escapeAttr(entry.county)}"
+                  data-city-abbr="${escapeAttr(entry.abbr ?? '')}">
+                  <input type="checkbox" ${isChecked ? 'checked' : ''} />
+                  <span class="label">${escapeHtml(entry.name)}
+                    <span class="sublabel">${escapeHtml(entry.county)} County</span>
+                  </span>
+                </label>
+              `;
+            }).join('')}
+      </div>
+      ${filtered.length > 200 ? `<p class="tile-hint">Showing the first 200 of ${filtered.length} matches. Narrow the search to see more.</p>` : ''}
+
+      <div class="custom-row">
+        <input type="text" id="custom-city-input" placeholder="Add a custom city..." />
+        <button type="button" class="primary" id="custom-city-add">Add</button>
+      </div>
+
+      <div class="chips-selected" id="selected-cities">
+        <h4 class="tile-subtitle">Selected cities</h4>
+        ${(selection.cities ?? []).length === 0
+          ? '<p class="tile-hint">None yet. Check a city above or add a custom one.</p>'
+          : (selection.cities ?? []).map((c) => `
+              <span class="selected-chip" data-city-selected="${escapeAttr(`${c.name}|${c.county}`)}">
+                ${escapeHtml(c.name)}<span class="sublabel">${escapeHtml(c.county || 'custom')}</span>
+                <button type="button" aria-label="Remove">&times;</button>
+              </span>
+            `).join('')}
+      </div>
+    </div>
+  ` : '';
+
+  target.innerHTML = `
+    <h2>${escapeHtml(CURRENT_STEP.title)}</h2>
+    <p class="tile-hint">${escapeHtml(CURRENT_STEP.hint)}</p>
+    ${state.geo.error ? `<p class="validation">${escapeHtml(state.geo.error)}</p>` : ''}
+    ${stateBlock}
+    ${countyBlock}
+    ${cityBlock}
+  `;
+
+  wireAreasInputs(states, counties, cityOptions);
+}
+
+function wireAreasInputs(states, counties, cityOptions) {
+  const selection = state.answers.areas_selection;
+
+  // ---- State autocomplete ----
+  const stateInput = document.getElementById('state-input');
+  const stateMenu = document.getElementById('state-menu');
+  const renderStateMenu = () => {
+    const query = (stateInput.value ?? '').trim().toLowerCase();
+    if (!query) { stateMenu.hidden = true; return; }
+    const matches = states.filter((s) => s.name.toLowerCase().includes(query)).slice(0, 12);
+    if (matches.length === 0) { stateMenu.hidden = true; return; }
+    stateMenu.hidden = false;
+    stateMenu.innerHTML = matches.map((s) => `
+      <button type="button" class="auto-option" data-state="${escapeAttr(s.name)}">${escapeHtml(s.name)}${s.abbr ? ` <span class="sublabel">${escapeHtml(s.abbr)}</span>` : ''}</button>
+    `).join('');
+    stateMenu.querySelectorAll('.auto-option').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const pickedState = btn.dataset.state;
+        const changed = pickedState !== selection.state;
+        selection.state = pickedState;
+        if (changed) {
+          // Reset dependent data when the state changes.
+          selection.counties = [];
+          selection.cities = (selection.cities ?? []).filter((c) => c.state === pickedState);
+        }
+        stateMenu.hidden = true;
+        saveAnswersDebounced();
+        ensureCountiesLoaded(pickedState);
+      });
+    });
+  };
+  if (stateInput) {
+    stateInput.addEventListener('input', renderStateMenu);
+    stateInput.addEventListener('focus', renderStateMenu);
+    stateInput.addEventListener('blur', () => setTimeout(() => { if (stateMenu) stateMenu.hidden = true; }, 120));
+  }
+
+  // ---- County autocomplete + chips ----
+  const countyInput = document.getElementById('county-input');
+  const countyMenu = document.getElementById('county-menu');
+  const renderCountyMenu = () => {
+    const query = (countyInput.value ?? '').trim().toLowerCase();
+    if (!query) { countyMenu.hidden = true; return; }
+    const taken = new Set(selection.counties ?? []);
+    const matches = counties
+      .filter((c) => !taken.has(c.name) && c.name.toLowerCase().includes(query))
+      .slice(0, 12);
+    if (matches.length === 0) { countyMenu.hidden = true; return; }
+    countyMenu.hidden = false;
+    countyMenu.innerHTML = matches.map((c) => `
+      <button type="button" class="auto-option" data-county="${escapeAttr(c.name)}">${escapeHtml(c.name)}</button>
+    `).join('');
+    countyMenu.querySelectorAll('.auto-option').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const pickedCounty = btn.dataset.county;
+        if (!selection.counties.includes(pickedCounty)) {
+          selection.counties.push(pickedCounty);
+        }
+        countyInput.value = '';
+        countyMenu.hidden = true;
+        saveAnswersDebounced();
+        ensureTownsLoaded(selection.state, [pickedCounty]).then(() => renderStep());
+        renderStep();
+      });
+    });
+  };
+  if (countyInput) {
+    countyInput.addEventListener('input', renderCountyMenu);
+    countyInput.addEventListener('focus', renderCountyMenu);
+    countyInput.addEventListener('blur', () => setTimeout(() => { if (countyMenu) countyMenu.hidden = true; }, 120));
+    countyInput.addEventListener('keydown', (event) => {
+      if (event.key !== 'Enter') return;
+      event.preventDefault();
+      const typed = (countyInput.value ?? '').trim();
+      if (!typed) return;
+      // Prefer an autocomplete match when available; otherwise accept what the
+      // user typed so they are not blocked by a Wikipedia outage.
+      const match = counties.find((c) => c.name.toLowerCase() === typed.toLowerCase())
+        ?? counties.find((c) => c.name.toLowerCase().startsWith(typed.toLowerCase()));
+      const pickedCounty = match?.name ?? typed;
+      if (!selection.counties.includes(pickedCounty)) selection.counties.push(pickedCounty);
+      countyInput.value = '';
+      countyMenu.hidden = true;
+      saveAnswersDebounced();
+      ensureTownsLoaded(selection.state, [pickedCounty]).then(() => renderStep());
+      renderStep();
+    });
+  }
+
+  const countyRetry = document.getElementById('county-retry');
+  if (countyRetry) {
+    countyRetry.addEventListener('click', () => {
+      delete state.geo.countyErrorByState[selection.state];
+      state.geo.error = '';
+      ensureCountiesLoaded(selection.state);
+    });
+  }
+
+  document.querySelectorAll('.selected-chip[data-county]').forEach((chip) => {
+    chip.querySelector('button')?.addEventListener('click', () => {
+      const target = chip.dataset.county;
+      selection.counties = selection.counties.filter((c) => c !== target);
+      selection.cities = selection.cities.filter((c) => c.county !== target);
+      saveAnswersDebounced();
+      renderStep();
+    });
+  });
+
+  // Counties only load in response to an explicit state pick from the
+  // autocomplete -- not from the render path. That keeps a stale state value
+  // from triggering repeated Wikipedia requests (and stealing input focus).
+
+  // ---- City list ----
+  const citySearch = document.getElementById('city-search');
+  if (citySearch) {
+    citySearch.addEventListener('input', () => {
+      selection._citySearch = citySearch.value;
+      renderStep();
+      // Restore focus
+      const refreshed = document.getElementById('city-search');
+      if (refreshed) {
+        refreshed.focus();
+        refreshed.setSelectionRange(refreshed.value.length, refreshed.value.length);
+      }
+    });
+  }
+
+  document.querySelectorAll('.option[data-city-key]').forEach((node) => {
+    node.addEventListener('click', (event) => {
+      const checkbox = node.querySelector('input[type="checkbox"]');
+      if (event.target !== checkbox) checkbox.checked = !checkbox.checked;
+      node.classList.toggle('checked', checkbox.checked);
+      const payload = {
+        name: node.dataset.cityName,
+        county: node.dataset.cityCounty,
+        state: selection.state,
+        abbr: node.dataset.cityAbbr || undefined,
+      };
+      const key = node.dataset.cityKey;
+      const existingIndex = (selection.cities ?? []).findIndex((c) => `${c.name}|${c.county}` === key);
+      if (checkbox.checked) {
+        if (existingIndex === -1) selection.cities.push(payload);
+      } else if (existingIndex !== -1) {
+        selection.cities.splice(existingIndex, 1);
+      }
+      saveAnswersDebounced();
+      updateSelectedCityChips();
+    });
+  });
+
+  // Kick off town loads for any county that hasn't been fetched.
+  const countiesNeedingTowns = (selection.counties ?? []).filter((c) => !state.geo.townsByKey[townKey(selection.state, c)]);
+  if (countiesNeedingTowns.length > 0 && !state.geo.loadingTowns) {
+    ensureTownsLoaded(selection.state, countiesNeedingTowns);
+  }
+
+  const customCityInput = document.getElementById('custom-city-input');
+  const customCityBtn = document.getElementById('custom-city-add');
+  if (customCityInput && customCityBtn) {
+    const add = () => {
+      const name = (customCityInput.value ?? '').trim();
+      if (!name) return;
+      // Custom cities are not tied to a specific county -- they're flagged as
+      // `custom: true` and inherit the state. Counties are an unordered set,
+      // so there is no "primary" one to attach them to.
+      const alreadyIndex = selection.cities.findIndex((c) => c.name.toLowerCase() === name.toLowerCase() && c.custom);
+      if (alreadyIndex === -1) {
+        selection.cities.push({ name, county: '', state: selection.state, custom: true });
+      }
+      customCityInput.value = '';
+      saveAnswersDebounced();
+      renderStep();
+    };
+    customCityBtn.addEventListener('click', add);
+    customCityInput.addEventListener('keydown', (event) => { if (event.key === 'Enter') { event.preventDefault(); add(); } });
+  }
+
+  document.querySelectorAll('.selected-chip[data-city-selected]').forEach((chip) => {
+    chip.querySelector('button')?.addEventListener('click', () => {
+      const key = chip.dataset.citySelected;
+      selection.cities = selection.cities.filter((c) => `${c.name}|${c.county}` !== key);
+      saveAnswersDebounced();
+      renderStep();
+    });
+  });
+}
+
+function updateSelectedCityChips() {
+  const container = document.getElementById('selected-cities');
+  if (!container) return;
+  const selection = state.answers.areas_selection;
+  const chips = (selection.cities ?? []).map((c) => `
+    <span class="selected-chip" data-city-selected="${escapeAttr(`${c.name}|${c.county}`)}">
+      ${escapeHtml(c.name)}<span class="sublabel">${escapeHtml(c.county || 'custom')}</span>
+      <button type="button" aria-label="Remove">&times;</button>
+    </span>
+  `).join('');
+  container.innerHTML = `
+    <h4 class="tile-subtitle">Selected cities</h4>
+    ${chips || '<p class="tile-hint">None yet. Check a city above or add a custom one.</p>'}
+  `;
+  container.querySelectorAll('.selected-chip[data-city-selected]').forEach((chip) => {
+    chip.querySelector('button')?.addEventListener('click', () => {
+      const key = chip.dataset.citySelected;
+      selection.cities = selection.cities.filter((c) => `${c.name}|${c.county}` !== key);
+      saveAnswersDebounced();
+      renderStep();
+    });
+  });
+}
+
+/* ---------- Commute step: state + county drill-down, optional address ---------- */
+
+function ensureCommuteDestinations() {
+  if (!Array.isArray(state.answers.commute) || state.answers.commute.length === 0) {
+    state.answers.commute = [{ label: '', state: '', county: '', address: '' }];
+  }
+  // Normalize legacy shapes (string-only, or the previous {city} variant).
+  state.answers.commute = state.answers.commute.map((entry) => {
+    if (typeof entry === 'string') return { label: entry, state: '', county: '', address: '' };
+    return {
+      label: entry.label ?? entry.name ?? '',
+      state: entry.state ?? '',
+      county: entry.county ?? '',
+      address: entry.address ?? entry.city ?? '',
+    };
+  });
+  return state.answers.commute;
+}
+
+function renderCommuteStep() {
+  const destinations = ensureCommuteDestinations();
+  const target = document.getElementById('tile');
+
+  if (!state.geo.states && !state.geo.loadingStates) {
+    ensureStatesLoaded().then(() => renderStep()).catch(() => renderStep());
+  }
+
+  // Kick off county loads for any destination that already has a state, so
+  // the county autocomplete pool is warm when the user focuses the field.
+  const statesNeedingCounties = new Set();
+  for (const dest of destinations) {
+    if (dest.state) statesNeedingCounties.add(dest.state);
+  }
+  for (const stateName of statesNeedingCounties) {
+    if (!state.geo.countiesByState[stateName] && !state.geo.countyErrorByState[stateName]) {
+      ensureCountiesLoaded(stateName);
+    }
+  }
+
+  const rows = destinations.map((dest, index) => renderCommuteRow(dest, index)).join('');
+
+  target.innerHTML = `
+    <h2>${escapeHtml(CURRENT_STEP.title)}</h2>
+    <p class="tile-hint">${escapeHtml(CURRENT_STEP.hint)}</p>
+    <div class="commute-editor">${rows}</div>
+    <button type="button" class="ghost" id="commute-add" style="margin-top: 12px;">+ Add another destination</button>
+  `;
+
+  wireCommuteInputs();
+}
+
+function renderCommuteRow(dest, index) {
+  const counties = state.geo.countiesByState[dest.state] ?? [];
+  const countyError = state.geo.countyErrorByState[dest.state];
+
+  const countyHint = countyError
+    ? `<p class="tile-hint" style="color: var(--warning, #e0b458);">
+         Wikipedia unavailable (${escapeHtml(countyError)}). Type a county name and press Enter, or
+         <button type="button" class="link-btn" data-action="retry-county">retry the lookup</button>.
+       </p>`
+    : '';
+
+  return `
+    <div class="commute-row-editor" data-commute-index="${index}">
+      <div class="commute-row-head">
+        <input type="text" class="text-input" data-field="label"
+          placeholder="Label (e.g. Work, Daycare)" value="${escapeAttr(dest.label ?? '')}" />
+        <button type="button" class="ghost" data-action="remove" aria-label="Remove destination">Remove</button>
+      </div>
+      <div class="commute-row-grid">
+        <label class="commute-field">
+          <span>State</span>
+          <div class="autocomplete" data-auto="commute-state">
+            <input type="text" class="text-input" data-field="state"
+              placeholder="${state.geo.loadingStates ? 'Loading states...' : 'Start typing a state...'}"
+              value="${escapeAttr(dest.state ?? '')}"
+              ${state.geo.loadingStates ? 'disabled' : ''} autocomplete="off" />
+            <div class="auto-menu" data-menu="state" hidden></div>
+          </div>
+        </label>
+        <label class="commute-field">
+          <span>County${state.geo.loadingCounties && dest.state && counties.length === 0 ? ' <span class="loading-tag">Loading...</span>' : ''}</span>
+          <div class="autocomplete" data-auto="commute-county">
+            <input type="text" class="text-input" data-field="county"
+              placeholder="${dest.state ? (countyError ? 'Type county + Enter' : 'Start typing a county...') : 'Pick a state first'}"
+              value="${escapeAttr(dest.county ?? '')}"
+              ${dest.state ? '' : 'disabled'} autocomplete="off" />
+            <div class="auto-menu" data-menu="county" hidden></div>
+          </div>
+          ${countyHint}
+        </label>
+      </div>
+      <label class="commute-field">
+        <span>Address <span class="sublabel" style="text-transform: none; font-weight: 400;">(optional -- street, city, or landmark for a more precise drive-time link)</span></span>
+        <input type="text" class="text-input" data-field="address"
+          placeholder="${dest.state ? 'e.g. 123 Main St, Cary or just Downtown Raleigh' : 'Pick a state first'}"
+          value="${escapeAttr(dest.address ?? '')}"
+          ${dest.state ? '' : 'disabled'} />
+      </label>
+    </div>
+  `;
+}
+
+function wireCommuteInputs() {
+  const destinations = state.answers.commute;
+
+  document.querySelectorAll('.commute-row-editor').forEach((row) => {
+    const index = Number.parseInt(row.dataset.commuteIndex, 10);
+    const dest = destinations[index];
+    if (!dest) return;
+
+    const labelInput = row.querySelector('input[data-field="label"]');
+    if (labelInput) {
+      labelInput.addEventListener('input', () => {
+        dest.label = labelInput.value;
+        saveAnswersDebounced();
+      });
+    }
+
+    const stateInput = row.querySelector('input[data-field="state"]');
+    const stateMenu = row.querySelector('[data-menu="state"]');
+    const renderStateMenu = () => {
+      const query = (stateInput.value ?? '').trim().toLowerCase();
+      if (!query) { stateMenu.hidden = true; return; }
+      const matches = (state.geo.states ?? [])
+        .filter((s) => s.name.toLowerCase().includes(query))
+        .slice(0, 12);
+      if (matches.length === 0) { stateMenu.hidden = true; return; }
+      stateMenu.hidden = false;
+      stateMenu.innerHTML = matches.map((s) => `
+        <button type="button" class="auto-option" data-state="${escapeAttr(s.name)}">${escapeHtml(s.name)}${s.abbr ? ` <span class="sublabel">${escapeHtml(s.abbr)}</span>` : ''}</button>
+      `).join('');
+      stateMenu.querySelectorAll('.auto-option').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const picked = btn.dataset.state;
+          if (picked !== dest.state) {
+            dest.state = picked;
+            dest.county = '';
+          }
+          stateMenu.hidden = true;
+          saveAnswersDebounced();
+          ensureCountiesLoaded(picked);
+          renderStep();
+        });
+      });
+    };
+    if (stateInput) {
+      stateInput.addEventListener('input', renderStateMenu);
+      stateInput.addEventListener('focus', renderStateMenu);
+      stateInput.addEventListener('blur', () => setTimeout(() => { stateMenu.hidden = true; }, 120));
+    }
+
+    const countyInput = row.querySelector('input[data-field="county"]');
+    const countyMenu = row.querySelector('[data-menu="county"]');
+    const renderCountyMenu = () => {
+      if (!dest.state) { countyMenu.hidden = true; return; }
+      const query = (countyInput.value ?? '').trim().toLowerCase();
+      if (!query) { countyMenu.hidden = true; return; }
+      const pool = state.geo.countiesByState[dest.state] ?? [];
+      const matches = pool
+        .filter((c) => c.name.toLowerCase().includes(query))
+        .slice(0, 12);
+      if (matches.length === 0) { countyMenu.hidden = true; return; }
+      countyMenu.hidden = false;
+      countyMenu.innerHTML = matches.map((c) => `
+        <button type="button" class="auto-option" data-county="${escapeAttr(c.name)}">${escapeHtml(c.name)}</button>
+      `).join('');
+      countyMenu.querySelectorAll('.auto-option').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          dest.county = btn.dataset.county;
+          countyInput.value = dest.county;
+          countyMenu.hidden = true;
+          saveAnswersDebounced();
+        });
+      });
+    };
+    if (countyInput) {
+      countyInput.addEventListener('input', () => {
+        dest.county = countyInput.value;
+        renderCountyMenu();
+      });
+      countyInput.addEventListener('focus', renderCountyMenu);
+      countyInput.addEventListener('blur', () => setTimeout(() => { countyMenu.hidden = true; saveAnswersDebounced(); }, 120));
+      countyInput.addEventListener('keydown', (event) => {
+        if (event.key !== 'Enter') return;
+        event.preventDefault();
+        dest.county = (countyInput.value ?? '').trim();
+        countyMenu.hidden = true;
+        saveAnswersDebounced();
+      });
+    }
+
+    const addressInput = row.querySelector('input[data-field="address"]');
+    if (addressInput) {
+      addressInput.addEventListener('input', () => {
+        dest.address = addressInput.value;
+        saveAnswersDebounced();
+      });
+    }
+
+    row.querySelector('[data-action="remove"]')?.addEventListener('click', () => {
+      destinations.splice(index, 1);
+      if (destinations.length === 0) destinations.push({ label: '', state: '', county: '', address: '' });
+      saveAnswersDebounced();
+      renderStep();
+    });
+
+    row.querySelector('[data-action="retry-county"]')?.addEventListener('click', () => {
+      delete state.geo.countyErrorByState[dest.state];
+      ensureCountiesLoaded(dest.state);
+    });
+  });
+
+  document.getElementById('commute-add')?.addEventListener('click', () => {
+    destinations.push({ label: '', state: '', county: '', address: '' });
+    saveAnswersDebounced();
+    renderStep();
+  });
+}
+
+/* ---------- Shared single-choice / multi-select / range ---------- */
 
 function renderMultiSelect({ field, currentValues, suggestions, allowCustom }) {
   const selected = new Set((state.answers[field] ?? currentValues ?? []).map(String));
@@ -342,6 +981,7 @@ function renderMultiSelect({ field, currentValues, suggestions, allowCustom }) {
       node.classList.toggle('checked', checkbox.checked);
       const current = new Set(readCheckedOptions());
       state.answers[field] = Array.from(current);
+      saveAnswersDebounced();
     });
   });
 
@@ -358,6 +998,7 @@ function renderMultiSelect({ field, currentValues, suggestions, allowCustom }) {
       current.add(value);
       state.answers[field] = Array.from(current);
       input.value = '';
+      saveAnswersDebounced();
       renderStep();
     };
     addBtn.addEventListener('click', onAdd);
@@ -397,6 +1038,7 @@ function renderRangeInputs({ field, minLabel, maxLabel, currentMin, currentMax, 
       min: parseNumberOrNull(document.getElementById('range-min').value),
       max: parseNumberOrNull(document.getElementById('range-max').value),
     };
+    saveAnswersDebounced();
   };
   document.getElementById('range-min').addEventListener('input', save);
   document.getElementById('range-max').addEventListener('input', save);
@@ -422,15 +1064,14 @@ function renderMultipleSingleChoice({ questions, propertyTypesField }) {
   if (propertyTypesField) wireMultiSelectBlock(propertyTypesField);
 }
 
-function renderSingleChoiceBlock({ field, label, options, current, currentPrefix = '', currentSuffix = '' }) {
-  const currentFormatted = current === null || current === undefined ? null : `${currentPrefix}${current}${currentSuffix}`;
+function renderSingleChoiceBlock({ field, label, options, current, currentPrefix = '', currentSuffix = '', includeCustom = true }) {
+  // No "Keep current (X)" fallback -- if the saved profile value matches one
+  // of the canonical options, pre-select it; otherwise leave unselected.
   const matched = findAnswerFromCurrent(options, current, currentPrefix, currentSuffix);
-  const selected = state.answers[field] ?? matched ?? currentFormatted;
+  const selected = state.answers[field] ?? matched ?? null;
   const optionList = [...options];
-  if (currentFormatted && !optionList.some((opt) => opt.toLowerCase() === currentFormatted.toLowerCase())) {
-    optionList.push(`Keep current (${currentFormatted})`);
-  }
-  optionList.push('Custom');
+  if (includeCustom) optionList.push('Custom');
+  const isCustomSelected = typeof selected === 'string' && selected.toLowerCase().startsWith('custom:');
   return `
     <div class="sub-question" data-sc-field="${escapeAttr(field)}">
       <h3 class="tile-subtitle">${escapeHtml(label)}</h3>
@@ -442,14 +1083,16 @@ function renderSingleChoiceBlock({ field, label, options, current, currentPrefix
           </label>
         `).join('')}
       </div>
-      <div class="custom-row" data-sc-custom="${escapeAttr(field)}" ${selected && selected.toLowerCase().startsWith('custom:') ? '' : 'hidden'}>
-        <input type="text" placeholder="Custom value..." value="${escapeAttr(selected && selected.toLowerCase().startsWith('custom:') ? selected.slice(7).trim() : '')}" />
-      </div>
+      ${includeCustom ? `
+        <div class="custom-row" data-sc-custom="${escapeAttr(field)}" ${isCustomSelected ? '' : 'hidden'}>
+          <input type="text" placeholder="Custom value..." value="${escapeAttr(isCustomSelected ? selected.slice(7).trim() : '')}" />
+        </div>
+      ` : ''}
     </div>
   `;
 }
 
-function wireSingleChoiceBlock({ field }) {
+function wireSingleChoiceBlock({ field, includeCustom = true }) {
   const scope = document.querySelector(`[data-sc-field="${CSS.escape(field)}"]`);
   if (!scope) return;
   scope.querySelectorAll('.option').forEach((node) => {
@@ -458,17 +1101,19 @@ function wireSingleChoiceBlock({ field }) {
       node.classList.add('checked');
       node.querySelector('input').checked = true;
       const value = node.dataset.value;
-      const customRow = scope.querySelector(`[data-sc-custom="${CSS.escape(field)}"]`);
-      if (value === 'Custom') {
+      const customRow = includeCustom ? scope.querySelector(`[data-sc-custom="${CSS.escape(field)}"]`) : null;
+      if (value === 'Custom' && customRow) {
         customRow.hidden = false;
         const input = customRow.querySelector('input');
         setTimeout(() => input.focus(), 40);
         input.addEventListener('input', () => {
           state.answers[field] = input.value.trim() ? `Custom: ${input.value.trim()}` : 'Custom';
+          saveAnswersDebounced();
         });
       } else {
-        customRow.hidden = true;
+        if (customRow) customRow.hidden = true;
         state.answers[field] = value;
+        saveAnswersDebounced();
       }
     });
   });
@@ -497,6 +1142,7 @@ function wireMultiSelectBlock({ field }) {
   const save = () => {
     const values = Array.from(scope.querySelectorAll('.option')).filter((node) => node.querySelector('input').checked).map((node) => node.dataset.value);
     state.answers[field] = values;
+    saveAnswersDebounced();
   };
   scope.querySelectorAll('.option').forEach((node) => {
     node.addEventListener('click', (event) => {
@@ -534,6 +1180,7 @@ function renderSliders({ field, factors, currentValues }) {
     slider.addEventListener('input', () => {
       valueLabel.textContent = slider.value;
       state.answers[field][key] = Number.parseInt(slider.value, 10);
+      saveAnswersDebounced();
     });
   });
 }
@@ -542,63 +1189,53 @@ const RESEARCH_SOURCE_GROUPS = [
   {
     key: 'portals',
     title: 'Listing portals',
-    note: 'Drives /home-ops scan. Unchecked portals are skipped when Home-Ops looks for new listings.',
+    note: 'Drives /home-ops scan. If you leave this group empty, Home-Ops uses every supported portal.',
     sources: [
-      { key: 'zillow', label: 'Zillow', defaultOn: true },
-      { key: 'redfin', label: 'Redfin', defaultOn: true },
-      { key: 'realtor', label: 'Realtor.com', defaultOn: true },
-      { key: 'homes', label: 'Homes.com', defaultOn: false },
+      { key: 'zillow', label: 'Zillow' },
+      { key: 'redfin', label: 'Redfin' },
+      { key: 'realtor', label: 'Realtor.com' },
+      { key: 'homes', label: 'Homes.com' },
     ],
   },
   {
     key: 'sentiment',
     title: 'Neighborhood sentiment',
-    note: 'Drives /home-ops deep and the sentiment extract. Used to pull community sentiment about subdivisions, schools, and streets.',
+    note: 'Drives /home-ops deep and the sentiment extract. Leave empty to skip neighborhood sentiment entirely.',
     sources: [
-      { key: 'reddit', label: 'Reddit (local subreddits)', defaultOn: true },
-      { key: 'nextdoor', label: 'Nextdoor', defaultOn: true },
-      { key: 'facebook', label: 'Facebook neighborhood groups', defaultOn: true },
-      { key: 'google_maps', label: 'Google Maps reviews', defaultOn: true },
+      { key: 'reddit', label: 'Reddit (local subreddits)' },
+      { key: 'nextdoor', label: 'Nextdoor' },
+      { key: 'facebook', label: 'Facebook neighborhood groups' },
+      { key: 'google_maps', label: 'Google Maps reviews' },
     ],
   },
   {
     key: 'schools',
     title: 'Schools',
-    note: 'Drives school sentiment and the hard-requirement gate. Picking more sources improves the school evidence coverage score.',
+    note: 'Drives school sentiment and the school hard-requirement gate. Leave empty to skip school research.',
     sources: [
-      { key: 'greatschools', label: 'GreatSchools', defaultOn: true },
-      { key: 'niche', label: 'Niche', defaultOn: true },
-      { key: 'state_report_cards', label: 'State report cards', defaultOn: true },
-      { key: 'schooldigger', label: 'SchoolDigger', defaultOn: false },
+      { key: 'greatschools', label: 'GreatSchools' },
+      { key: 'niche', label: 'Niche' },
+      { key: 'state_report_cards', label: 'State report cards' },
+      { key: 'schooldigger', label: 'SchoolDigger' },
     ],
   },
   {
     key: 'development',
     title: 'Development and infrastructure',
-    note: 'Drives construction-pressure checks. Picks up planned roads, subdivisions, and rezonings near a property.',
+    note: 'Drives construction-pressure checks for road projects, rezonings, and subdivisions near a listing.',
     sources: [
-      { key: 'state_dot', label: 'State DOT project list', defaultOn: true },
-      { key: 'county_planning', label: 'County planning department', defaultOn: true },
-      { key: 'municipal_planning', label: 'Municipal planning', defaultOn: true },
-      { key: 'mpo', label: 'Regional MPO (transportation planning)', defaultOn: false },
+      { key: 'state_dot', label: 'State DOT project list' },
+      { key: 'local_construction', label: 'Also check local construction around the home (permits, nearby builds)' },
     ],
   },
 ];
 
 function collectCurrentResearchSources() {
-  const stored = state.profile?.research_sources;
+  // Everything starts OFF -- the buyer picks sources from scratch.
   const result = {};
   for (const group of RESEARCH_SOURCE_GROUPS) {
-    const currentForGroup = stored?.[group.key];
     for (const source of group.sources) {
-      const key = `${group.key}.${source.key}`;
-      if (currentForGroup && typeof currentForGroup === 'object' && source.key in currentForGroup) {
-        result[key] = Boolean(currentForGroup[source.key]);
-      } else if (Array.isArray(currentForGroup)) {
-        result[key] = currentForGroup.includes(source.key);
-      } else {
-        result[key] = source.defaultOn;
-      }
+      result[`${group.key}.${source.key}`] = false;
     }
   }
   return result;
@@ -638,6 +1275,7 @@ function renderResearchSources() {
       if (event.target !== checkbox) checkbox.checked = !checkbox.checked;
       node.classList.toggle('checked', checkbox.checked);
       state.answers.research_sources[node.dataset.sourceId] = checkbox.checked;
+      saveAnswersDebounced();
     });
   });
 }
@@ -733,8 +1371,16 @@ function renderNarrative() {
         const value = chip.dataset.chipValue;
         appendChipToTextarea(textarea, value);
         readNarrative();
+        saveAnswersDebounced();
       });
     });
+  });
+
+  ['n-wants', 'n-avoids', 'n-family', 'n-notes', 'n-aggr'].forEach((id) => {
+    const node = document.getElementById(id);
+    if (!node) return;
+    node.addEventListener('input', () => { readNarrative(); saveAnswersDebounced(); });
+    node.addEventListener('change', () => { readNarrative(); saveAnswersDebounced(); });
   });
 }
 
@@ -781,7 +1427,14 @@ function renderReview() {
 function buildSummary() {
   const lines = [];
   const push = (label, value) => { if (value !== undefined && value !== null && value !== '' && !(Array.isArray(value) && value.length === 0)) lines.push(`${label}: ${Array.isArray(value) ? value.join(', ') : value}`); };
-  push('Areas', state.answers.areas);
+  const areas = state.answers.areas_selection;
+  if (areas) {
+    if (areas.state) push('State', areas.state);
+    if (areas.counties?.length) push('Counties', areas.counties);
+    if (areas.cities?.length) {
+      push('Cities', areas.cities.map((c) => `${c.name}${c.county ? ` (${c.county})` : ''}`));
+    }
+  }
   if (state.answers.price) push('Price', `${state.answers.price.min ?? '?'} - ${state.answers.price.max ?? '?'}`);
   push('Beds min', state.answers.beds_min);
   push('Baths min', state.answers.baths_min);
@@ -793,14 +1446,23 @@ function buildSummary() {
   push('Stories', state.answers.stories_preferred);
   push('Property types', state.answers.property_types);
   push('HOA max', state.answers.hoa_max);
-  push('Down payment', state.answers.down_payment_pct);
-  push('Closing costs', state.answers.closing_pct);
   push('School min', state.answers.schools_min_rating);
   push('Max DOM', state.answers.max_listing_age);
-  push('Commute destinations', state.answers.commute);
+  if (Array.isArray(state.answers.commute)) {
+    const rendered = state.answers.commute
+      .map((d) => {
+        if (typeof d === 'string') return d;
+        const head = d.label ? `${d.label}: ` : '';
+        const tail = [d.address, d.county ? `${d.county} County` : '', d.state].filter(Boolean).join(', ');
+        return `${head}${tail}`.trim();
+      })
+      .filter(Boolean);
+    if (rendered.length) push('Commute destinations', rendered);
+  }
   if (state.answers.research_sources && Object.keys(state.answers.research_sources).length) {
     const on = Object.entries(state.answers.research_sources).filter(([, value]) => value).map(([key]) => key);
     if (on.length) lines.push(`Research sources: ${on.join(', ')}`);
+    else lines.push('Research sources: (none selected -- defaults handled per group)');
   }
   if (state.answers.sentiment_weights) lines.push(`Neighborhood weights: ${JSON.stringify(state.answers.sentiment_weights)}`);
   if (state.answers.school_weights) lines.push(`School weights: ${JSON.stringify(state.answers.school_weights)}`);
@@ -822,18 +1484,118 @@ let CURRENT_STEP = STEPS[0];
 
 function renderStep() {
   CURRENT_STEP = STEPS[state.stepIndex];
+  state.visitedSteps.add(state.stepIndex);
+  // Capture focus state so loads that complete mid-typing don't eject the
+  // user's cursor. We look for a stable data-field + row index (commute) or
+  // an id, then restore focus + selection after the re-render.
+  const focusSnapshot = captureFocusSnapshot();
   CURRENT_STEP.render();
   document.getElementById('step-label').textContent = `Step ${state.stepIndex + 1} -- ${CURRENT_STEP.title.replace(/\.$/, '')}`;
   document.getElementById('step-total').textContent = `of ${STEPS.length}`;
   document.getElementById('progress-fill').style.width = `${((state.stepIndex + 1) / STEPS.length) * 100}%`;
-  document.getElementById('back-btn').disabled = state.stepIndex === 0;
+  renderBreadcrumbs();
   const onReview = !!CURRENT_STEP.isReview;
-  document.getElementById('next-btn').hidden = onReview;
   document.getElementById('submit-btn').hidden = !onReview;
+  restoreFocusSnapshot(focusSnapshot);
+
+  // If the user was mid-typing in a commute county field when a data load
+  // completed, re-dispatch an input event so the autocomplete menu reopens
+  // against the fresh pool without requiring another keystroke.
+  const refocused = document.activeElement;
+  if (refocused?.matches?.('.commute-row-editor input[data-field="county"]')) {
+    if ((refocused.value ?? '').trim().length > 0) {
+      refocused.dispatchEvent(new Event('input'));
+    }
+  }
+}
+
+function captureFocusSnapshot() {
+  const active = document.activeElement;
+  if (!active || active === document.body) return null;
+  const snapshot = { selectionStart: active.selectionStart ?? null, selectionEnd: active.selectionEnd ?? null };
+  if (active.id) {
+    snapshot.kind = 'id';
+    snapshot.id = active.id;
+  } else if (active.matches?.('.commute-row-editor input[data-field]')) {
+    const row = active.closest('.commute-row-editor');
+    snapshot.kind = 'commute';
+    snapshot.rowIndex = row?.dataset.commuteIndex;
+    snapshot.field = active.dataset.field;
+  } else {
+    return null;
+  }
+  return snapshot;
+}
+
+function restoreFocusSnapshot(snapshot) {
+  if (!snapshot) return;
+  let node = null;
+  if (snapshot.kind === 'id') {
+    node = document.getElementById(snapshot.id);
+  } else if (snapshot.kind === 'commute') {
+    const row = document.querySelector(`.commute-row-editor[data-commute-index="${snapshot.rowIndex}"]`);
+    node = row?.querySelector(`input[data-field="${snapshot.field}"]`);
+  }
+  if (!node) return;
+  node.focus();
+  if (typeof snapshot.selectionStart === 'number' && typeof snapshot.selectionEnd === 'number') {
+    try { node.setSelectionRange(snapshot.selectionStart, snapshot.selectionEnd); } catch { /* non-text input */ }
+  }
+}
+
+function renderBreadcrumbs() {
+  const nav = document.getElementById('breadcrumbs');
+  if (!nav) return;
+  // A crumb is reachable when its index is at or before the step immediately
+  // after the furthest visited step -- that lets the user advance forward one
+  // step at a time (replacing the old Next button) without skipping ahead.
+  const maxVisited = Math.max(...state.visitedSteps);
+  const reachableThrough = Math.min(maxVisited + 1, STEPS.length - 1);
+  const items = STEPS.map((step, index) => {
+    const isCurrent = index === state.stepIndex;
+    const isReachable = index <= reachableThrough;
+    const classes = ['crumb'];
+    if (isCurrent) classes.push('current');
+    if (isReachable) classes.push('reachable'); else classes.push('locked');
+    const disabled = !isReachable || isCurrent ? 'disabled' : '';
+    const shortTitle = step.title.replace(/[?.].*/, '').trim();
+    return `
+      <button type="button" class="${classes.join(' ')}" data-step="${index}" ${disabled}
+        aria-current="${isCurrent ? 'step' : 'false'}"
+        title="${escapeAttr(step.title)}">
+        <span class="crumb-num">${index + 1}</span>
+        <span class="crumb-label">${escapeHtml(shortTitle)}</span>
+      </button>
+    `;
+  }).join('');
+  nav.innerHTML = items;
+  nav.querySelectorAll('.crumb:not([disabled])').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const target = Number.parseInt(btn.dataset.step, 10);
+      if (!Number.isFinite(target) || target === state.stepIndex) return;
+      commitCurrentStep();
+      saveAnswersDebounced();
+      state.stepIndex = target;
+      renderStep();
+    });
+  });
 }
 
 function commitCurrentStep() {
   if (CURRENT_STEP.read) CURRENT_STEP.read();
+}
+
+let saveTimer = null;
+function saveAnswersDebounced() {
+  if (saveTimer) clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => {
+    saveTimer = null;
+    fetch('/api/answers', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ answers: state.answers }),
+    }).catch(() => { /* best-effort */ });
+  }, 400);
 }
 
 async function bootstrap() {
@@ -841,26 +1603,67 @@ async function bootstrap() {
     const res = await fetch('/api/profile');
     const body = await res.json();
     state.profile = body.profile ?? {};
+    // savedAnswers take precedence for fields that are not yet ingested into
+    // config/profile.yml -- this is what keeps re-opening the wizard from
+    // wiping selections between sessions.
+    if (body.savedAnswers?.answers) {
+      state.answers = { ...body.savedAnswers.answers };
+      // Guard against legacy state values (e.g. "NC") that were saved before
+      // the full-name requirement -- Wikipedia needs the full state name.
+      const areas = state.answers.areas_selection;
+      if (areas && typeof areas.state === 'string' && /^[A-Z]{2}$/.test(areas.state.trim())) {
+        areas.state = '';
+        areas.counties = [];
+        areas.cities = [];
+      }
+    }
   } catch (error) {
     console.warn('Unable to load current profile, starting blank.', error);
     state.profile = {};
   }
+  // Seed visitedSteps from any previously-saved answers so re-opening the
+  // wizard lets you jump straight to a later step via breadcrumbs. We consider
+  // a step "visited" if its primary answer key already has a value.
+  const stepAnswerKeys = {
+    areas: 'areas_selection', price: 'price',
+    'beds-baths': 'beds_min', size: 'sqft_min',
+    'home-type': 'home_type_preference', financial: 'hoa_max',
+    schools: 'schools_min_rating', commute: 'commute',
+    'research-sources': 'research_sources',
+    'sentiment-weights': 'sentiment_weights',
+    'school-weights': 'school_weights', narrative: 'narrative',
+  };
+  STEPS.forEach((step, index) => {
+    const key = stepAnswerKeys[step.id];
+    if (key && state.answers[key] !== undefined && state.answers[key] !== null) {
+      state.visitedSteps.add(index);
+    }
+  });
+
   renderStep();
-  document.getElementById('back-btn').addEventListener('click', () => {
-    commitCurrentStep();
-    if (state.stepIndex > 0) {
+  document.getElementById('submit-btn').addEventListener('click', submit);
+
+  // Let users press ArrowLeft / ArrowRight while focused on nothing in
+  // particular to step through the wizard. Forward is gated to the same
+  // "reachable" rule used by the breadcrumbs (current maxVisited + 1).
+  document.addEventListener('keydown', (event) => {
+    if (event.target && /^(INPUT|TEXTAREA|SELECT)$/.test(event.target.tagName)) return;
+    if (event.key === 'ArrowLeft' && state.stepIndex > 0) {
+      commitCurrentStep();
+      saveAnswersDebounced();
       state.stepIndex -= 1;
       renderStep();
+    } else if (event.key === 'ArrowRight' && state.stepIndex < STEPS.length - 1) {
+      const maxVisited = Math.max(...state.visitedSteps);
+      const target = state.stepIndex + 1;
+      if (target <= maxVisited + 1) {
+        commitCurrentStep();
+        saveAnswersDebounced();
+        state.stepIndex = target;
+        renderStep();
+      }
     }
   });
-  document.getElementById('next-btn').addEventListener('click', () => {
-    commitCurrentStep();
-    if (state.stepIndex < STEPS.length - 1) {
-      state.stepIndex += 1;
-      renderStep();
-    }
-  });
-  document.getElementById('submit-btn').addEventListener('click', submit);
 }
 
 async function submit() {

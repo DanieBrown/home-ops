@@ -797,7 +797,11 @@ function appendPipelineEntries(lines) {
   }
 
   const insertAt = processedIndex === -1 ? current.length : processedIndex;
-  const before = current.slice(0, insertAt).replace(/\s*$/, '\n');
+  const pendingSection = processedIndex === -1
+    ? current.slice(pendingIndex)
+    : current.slice(pendingIndex, processedIndex);
+  const hasExistingChecklistEntries = /(^|\n)- \[[ x]\]/i.test(pendingSection);
+  const before = current.slice(0, insertAt).replace(/\s*$/, hasExistingChecklistEntries ? '\n' : '\n\n');
   const after = current.slice(insertAt).replace(/^\n*/, '\n');
   const updated = `${before}${lines.join('\n')}\n${after}`;
   writeFileSync(PIPELINE_PATH, updated, 'utf8');
