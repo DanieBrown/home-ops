@@ -42,6 +42,26 @@ Ask which the user prefers. If they pick the web wizard:
 4. Once the submission file exists, read it and map the answers back into `config/profile.yml`, `buyer-profile.md`, and `modes/_profile.md` using the same file-update rules below. Then delete or rename the submission file so the next run starts clean.
 5. Run the validation steps and output summary as usual.
 
+### Wizard Narrative Mapping
+
+The wizard no longer asks for features or deal-breakers as separate pick-lists. It asks the buyer to describe the home they want (and what they want to avoid) in prose, with clickable suggestion chips that pre-fill common phrases. On submit, `tools/profile-wizard/serve.mjs` runs the prose through `tools/profile-wizard/parse-narrative.mjs` and writes the structured result into the submission file as a top-level `narrative_extract` block shaped like:
+
+```
+narrative_extract:
+  features: ["Fenced yard", "Updated kitchen", ...]          # -> search.soft_preferences.features
+  deal_breakers: ["Busy road...", "Townhome or condo", ...]  # -> search.deal_breakers
+  scan_keywords: ["fenced yard", "updated kitchen", ...]     # -> search.scan_keywords
+  scan_negative_keywords: ["busy road", ...]                 # -> search.scan_negative_keywords
+  profile_fields:                                            # -> merged into search.soft_preferences
+    fenced_yard: true
+    floor_plan: open
+    street_type: cul-de-sac
+    lot_min_acres_floor: 0.25      # bumps search.hard_requirements.lot_min_acres up to at least this value
+    exclude_property_types: [...]   # -> search.soft_preferences.exclude_property_types
+```
+
+When ingesting a wizard submission, prefer `narrative_extract` for features/deal-breakers/scan keywords over trying to re-parse the narrative text yourself. Still preserve the raw narrative text (`payload.answers.narrative.wants` / `.avoids` / `.notes`) into `buyer-profile.md` so the buyer voice is not lost.
+
 If the user prefers the in-chat flow (or says "just ask me"), skip the wizard and proceed straight to the question batches.
 
 ## Interaction Rules
@@ -303,8 +323,9 @@ For both weight groups:
 Update the structured fields for:
 - search areas
 - hard requirements
-- soft preferences
+- soft preferences (including `features` and any `profile_fields` from `narrative_extract` like `fenced_yard`, `floor_plan`, `street_type`, `updated_kitchen`, `flooring_include`, `exclude_property_types`)
 - deal-breakers
+- `search.scan_keywords` and `search.scan_negative_keywords` (from the wizard's `narrative_extract` -- these flow into the Google search queries that `generate-portals.mjs` emits)
 - commute destinations
 - financial assumptions (down payment and closing-cost range only)
 - research sources (portals, sentiment, schools, development)

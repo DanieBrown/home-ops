@@ -1,0 +1,157 @@
+{
+  "$note": "Shared keyword map. Aliases match narrative prose (case-insensitive, word-boundary). Matched entries merge into profile.yml at ingest: features -> search.soft_preferences.features, deal_breakers -> search.deal_breakers, scan_keywords -> search.scan_keywords, and any flags under profile_fields are applied verbatim.",
+  "features": [
+    {
+      "phrase": "Large backyard",
+      "aliases": ["large backyard", "big backyard", "large yard", "big yard", "spacious yard", "roomy yard"],
+      "scan_keywords": ["large yard", "big backyard"],
+      "profile_fields": { "lot_min_acres_floor": 0.25 }
+    },
+    {
+      "phrase": "Fenced yard",
+      "aliases": ["fenced yard", "fenced in yard", "fenced backyard", "privacy fence", "fence around the yard", "yard is fenced"],
+      "scan_keywords": ["fenced yard", "fenced backyard"],
+      "profile_fields": { "fenced_yard": true }
+    },
+    {
+      "phrase": "Open-concept plan",
+      "aliases": ["open concept", "open-concept", "open floor plan", "open floorplan"],
+      "scan_keywords": ["open concept", "open floor plan"],
+      "profile_fields": { "floor_plan": "open" }
+    },
+    {
+      "phrase": "Updated kitchen",
+      "aliases": ["updated kitchen", "renovated kitchen", "new kitchen", "remodeled kitchen", "modern kitchen"],
+      "scan_keywords": ["updated kitchen", "renovated kitchen"],
+      "profile_fields": { "updated_kitchen": true }
+    },
+    {
+      "phrase": "Hardwood or LVP floors",
+      "aliases": ["hardwood", "hardwoods", "hardwood floors", "wood floors", "lvp", "luxury vinyl plank", "vinyl plank"],
+      "scan_keywords": ["hardwood floors", "lvp"],
+      "profile_fields": { "flooring_include": ["hardwood", "lvp"] }
+    },
+    {
+      "phrase": "Bonus room or office",
+      "aliases": ["bonus room", "flex room", "rec room", "office space"],
+      "scan_keywords": ["bonus room", "office"]
+    },
+    {
+      "phrase": "First-floor primary suite",
+      "aliases": ["first floor primary", "first-floor primary", "main floor primary", "main-floor owners suite", "main floor owner's suite", "downstairs master", "first floor master", "first-floor master"],
+      "scan_keywords": ["first floor primary", "main floor primary"]
+    },
+    {
+      "phrase": "Two-story layout",
+      "aliases": ["two story", "two-story", "2 story", "2-story"],
+      "scan_keywords": ["two story"]
+    },
+    {
+      "phrase": "Cul-de-sac or low-traffic street",
+      "aliases": ["cul-de-sac", "cul de sac", "quiet street", "low traffic street", "low-traffic", "dead end street"],
+      "scan_keywords": ["cul-de-sac"],
+      "profile_fields": { "street_type": "cul-de-sac" }
+    },
+    {
+      "phrase": "Community pool",
+      "aliases": ["community pool", "neighborhood pool", "hoa pool", "subdivision pool"],
+      "scan_keywords": ["community pool"]
+    },
+    {
+      "phrase": "Mature neighborhood",
+      "aliases": ["mature neighborhood", "mature trees", "established neighborhood", "older neighborhood"],
+      "scan_keywords": ["mature trees", "established neighborhood"]
+    },
+    {
+      "phrase": "Home office",
+      "aliases": ["home office", "work from home", "wfh space", "dedicated office"],
+      "scan_keywords": ["home office"]
+    },
+    {
+      "phrase": "Basement",
+      "aliases": ["basement", "finished basement", "walkout basement", "walk-out basement"],
+      "scan_keywords": ["basement"]
+    },
+    {
+      "phrase": "Finished garage",
+      "aliases": ["finished garage", "drywalled garage", "insulated garage"],
+      "scan_keywords": ["finished garage"]
+    },
+    {
+      "phrase": "Pool",
+      "aliases": ["private pool", "backyard pool", "in-ground pool", "inground pool", "swimming pool"],
+      "scan_keywords": ["pool"]
+    },
+    {
+      "phrase": "Screened porch",
+      "aliases": ["screened porch", "screened-in porch", "sunroom", "four season room", "screened patio"],
+      "scan_keywords": ["screened porch", "sunroom"]
+    },
+    {
+      "phrase": "Three-car garage",
+      "aliases": ["three car garage", "three-car garage", "3 car garage", "3-car garage"],
+      "scan_keywords": ["3 car garage"]
+    }
+  ],
+  "deal_breakers": [
+    {
+      "phrase": "Busy road or cut-through traffic",
+      "aliases": ["busy road", "cut through traffic", "cut-through", "main road", "major road", "highway noise", "road noise"],
+      "canonical": "Busy road or cut-through traffic",
+      "scan_negative_keywords": ["busy road", "main road"]
+    },
+    {
+      "phrase": "Floodplain or drainage concern",
+      "aliases": ["floodplain", "flood zone", "flooding", "drainage issues", "wet yard", "standing water"],
+      "canonical": "Floodplain or drainage concern",
+      "scan_negative_keywords": ["flood zone"]
+    },
+    {
+      "phrase": "Small or unusable backyard",
+      "aliases": ["small yard", "tiny yard", "no yard", "unusable yard", "sloped yard", "steep yard"],
+      "canonical": "Small or unusable backyard"
+    },
+    {
+      "phrase": "Weak assigned schools",
+      "aliases": ["weak schools", "bad schools", "poor schools", "low rated schools", "low-rated schools"],
+      "canonical": "Weak assigned schools"
+    },
+    {
+      "phrase": "Townhome or condo",
+      "aliases": ["townhome", "townhouse", "condo", "condominium", "no townhome", "no townhomes", "no condos"],
+      "canonical": "Townhome or condo",
+      "profile_fields": { "exclude_property_types": ["Townhome", "Condo"] }
+    },
+    {
+      "phrase": "Backs to commercial or highway",
+      "aliases": ["backs to commercial", "backs to highway", "backs up to highway", "behind commercial"],
+      "canonical": "Backs to commercial or highway"
+    },
+    {
+      "phrase": "Major immediate repairs",
+      "aliases": ["needs work", "fixer upper", "fixer-upper", "handyman special", "needs renovation", "tear down"],
+      "canonical": "Major immediate repairs",
+      "scan_negative_keywords": ["fixer upper", "handyman special", "needs work"]
+    },
+    {
+      "phrase": "Too far from preferred commute",
+      "aliases": ["too far", "long commute", "bad commute", "far from work"],
+      "canonical": "Too far from preferred commute"
+    },
+    {
+      "phrase": "Builder-heavy new construction",
+      "aliases": ["builder grade", "builder-grade", "cookie cutter", "cookie-cutter", "track home", "tract home"],
+      "canonical": "Builder-heavy new construction"
+    },
+    {
+      "phrase": "HOA restrictions",
+      "aliases": ["strict hoa", "restrictive hoa", "high hoa", "hoa nightmare"],
+      "canonical": "HOA restrictions"
+    },
+    {
+      "phrase": "Pool maintenance burden",
+      "aliases": ["no pool", "avoid pool", "pool maintenance"],
+      "canonical": "Pool maintenance burden"
+    }
+  ]
+}

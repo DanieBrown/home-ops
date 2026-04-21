@@ -21,6 +21,8 @@ import { dirname, extname, join, resolve } from 'path';
 import { fileURLToPath } from 'url';
 import YAML from 'yaml';
 
+import { parseNarrative } from './parse-narrative.mjs';
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const REPO_ROOT = resolve(__dirname, '..', '..');
@@ -114,10 +116,22 @@ async function handleSubmit(req, res, options) {
   try {
     const raw = await readBody(req);
     const parsed = JSON.parse(raw || '{}');
+    const narrative = parsed?.answers?.narrative ?? {};
+    let narrativeExtract = null;
+    try {
+      narrativeExtract = parseNarrative({
+        wants: narrative.wants ?? '',
+        avoids: narrative.avoids ?? '',
+        notes: narrative.notes ?? '',
+      });
+    } catch (error) {
+      console.warn(`Narrative parse failed: ${error.message}`);
+    }
     const wrapped = {
       submittedAt: new Date().toISOString(),
       source: 'profile-wizard',
       payload: parsed,
+      narrative_extract: narrativeExtract,
     };
     if (!existsSync(SUBMISSION_DIR)) {
       mkdirSync(SUBMISSION_DIR, { recursive: true });

@@ -604,9 +604,16 @@ function parseDaysOnMarket(text) {
   return { text: '', days: null };
 }
 
+const HOA_LABEL = '(?:monthly\\s+hoa|hoa(?:\\s+(?:fee|fees|dues))?|association\\s+fee)';
+
 function parseHoa(text) {
   const content = String(text ?? '');
-  const annualMatch = content.match(/hoa[^\n]{0,40}?\$\s*([\d,]+(?:\.\d+)?)\s*(?:annually|yearly|a year|\/yr)/i);
+
+  if (/\b(?:no\s+hoa|hoa(?:\s+(?:fee|fees|dues))?\s*[\s:\-]+(?:none|\$0(?:\.00)?\b))/i.test(content)) {
+    return { text: 'No HOA', monthly: 0 };
+  }
+
+  const annualMatch = content.match(new RegExp(`${HOA_LABEL}[\\s\\S]{0,80}?\\$\\s*([\\d,]+(?:\\.\\d+)?)\\s*(?:annually|yearly|a year|\\/yr|\\/year|per\\s+year)`, 'i'));
   if (annualMatch) {
     const annual = Number.parseFloat(annualMatch[1].replace(/,/g, ''));
     return {
@@ -615,13 +622,24 @@ function parseHoa(text) {
     };
   }
 
-  const monthlyMatch = content.match(/hoa[^\n]{0,40}?\$\s*([\d,]+(?:\.\d+)?)\s*(?:monthly|month|\/mo)/i);
+  const monthlyMatch = content.match(new RegExp(`${HOA_LABEL}[\\s\\S]{0,80}?\\$\\s*([\\d,]+(?:\\.\\d+)?)\\s*(?:monthly|month|\\/mo|\\/month|per\\s+month|a\\s+month)`, 'i'));
   if (monthlyMatch) {
     const monthly = Number.parseFloat(monthlyMatch[1].replace(/,/g, ''));
     return {
       text: `$${CURRENCY_FORMATTER.format(Math.round(monthly))}/mo`,
       monthly,
     };
+  }
+
+  const bareMatch = content.match(new RegExp(`${HOA_LABEL}[\\s\\S]{0,40}?\\$\\s*([\\d,]+(?:\\.\\d+)?)\\b`, 'i'));
+  if (bareMatch) {
+    const amount = Number.parseFloat(bareMatch[1].replace(/,/g, ''));
+    if (Number.isFinite(amount) && amount > 0 && amount < 2000) {
+      return {
+        text: `$${CURRENCY_FORMATTER.format(Math.round(amount))}/mo (assumed monthly, no explicit cadence)`,
+        monthly: amount,
+      };
+    }
   }
 
   return { text: '', monthly: null };
@@ -708,7 +726,8 @@ function parseListingFacts(snapshot, entry) {
     safeParseNumber(cardFacts.match(/(?:built\s+in|year built[:\s]+)(\d{4})/i)?.[1]),
   );
   const garageSpaces = parseGarageSpaces(cardFacts);
-  const hoa = parseHoa(cardFacts);
+  const hoaSearchText = `${extractMeta(snapshot, 'og:description')} ${extractMeta(snapshot, 'description')} ${snapshot.headings.join(' ')} ${snapshot.bodyText}`;
+  const hoa = parseHoa(hoaSearchText);
   const daysOnMarket = parseDaysOnMarket(cardFacts);
   const schoolRatings = parseSchoolRatings(cardFacts);
   const description = chooseFirst(structured.description, extractMeta(snapshot, 'description'), extractMeta(snapshot, 'og:description'), '').trim();
@@ -804,6 +823,31 @@ function classifyVerification(snapshot, response, navigationError, facts, entry)
   }
 
   return { status: 'blocked', reason: 'insufficient listing detail detected' };
+}
+
+async function scrollToFullyLoad(page) {
+  try {
+    await page.evaluate(async () => {
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      const step = window.innerHeight || 800;
+      let lastHeight = -1;
+      let stable = 0;
+      for (let i = 0; i < 24; i += 1) {
+        const docHeight = document.body?.scrollHeight ?? 0;
+        if (docHeight === lastHeight) {
+          stable += 1;
+          if (stable >= 2) break;
+        } else {
+          stable = 0;
+        }
+        lastHeight = docHeight;
+        window.scrollBy(0, step);
+        await sleep(220);
+      }
+      window.scrollTo(0, 0);
+      await sleep(120);
+    });
+  } catch {}
 }
 
 async function capturePageSnapshot(page) {
@@ -1206,6 +1250,7 @@ async function extractFromBrowser(context, entry) {
     }
 
     await page.waitForTimeout(SETTLE_TIMEOUT_MS);
+    await scrollToFullyLoad(page);
     const snapshot = await capturePageSnapshot(page);
     const facts = parseListingFacts(snapshot, entry);
     const verification = classifyVerification(snapshot, response, navigationError, facts, entry);

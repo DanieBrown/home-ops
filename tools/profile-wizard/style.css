@@ -167,6 +167,13 @@ html, body {
   background: transparent; border: 0; color: var(--accent);
   cursor: pointer; font-size: 14px; line-height: 1; padding: 0;
 }
+button.chip {
+  padding: 4px 12px; border-radius: 999px; font-size: 12px;
+  background: rgba(14, 165, 233, 0.15); color: var(--accent);
+  border: 1px solid rgba(14, 165, 233, 0.35); cursor: pointer;
+  line-height: 1.4;
+}
+button.chip:hover { background: rgba(14, 165, 233, 0.28); border-color: rgba(14, 165, 233, 0.55); }
 
 .nav {
   display: flex; gap: 12px; align-items: center;

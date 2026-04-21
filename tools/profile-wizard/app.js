@@ -137,55 +137,6 @@ const STEPS = [
     }),
   },
   {
-    id: 'features',
-    title: 'Must-have features',
-    hint: 'Pick everything you want -- keep unchecked anything optional. Add custom items below.',
-    render: () => renderMultiSelect({
-      field: 'features',
-      currentValues: collectCurrentFeatures(),
-      suggestions: [
-        'Large backyard',
-        'Fenced yard',
-        'Open-concept plan',
-        'Updated kitchen',
-        'Hardwood or LVP floors',
-        'Bonus room or office',
-        'First-floor primary suite',
-        'Two-story layout',
-        'Cul-de-sac or low-traffic street',
-        'Community pool',
-        'Mature neighborhood',
-        'Home office',
-        'Basement',
-        'Finished garage',
-      ],
-      allowCustom: true,
-    }),
-    read: () => ({ features: state.answers.features ?? [] }),
-  },
-  {
-    id: 'deal-breakers',
-    title: 'Deal-breakers',
-    hint: 'Anything here will cap the score hard and usually auto-skip.',
-    render: () => renderMultiSelect({
-      field: 'deal_breakers',
-      currentValues: state.profile?.search?.deal_breakers ?? [],
-      suggestions: [
-        'Busy road or cut-through traffic',
-        'Floodplain or drainage concern',
-        'Small or unusable backyard',
-        'Weak assigned schools',
-        'Townhome or condo',
-        'Backs to commercial or highway',
-        'Major immediate repairs',
-        'Too far from preferred commute',
-        'Builder-heavy new construction',
-      ],
-      allowCustom: true,
-    }),
-    read: () => ({ deal_breakers: state.answers.deal_breakers ?? [] }),
-  },
-  {
     id: 'financial',
     title: 'Financial posture',
     hint: 'HOA cap, down payment, and closing-cost expectation. These numbers feed the mortgage estimate on each listing report.',
@@ -301,8 +252,8 @@ const STEPS = [
   },
   {
     id: 'narrative',
-    title: 'Anything else we should know?',
-    hint: 'Optional context about family, aggressiveness in a tight market, or nuance the checkboxes miss.',
+    title: 'Describe the house you want in your own words',
+    hint: 'Write freely. Mention features you want, things you\'d avoid, family context, and how aggressive to be. The chips below insert common phrases -- Home-Ops maps them into search filters and listing keywords automatically.',
     render: renderNarrative,
     read: readNarrative,
   },
@@ -691,14 +642,76 @@ function renderResearchSources() {
   });
 }
 
+const FEATURE_CHIPS = [
+  'Large backyard',
+  'Fenced yard',
+  'Open-concept plan',
+  'Updated kitchen',
+  'Hardwood or LVP floors',
+  'Bonus room or office',
+  'First-floor primary suite',
+  'Two-story layout',
+  'Cul-de-sac or low-traffic street',
+  'Community pool',
+  'Mature neighborhood',
+  'Home office',
+  'Basement',
+  'Finished garage',
+  'Pool',
+  'Screened porch',
+  'Three-car garage',
+];
+
+const DEAL_BREAKER_CHIPS = [
+  'Busy road or cut-through traffic',
+  'Floodplain or drainage concern',
+  'Small or unusable backyard',
+  'Weak assigned schools',
+  'Townhome or condo',
+  'Backs to commercial or highway',
+  'Major immediate repairs',
+  'Too far from preferred commute',
+  'Builder-heavy new construction',
+];
+
+function seedNarrativeWants() {
+  if (state.answers.narrative?.wants !== undefined) return state.answers.narrative.wants;
+  const prior = collectCurrentFeatures();
+  return prior.length ? `Looking for: ${prior.join(', ')}.` : '';
+}
+
+function seedNarrativeAvoids() {
+  if (state.answers.narrative?.avoids !== undefined) return state.answers.narrative.avoids;
+  const prior = state.profile?.search?.deal_breakers ?? [];
+  return prior.length ? `Avoid: ${prior.join(', ')}.` : '';
+}
+
 function renderNarrative() {
   const target = document.getElementById('tile');
+  const wants = seedNarrativeWants();
+  const avoids = seedNarrativeAvoids();
   target.innerHTML = `
     <h2>${escapeHtml(CURRENT_STEP.title)}</h2>
     <p class="tile-hint">${escapeHtml(CURRENT_STEP.hint)}</p>
-    <label style="display:flex; flex-direction:column; gap:6px; color: var(--ink-soft); font-size: 13px;">Family and household context
+
+    <label style="display:flex; flex-direction:column; gap:6px; color: var(--ink-soft); font-size: 13px;">What you want in the home
+      <textarea class="text-input" id="n-wants" rows="5" placeholder="e.g. Open floor plan, fenced yard, updated kitchen, cul-de-sac lot...">${escapeHtml(wants)}</textarea>
+    </label>
+    <div class="chip-row" data-chip-target="n-wants" style="display:flex; flex-wrap:wrap; gap:6px; margin-top: 6px;">
+      ${FEATURE_CHIPS.map((v) => `<button type="button" class="chip" data-chip-value="${escapeAttr(v)}">+ ${escapeHtml(v)}</button>`).join('')}
+    </div>
+
+    <label style="display:flex; flex-direction:column; gap:6px; color: var(--ink-soft); font-size: 13px; margin-top: 16px;">What would make you skip a listing
+      <textarea class="text-input" id="n-avoids" rows="4" placeholder="e.g. Busy roads, floodplain, tiny yards, HOA with pool maintenance we don't want...">${escapeHtml(avoids)}</textarea>
+    </label>
+    <div class="chip-row" data-chip-target="n-avoids" style="display:flex; flex-wrap:wrap; gap:6px; margin-top: 6px;">
+      ${DEAL_BREAKER_CHIPS.map((v) => `<button type="button" class="chip" data-chip-value="${escapeAttr(v)}">+ ${escapeHtml(v)}</button>`).join('')}
+    </div>
+
+    <label style="display:flex; flex-direction:column; gap:6px; color: var(--ink-soft); font-size: 13px; margin-top: 16px;">Family and household context
       <textarea class="text-input" id="n-family" rows="3" placeholder="Kids, pets, work-from-home, multi-generational...">${escapeHtml(state.answers.narrative?.family ?? '')}</textarea>
     </label>
+
     <label style="display:flex; flex-direction:column; gap:6px; color: var(--ink-soft); font-size: 13px; margin-top: 12px;">How aggressive should we be in a tight market?
       <select class="text-input" id="n-aggr">
         ${['Wait for the perfect fit', 'Move on strong fits', 'Compete hard', 'Keep current'].map((v) => `
@@ -706,17 +719,50 @@ function renderNarrative() {
         `).join('')}
       </select>
     </label>
-    <label style="display:flex; flex-direction:column; gap:6px; color: var(--ink-soft); font-size: 13px; margin-top: 12px;">Anything else the checkboxes missed
-      <textarea class="text-input" id="n-notes" rows="4" placeholder="Free-form notes for the buyer profile">${escapeHtml(state.answers.narrative?.notes ?? '')}</textarea>
+
+    <label style="display:flex; flex-direction:column; gap:6px; color: var(--ink-soft); font-size: 13px; margin-top: 12px;">Anything else we should know
+      <textarea class="text-input" id="n-notes" rows="3" placeholder="Free-form notes for the buyer profile">${escapeHtml(state.answers.narrative?.notes ?? '')}</textarea>
     </label>
   `;
+
+  target.querySelectorAll('.chip-row').forEach((row) => {
+    const targetId = row.dataset.chipTarget;
+    const textarea = document.getElementById(targetId);
+    row.querySelectorAll('.chip').forEach((chip) => {
+      chip.addEventListener('click', () => {
+        const value = chip.dataset.chipValue;
+        appendChipToTextarea(textarea, value);
+        readNarrative();
+      });
+    });
+  });
+}
+
+function appendChipToTextarea(textarea, value) {
+  if (!textarea || !value) return;
+  const current = textarea.value ?? '';
+  if (current.toLowerCase().includes(value.toLowerCase())) {
+    textarea.focus();
+    return;
+  }
+  const trimmed = current.trim();
+  const needsSeparator = trimmed.length > 0 && !/[.,;]\s*$/.test(trimmed);
+  textarea.value = trimmed.length === 0
+    ? `${value}.`
+    : needsSeparator
+      ? `${trimmed}, ${value}.`
+      : `${trimmed} ${value}.`;
+  textarea.focus();
+  textarea.setSelectionRange(textarea.value.length, textarea.value.length);
 }
 
 function readNarrative() {
   const narrative = {
-    family: document.getElementById('n-family').value.trim(),
-    aggressiveness: document.getElementById('n-aggr').value,
-    notes: document.getElementById('n-notes').value.trim(),
+    wants: document.getElementById('n-wants')?.value ?? '',
+    avoids: document.getElementById('n-avoids')?.value ?? '',
+    family: document.getElementById('n-family')?.value.trim() ?? '',
+    aggressiveness: document.getElementById('n-aggr')?.value ?? '',
+    notes: document.getElementById('n-notes')?.value.trim() ?? '',
   };
   state.answers.narrative = narrative;
   return { narrative };
@@ -746,8 +792,6 @@ function buildSummary() {
   push('Year built min', state.answers.year_built_min);
   push('Stories', state.answers.stories_preferred);
   push('Property types', state.answers.property_types);
-  push('Features', state.answers.features);
-  push('Deal-breakers', state.answers.deal_breakers);
   push('HOA max', state.answers.hoa_max);
   push('Down payment', state.answers.down_payment_pct);
   push('Closing costs', state.answers.closing_pct);
@@ -760,6 +804,8 @@ function buildSummary() {
   }
   if (state.answers.sentiment_weights) lines.push(`Neighborhood weights: ${JSON.stringify(state.answers.sentiment_weights)}`);
   if (state.answers.school_weights) lines.push(`School weights: ${JSON.stringify(state.answers.school_weights)}`);
+  if (state.answers.narrative?.wants) push('Wants', state.answers.narrative.wants);
+  if (state.answers.narrative?.avoids) push('Avoids', state.answers.narrative.avoids);
   if (state.answers.narrative?.family) push('Family', state.answers.narrative.family);
   if (state.answers.narrative?.aggressiveness) push('Aggressiveness', state.answers.narrative.aggressiveness);
   if (state.answers.narrative?.notes) push('Notes', state.answers.narrative.notes);

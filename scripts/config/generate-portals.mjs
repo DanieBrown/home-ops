@@ -412,7 +412,7 @@ function buildResearchSources(areas, profile) {
   return { sentimentSources, schoolSources, developmentSources };
 }
 
-function buildSearchQueries(areas, hardRequirements, selection) {
+function buildSearchQueries(areas, hardRequirements, selection, scanKeywords = [], scanNegativeKeywords = []) {
   const priceMin = Number.parseInt(hardRequirements?.price_min ?? 0, 10);
   const priceMax = Number.parseInt(hardRequirements?.price_max ?? 0, 10);
   const bedsMin = Number.parseFloat(hardRequirements?.beds_min ?? 0);
@@ -421,6 +421,11 @@ function buildSearchQueries(areas, hardRequirements, selection) {
     ? `${formatPrice(priceMin)} ${formatPrice(priceMax)}`
     : '';
   const bedsFragment = bedsMin ? `${bedsMin} bed` : '';
+
+  const topKeywords = Array.isArray(scanKeywords) ? scanKeywords.slice(0, 4) : [];
+  const topNegatives = Array.isArray(scanNegativeKeywords) ? scanNegativeKeywords.slice(0, 3) : [];
+  const keywordFragment = topKeywords.map((term) => `"${term}"`).join(' ');
+  const negativeFragment = topNegatives.map((term) => `-"${term}"`).join(' ');
 
   const allPlatforms = [
     { key: 'zillow', label: 'Zillow', host: 'zillow.com' },
@@ -440,6 +445,8 @@ function buildSearchQueries(areas, hardRequirements, selection) {
         'house',
         bedsFragment,
         priceFragment,
+        keywordFragment,
+        negativeFragment,
       ].filter(Boolean);
       queries.push({
         name: `${platform.label} -- ${area.name}`,
@@ -477,7 +484,15 @@ function buildPortalsDocument(profile, registry) {
     );
   }
   const research = buildResearchSources(areas, profile);
-  const queries = buildSearchQueries(areas, profile.search?.hard_requirements, portalSelection);
+  const scanKeywords = Array.isArray(profile.search?.scan_keywords) ? profile.search.scan_keywords : [];
+  const scanNegativeKeywords = Array.isArray(profile.search?.scan_negative_keywords) ? profile.search.scan_negative_keywords : [];
+  const queries = buildSearchQueries(
+    areas,
+    profile.search?.hard_requirements,
+    portalSelection,
+    scanKeywords,
+    scanNegativeKeywords,
+  );
 
   const document = {
     platforms,
