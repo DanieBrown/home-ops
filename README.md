@@ -19,6 +19,8 @@ npm run doctor
 npm run sync-check
 npm run verify
 ```
+
+> The next steps should be taken within the copilot chat or CLI of your choice
 3. Create/update buyer files (Recommend using the dashboard wizard). This also regenerates `portals.yml` from your source picks:
 ```bash
 /home-ops profile
