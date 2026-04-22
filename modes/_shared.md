@@ -246,7 +246,7 @@ Required header fields:
 - `**Source:**`
 - `**URL:**`
 - `**Price:**`
-- `**Beds/Baths:**`
+- `**Beds/Baths:**` -- use the listing's actual bedroom and bathroom counts only. Do not copy a school rating like `8/10` into this field. If the raw listing says `4 beds / 2.5 baths`, write `4/2.5`. Plausible residential ranges are beds 1-7 and baths 1-8; anything outside that is almost certainly a parsing mistake.
 - `**SqFt:**`
 - `**Lot:**`
 - `**Year Built:**`

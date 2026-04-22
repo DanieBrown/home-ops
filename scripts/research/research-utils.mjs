@@ -438,11 +438,45 @@ function buildSchoolQueries(key, report) {
     ]);
   }
 
-  if (key === 'nc_report_cards') {
+  if (key === 'nc_report_cards' || key === 'state_report_cards') {
     return dedupeStrings(schoolNames.map((name) => `${name} NC report card`));
   }
 
   return schoolNames;
+}
+
+function buildGreatSchoolsUrl(report) {
+  const address = String(report.address ?? '').trim();
+  const city = String(report.city ?? '').trim();
+  const state = String(report.state ?? 'NC').trim();
+  if (!city || !state) return '';
+  const locationLabel = [address, city, state, 'USA'].filter(Boolean).join(' ');
+  const params = new URLSearchParams();
+  params.set('city', city);
+  params.set('locationLabel', locationLabel);
+  params.append('st[]', 'public');
+  params.set('state', state);
+  return `https://www.greatschools.org/search/search.page?${params.toString()}`;
+}
+
+function buildNicheUrl(report) {
+  const city = String(report.city ?? '').trim();
+  const state = String(report.state ?? 'NC').trim();
+  if (!city || !state) return '';
+  const slugCity = city.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+  return `https://www.niche.com/places-to-live/${slugCity}-${state.toLowerCase()}/`;
+}
+
+function buildSchoolSourceUrl(key, fallbackUrl, report) {
+  if (key === 'greatschools') {
+    const url = buildGreatSchoolsUrl(report);
+    if (url) return url;
+  }
+  if (key === 'niche') {
+    const url = buildNicheUrl(report);
+    if (url) return url;
+  }
+  return fallbackUrl;
 }
 
 function buildSentimentQueries(key, report, areaContext) {
@@ -525,11 +559,50 @@ export function buildSchoolSourcePlan(report, context) {
     entries: Object.entries(schoolSources).map(([key, source]) => ({
       key,
       name: source.name ?? humanizeKey(key),
-      url: source.url ?? '',
+      url: buildSchoolSourceUrl(key, source.url ?? '', report),
       note: source.note ?? '',
       recommendedQueries: buildSchoolQueries(key, report),
     })),
   };
+}
+
+function buildSentimentSearchUrls(key, source, queries) {
+  const urls = [];
+  const encodedQueries = queries.map((query) => encodeURIComponent(query));
+
+  if (key === 'reddit') {
+    const subreddits = Array.isArray(source?.subreddits) ? source.subreddits : [];
+    for (const subreddit of subreddits) {
+      const clean = String(subreddit).replace(/^r\//i, '').trim();
+      if (!clean) continue;
+      for (const encoded of encodedQueries.slice(0, 3)) {
+        urls.push(`https://www.reddit.com/r/${clean}/search/?q=${encoded}&restrict_sr=1&sort=new`);
+      }
+    }
+    for (const encoded of encodedQueries.slice(0, 2)) {
+      urls.push(`https://www.reddit.com/search/?q=${encoded}&sort=new`);
+    }
+  }
+
+  if (key === 'google_maps') {
+    for (const encoded of encodedQueries.slice(0, 3)) {
+      urls.push(`https://www.google.com/maps/search/${encoded}`);
+    }
+  }
+
+  if (key === 'nextdoor') {
+    for (const encoded of encodedQueries.slice(0, 3)) {
+      urls.push(`https://nextdoor.com/search/?query=${encoded}`);
+    }
+  }
+
+  if (key === 'facebook') {
+    for (const encoded of encodedQueries.slice(0, 3)) {
+      urls.push(`https://www.facebook.com/search/posts/?q=${encoded}`);
+    }
+  }
+
+  return urls;
 }
 
 export function buildSentimentSourcePlan(report, context) {
@@ -541,15 +614,23 @@ export function buildSentimentSourcePlan(report, context) {
     subdivisionHints: extractSubdivisionHints(report),
     roadHints: extractRoadHints(report),
     schoolNames: extractSchoolNames(report),
-    entries: Object.entries(sentimentSources).map(([key, source]) => ({
-      key,
-      name: source.name ?? humanizeKey(key),
-      url: source.base_url ?? source.url ?? '',
-      note: source.note ?? '',
-      loginRequired: source.login_required !== false,
-      lookbackDays: Number.isFinite(source.lookback_days) ? source.lookback_days : null,
-      browserSupported: key === 'facebook' || key === 'nextdoor',
-      recommendedQueries: buildSentimentQueries(key, report, areaContext),
-    })),
+    entries: Object.entries(sentimentSources).map(([key, source]) => {
+      const recommendedQueries = buildSentimentQueries(key, report, areaContext);
+      return {
+        key,
+        name: source.name ?? humanizeKey(key),
+        url: source.base_url ?? source.url ?? '',
+        note: source.note ?? '',
+        loginRequired: source.login_required !== false,
+        lookbackDays: Number.isFinite(source.lookback_days) ? source.lookback_days : null,
+        // Facebook and Nextdoor require login and are reached via Playwright
+        // against the hosted session. Reddit and Google Maps are public and
+        // reachable via WebFetch, so workers can hit searchUrls directly.
+        browserSupported: key === 'facebook' || key === 'nextdoor',
+        publicFetchSupported: key === 'reddit' || key === 'google_maps',
+        searchUrls: buildSentimentSearchUrls(key, source, recommendedQueries),
+        recommendedQueries,
+      };
+    }),
   };
 }

@@ -300,6 +300,8 @@ function decorateSentimentPlan(entries, sentimentSummary) {
       loginRequired: entry.loginRequired,
       lookbackDays: entry.lookbackDays,
       browserSupported: entry.browserSupported,
+      publicFetchSupported: entry.publicFetchSupported ?? false,
+      searchUrls: entry.searchUrls ?? [],
       recommendedQueries: entry.recommendedQueries,
       captureStatus: coverage?.status ?? (entry.browserSupported ? 'not-captured' : 'planned-public-source'),
       okQueries: coverage?.okQueries ?? 0,
@@ -310,7 +312,7 @@ function decorateSentimentPlan(entries, sentimentSummary) {
 
 function decorateGenericPlan(entries) {
   return entries.map((entry) => ({
-    key: slugify(entry.name) || 'source',
+    key: entry.key || slugify(entry.name) || 'source',
     name: entry.name,
     url: entry.url,
     note: entry.note,

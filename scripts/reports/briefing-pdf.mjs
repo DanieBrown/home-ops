@@ -152,8 +152,19 @@ function parseDollarAmount(raw) {
 }
 
 function parseBedsNumber(raw) {
-  const match = String(raw ?? '').match(/(\d+)\s*\/?\s*\d+(?:\.\d+)?/);
-  return match ? Number.parseInt(match[1], 10) : null;
+  const match = String(raw ?? '').match(/(\d+)\s*\/\s*(\d+(?:\.\d+)?)/);
+  if (!match) {
+    const fallback = String(raw ?? '').match(/(\d+)\s*(?:bed|bd|br)/i);
+    return fallback ? Number.parseInt(fallback[1], 10) : null;
+  }
+  const beds = Number.parseInt(match[1], 10);
+  const baths = Number.parseFloat(match[2]);
+  // Sanity guard: the upstream evaluator occasionally conflates a school
+  // rating (e.g. "8/10") with beds/baths. Treat values outside plausible
+  // home-listing ranges as untrustworthy and decline to report them here.
+  if (!Number.isFinite(beds) || beds <= 0 || beds > 10) return null;
+  if (!Number.isFinite(baths) || baths <= 0 || baths > 10) return null;
+  return beds;
 }
 
 function parseSqftNumber(raw) {
@@ -284,11 +295,9 @@ function buildFitNarrative(report, profile) {
     </li>
   `).join('');
 
-  const buyerName = profile?.buyer?.full_name ? escapeHtml(profile.buyer.full_name.split(/\s+/)[0]) : 'you';
-
   return `
     <div class="card fit wide">
-      <h3>Why this fits ${buyerName}</h3>
+      <h3>Why this fits</h3>
       <ul class="fit-list">${rows}</ul>
     </div>
   `;
@@ -356,21 +365,17 @@ function buildDirectionsUrl(origin, destination) {
 
 function resolveCommuteDestinationAddress(dest) {
   if (!dest) return '';
-  // Only render a destination when the user provided an address. If it's
-  // blank we skip the row entirely rather than falling back to a coarser
-  // location -- state + county alone is not precise enough for a drive-time
-  // comparison to be meaningful.
-  if (dest.address && String(dest.address).trim().length > 0) {
-    const addr = String(dest.address).trim();
-    // If the user omitted the state, append it so Maps disambiguates.
-    if (dest.state && !addr.toLowerCase().includes(String(dest.state).toLowerCase())) {
-      return `${addr}, ${dest.state}`;
-    }
-    return addr;
+  // Only render a destination when the user provided a real street-level
+  // address (house number + street). Town-level defaults like "Downtown
+  // Raleigh, NC" are not precise enough for a drive-time comparison to be
+  // meaningful, so we skip them entirely.
+  const addr = String(dest.address ?? '').trim();
+  if (!addr) return '';
+  if (!/^\d+\s+\S+/.test(addr)) return '';
+  if (dest.state && !addr.toLowerCase().includes(String(dest.state).toLowerCase())) {
+    return `${addr}, ${dest.state}`;
   }
-  // Legacy shape fallback (pre-wizard buyer profiles).
-  const legacy = String(dest.name ?? '').trim();
-  return legacy;
+  return addr;
 }
 
 function resolveCommuteDestinationLabel(dest) {
@@ -449,6 +454,144 @@ function buildCoverToc(finalists) {
     </div>`;
 }
 
+function buildConstructionBlurb(construction) {
+  if (!construction) {
+    return `
+      <div class="card wide construction unreviewed">
+        <h3>Construction Pressure</h3>
+        <p class="muted">Not yet captured. Flagged in the research gaps below so it can be filled in before you decide.</p>
+      </div>`;
+  }
+
+  const reachableSources = (construction.sourcesChecked ?? []).filter((entry) => entry?.ok);
+  const resourceList = reachableSources.length > 0
+    ? `<ul class="resource-list">${reachableSources.map((entry) => `
+        <li><a href="${escapeHtml(entry.url)}">${escapeHtml(entry.url)}</a></li>
+      `).join('')}</ul>`
+    : '<p class="muted">No resources were reachable during the last check.</p>';
+
+  const level = String(construction.level || 'unknown').toLowerCase();
+  const pressure = Number(construction.constructionPressure);
+  const active = Number(construction.phaseTotals?.active ?? 0);
+  const matches = Number(construction.matches?.length ?? 0);
+
+  let findings;
+  if (!construction.reviewed) {
+    findings = 'the public project index pages were unreachable during this run, so the result is inconclusive rather than clear.';
+  } else if (level === 'none' || (matches === 0 && pressure === 0)) {
+    findings = 'no active or planned road projects appear to be near this home, so construction pressure looks minimal for now.';
+  } else if (level === 'low') {
+    findings = `there is some nearby project activity (${matches} snippet${matches === 1 ? '' : 's'} matched, ${active} active-phase hit${active === 1 ? '' : 's'}), but nothing that looks likely to meaningfully affect this home.`;
+  } else if (level === 'moderate') {
+    findings = `there is moderate construction activity in the surrounding area (${matches} snippet${matches === 1 ? '' : 's'} matched, ${active} active-phase hit${active === 1 ? '' : 's'}); worth checking whether any of those projects sit on your immediate commute or frontage.`;
+  } else if (level === 'high') {
+    findings = `there is heavy construction pressure in the surrounding area (${matches} snippet${matches === 1 ? '' : 's'} matched, ${active} active-phase hit${active === 1 ? '' : 's'}); read through the matched projects before deciding, since this is the kind of level that can affect traffic, noise, or resale.`;
+  } else {
+    findings = `the review was completed but returned no strong signal either way (${matches} snippet${matches === 1 ? '' : 's'} matched).`;
+  }
+
+  return `
+    <div class="card wide construction">
+      <h3>Construction Pressure</h3>
+      <p>After reviewing the following resources:</p>
+      ${resourceList}
+      <p>${escapeHtml(findings.charAt(0).toUpperCase() + findings.slice(1))}</p>
+    </div>`;
+}
+
+function buildTailoredConcerns(report, finalist) {
+  const seen = new Set();
+  const push = (value) => {
+    const text = String(value ?? '').replace(/\s+/g, ' ').trim();
+    if (!text) return;
+    const key = text.slice(0, 90).toLowerCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+    concerns.push(text);
+  };
+  const concerns = [];
+
+  for (const bullet of extractBullets(report.sections['Risks and Open Questions'], 6)) {
+    push(bullet);
+  }
+
+  const construction = finalist?.construction;
+  if (construction?.reviewed) {
+    const level = String(construction.level || '').toLowerCase();
+    const matches = Number(construction.matches?.length ?? 0);
+    if (level === 'high' || level === 'moderate') {
+      push(`${level === 'high' ? 'Heavy' : 'Moderate'} nearby road-project activity flagged on NCDOT (${matches} snippet${matches === 1 ? '' : 's'} matched) -- check frontage and commute impact.`);
+    }
+  }
+
+  const sentiment = finalist?.sentiment;
+  const topNegative = (sentiment?.kpiRollup ?? [])
+    .filter((row) => Number(row.weightedScore) < 0)
+    .sort((a, b) => Number(a.weightedScore) - Number(b.weightedScore))[0];
+  if (topNegative) {
+    push(`Neighborhood sentiment leans negative on ${String(topNegative.category).replace(/_/g, ' ')} (${topNegative.negativeHits} negative vs ${topNegative.positiveHits} positive mention${topNegative.positiveHits === 1 ? '' : 's'}).`);
+  }
+
+  const packetBlockers = finalist?.packet?.audit?.criticalFindings ?? [];
+  for (const finding of packetBlockers.slice(0, 2)) {
+    push(`${finding.heading}: ${finding.message}`);
+  }
+
+  const confidence = String(report.metadata.confidence ?? '').toLowerCase();
+  if (confidence.startsWith('low')) {
+    push('Report confidence is Low -- required facts are still missing.');
+  }
+
+  return concerns;
+}
+
+function buildSchoolRatings(report) {
+  const sectionText = [
+    report.sections['School Review'],
+    report.sections['Summary Card'],
+    report.sections['Hard Requirement Gate'],
+  ].filter(Boolean).join('\n');
+  if (!sectionText) return [];
+
+  const regex = /([A-Z][A-Za-z0-9.'&-]*(?:\s+[A-Z][A-Za-z0-9.'&-]*)*\s+(?:Elementary|Middle|High|Academy|School))[^0-9]{0,30}?(\d{1,2})\s*\/\s*10/g;
+  const seen = new Set();
+  const ratings = [];
+  for (const match of sectionText.matchAll(regex)) {
+    const name = match[1].trim();
+    const rating = Number.parseInt(match[2], 10);
+    if (!Number.isFinite(rating) || rating < 0 || rating > 10) continue;
+    const key = name.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    ratings.push({ name, rating });
+  }
+  return ratings;
+}
+
+function buildSchoolsCard(report, profile) {
+  const ratings = buildSchoolRatings(report);
+  if (ratings.length === 0) return '';
+  const min = profile?.search?.hard_requirements?.schools_min_rating;
+  const rows = ratings.map((entry) => {
+    const pass = Number.isFinite(min) ? entry.rating >= min : null;
+    const badgeClass = pass === null ? 'school-neutral' : pass ? 'school-pass' : 'school-fail';
+    return `
+      <li class="school-row">
+        <span class="school-name">${escapeHtml(entry.name)}</span>
+        <span class="school-rating ${badgeClass}">${escapeHtml(String(entry.rating))}/10</span>
+      </li>`;
+  }).join('');
+  const footnote = Number.isFinite(min)
+    ? `<p class="muted">Ratings below your ${escapeHtml(String(min))}/10 minimum are highlighted.</p>`
+    : '';
+  return `
+    <div class="card wide schools">
+      <h3>Schools &amp; Ratings</h3>
+      <ul class="school-list">${rows}</ul>
+      ${footnote}
+    </div>`;
+}
+
 function buildFinalistSection(finalist, profile) {
   const report = finalist.report;
   const construction = finalist.construction;
@@ -477,31 +620,8 @@ function buildFinalistSection(finalist, profile) {
     ? `<p class="pill-links">${linkRow.join(' ')}</p>`
     : '';
 
-  const strengths = extractBullets(report.sections['Quick Take']).slice(0, 3);
-  const concerns = extractBullets(report.sections['Risks and Open Questions']).slice(0, 3);
-  /**
-   * phaseTotals.active is the total count of snippets that matched active-project
-   * phase keywords. matches.length is the total captured snippet count across all
-   * phases and signals.
-   */
-  const activePhaseHits = construction?.phaseTotals?.active ?? 0;
-  const matchedSnippets = construction?.matches?.length ?? 0;
-
-  const constructionBlock = construction
-    ? `
-      <div class="card construction">
-        <h3>Construction Pressure</h3>
-        <p class="pressure-level ${escapeHtml(construction.level)}">${escapeHtml(String(construction.level || 'unknown').toUpperCase())}</p>
-        <p class="stat">Road-project score: <strong>${escapeHtml(String(construction.constructionPressure ?? 'n/a'))}/10</strong></p>
-        <p class="stat">Active-phase hits: <strong>${escapeHtml(String(activePhaseHits))}</strong></p>
-        <p class="stat">Matched snippets: <strong>${escapeHtml(String(matchedSnippets))}</strong></p>
-      </div>`
-    : `
-      <div class="card construction unreviewed">
-        <h3>Construction Pressure</h3>
-        <p class="pressure-level unknown">NOT YET CAPTURED</p>
-        <p class="muted">Flagged in the research gaps below so it can be filled in before you decide.</p>
-      </div>`;
+  const concerns = buildTailoredConcerns(report, finalist).slice(0, 4);
+  const constructionBlock = buildConstructionBlurb(construction);
 
   const topKpi = (sentiment?.kpiRollup ?? []).slice(0, 5).map((row) => `
     <tr>
@@ -516,7 +636,7 @@ function buildFinalistSection(finalist, profile) {
   const sentimentBlock = sentiment
     ? `
       <div class="card wide">
-        <h3>Neighborhood Sentiment <span class="subtle">Facebook &middot; Nextdoor &middot; profile-weighted</span></h3>
+        <h3>Neighborhood Sentiment <span class="subtle">profile-weighted</span></h3>
         <table>
           <thead>
             <tr><th>Category</th><th class="num">Weight</th><th class="num">+ Mentions</th><th class="num">- Mentions</th><th class="num">Weighted</th></tr>
@@ -562,22 +682,15 @@ function buildFinalistSection(finalist, profile) {
           <p>${escapeHtml(summarizeSection(report.sections['Quick Take'], 600))}</p>
         </div>
         ${fitNarrative}
-        <div class="card strengths">
-          <h3>Top Strengths</h3>
-          <ul>${(strengths.length ? strengths : ['(none captured)']).map((s) => `<li>${escapeHtml(s)}</li>`).join('')}</ul>
-        </div>
-        <div class="card concerns">
+        <div class="card concerns wide">
           <h3>Top Concerns</h3>
           <ul>${(concerns.length ? concerns : ['(none captured)']).map((s) => `<li>${escapeHtml(s)}</li>`).join('')}</ul>
         </div>
         ${constructionBlock}
+        ${buildSchoolsCard(report, profile)}
         ${sentimentBlock}
         ${buildCommuteCard(report, profile)}
         ${gapBlock}
-        <div class="card recommendation wide">
-          <h3>Recommendation</h3>
-          <p>${escapeHtml(summarizeSection(report.sections['Recommendation'], 700))}</p>
-        </div>
       </div>
     </section>
   `;
@@ -775,6 +888,34 @@ function buildHtml(finalists, profile) {
   .card.unreviewed { background: #f9fafb; border-style: dashed; color: #6b7280; }
   .card.unreviewed h3 { color: #9ca3af; }
 
+  .card.construction p { font-size: 9.5pt; color: #1f2937; }
+  .card.construction .resource-list {
+    list-style: none; padding: 6px 0 6px 0; margin: 0 0 6px;
+    border-top: 1px dashed #e5e7eb; border-bottom: 1px dashed #e5e7eb;
+  }
+  .card.construction .resource-list li {
+    font-size: 8.5pt; padding: 2px 0; word-break: break-all;
+    color: #4b5563;
+  }
+  .card.construction .resource-list a { color: #1d4ed8; }
+
+  .card.schools h3 { color: #0369a1; }
+  .school-list { list-style: none; padding: 0; margin: 0; }
+  .school-row {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 10px; padding: 5px 0; font-size: 9.5pt;
+    border-bottom: 1px dashed #e5e7eb;
+  }
+  .school-row:last-child { border-bottom: 0; }
+  .school-name { color: #1f2937; font-weight: 500; }
+  .school-rating {
+    padding: 2px 10px; border-radius: 999px; font-size: 9pt;
+    font-weight: 700;
+  }
+  .school-pass { background: #dcfce7; color: #166534; }
+  .school-fail { background: #fee2e2; color: #991b1b; }
+  .school-neutral { background: #eef2ff; color: #3730a3; }
+
   .card.commute h3 { color: #0369a1; }
   .commute-list { list-style: none; padding: 0; margin: 0; }
   .commute-row {
@@ -797,7 +938,7 @@ function buildHtml(finalists, profile) {
     <p class="cover-meta">Generated ${escapeHtml(generatedAt)} UTC &middot; ${escapeHtml(String(finalists.length))} finalist${finalists.length === 1 ? '' : 's'}${buyerLabel}</p>
     ${toc}
     <div class="cover-legend">
-      <p>Each page shows a quick take, a "why this fits" summary tied to your buyer profile, top strengths and concerns, construction pressure, neighborhood sentiment, research gaps, and the final recommendation.</p>
+      <p>Each page shows a quick take, a "why this fits" summary tied to your buyer profile, top concerns tailored to that listing, construction pressure, schools and ratings, neighborhood sentiment, and any research gaps worth filling in.</p>
       <p>Anything marked <strong>Not yet captured</strong> is unknown, not favorable. Ask for a deeper dive to fill in the research gaps before a final decision. Tap a finalist above to jump to its page; listing links open directly in the browser.</p>
     </div>
   </section>
