@@ -21,6 +21,9 @@ npm run verify
 ```
 
 > The next steps should be taken within the copilot chat or CLI of your choice
+> Some commands are still being utilized with copilot, if you are using vs code make sure to enable the "Use Claude Hooks" in the vs code settings for optimal performance
+> On Windows PowerShell, use `npm.cmd` instead of `npm` if `npm.ps1` is blocked.
+
 3. Create/update buyer files (Recommend using the dashboard wizard). This also regenerates `portals.yml` from your source picks:
 ```bash
 /home-ops profile
@@ -34,20 +37,15 @@ npm run verify
 /home-ops hunt
 ```
 
-## Daily command order
-1. `/home-ops init` (if browser session needs refresh)
-2. `/home-ops scan`
-3. `/home-ops evaluate`
-4. `/home-ops compare`
-5. `/home-ops deep`
-
 ## Core commands
+- `/home-ops init`: refresh portal browser sessions
+- `/home-ops scan`: find new listings from saved searches
+- `/home-ops evaluate`: review pending listings or one target
+- `/home-ops deep`: research a home, school, or area
 - `/home-ops {listing-url}`: evaluate one listing
-- `/home-ops hunt`: reset -> scan -> evaluate
-- `/home-ops tracker`: review/update statuses
-- `npm run brief:top3`: generate top-3 PDF briefing
+- `/home-ops hunt`: reset, scan, and evaluate sequentially
+- `/home-ops tracker`: review and update listing statuses
 
-> On Windows PowerShell, use `npm.cmd` instead of `npm` if `npm.ps1` is blocked.
 
 ## Tips
 - `/home-ops` Will print a copy of relevant commands to use

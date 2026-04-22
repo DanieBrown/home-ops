@@ -1,6 +1,6 @@
 ---
 name: home-ops
-description: AI home search command center -- evaluate listings, compare homes, scan portals, track status, and run deep neighborhood research
+description: profile | init | scan | evaluate | compare | deep | hunt | tracker | reset
 user_invocable: true
 args: mode
 ---
