@@ -20,8 +20,8 @@ npm run sync-check
 npm run verify
 ```
 
-> The next steps should be taken within the copilot chat or CLI of your choice
-> Some commands are still being utilized with copilot, if you are using vs code make sure to enable the "Use Claude Hooks" in the vs code settings for optimal performance
+> The next steps should be taken within the copilot chat or CLI of your choice.
+> Some commands are still being utilized with copilot, if you are using vs code make sure to enable the "Use Claude Hooks" in the vs code settings for optimal performance.
 > On Windows PowerShell, use `npm.cmd` instead of `npm` if `npm.ps1` is blocked.
 
 3. Create/update buyer files (Recommend using the dashboard wizard). This also regenerates `portals.yml` from your source picks:
