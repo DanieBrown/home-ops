@@ -62,7 +62,7 @@ templates/states.yml     -> canonical status model
 2. Extract structured facts from the listing page.
 3. Apply the hard requirement gate.
 4. Research neighborhood sentiment.
-5. Review assigned schools and school sentiment.
+5. Capture assigned-school metadata (rating, enrollment, demographics) for the final report table.
 6. Check development, infrastructure, flood, and risk signals.
 7. Estimate financial fit using the buyer profile.
 8. Score the listing from 1.0 to 5.0.

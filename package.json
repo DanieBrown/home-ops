@@ -12,6 +12,7 @@
     "audit:research": "node scripts/research/research-coverage-audit.mjs",
     "plan:research": "node scripts/research/research-source-plan.mjs",
     "extract:sentiment": "node scripts/research/sentiment-browser-extract.mjs",
+    "lookup:community": "node scripts/research/community-lookup.mjs",
     "prepare:deep": "node scripts/research/deep-research-packet.mjs",
     "check:construction": "node scripts/research/construction-check.mjs",
     "brief:top3": "node scripts/reports/briefing-pdf.mjs",

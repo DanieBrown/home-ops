@@ -33,6 +33,7 @@ If the command arguments include any of these flags, treat them as a platform fi
 - `--zillow`
 - `--redfin`
 - `--relator`
+- `--homes`
 
 Treat `--realtor` as a backward-compatible alias, but prefer `--relator` in commands and documentation.
 

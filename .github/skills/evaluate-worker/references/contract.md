@@ -100,11 +100,10 @@ Include only the worker-relevant subset, not the full raw files.
   },
   "deal_breakers": ["busy road", "flood risk"],
   "weights": {
-    "property_fit": 0.35,
-    "neighborhood_sentiment": 0.25,
-    "school_sentiment": 0.20,
+    "property_fit": 0.40,
+    "neighborhood_sentiment": 0.35,
     "financial_fit": 0.10,
-    "resale_risk": 0.10
+    "resale_risk": 0.15
   },
   "financial_assumptions": {
     "down_payment_pct": 20,

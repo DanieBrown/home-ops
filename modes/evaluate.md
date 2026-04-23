@@ -52,7 +52,7 @@ If available, also read:
 3. Build a hard-requirement gate table with `Pass`, `Fail`, or `Unknown` for each required criterion.
 4. Run `node scripts/research/research-source-plan.mjs --address "{address}" --city "{city}" --type all` or `npm.cmd run plan:research -- --address "{address}" --city "{city}" --type all` after fact extraction so the configured development and school inventories in `portals.yml` become a concrete lookup plan instead of passive config.
 5. Research the neighborhood sentiment using the source hierarchy in `_shared.md`.
-6. Research assigned schools and supporting school sentiment.
+6. Capture assigned-school metadata (name, GreatSchools rating, enrollment, student/teacher ratio, ethnicity distribution) from the listing source and GreatSchools.
 7. Check development and infrastructure risk within about 20 miles.
 8. Produce a financial snapshot using the buyer financing assumptions.
 9. Compute the final 1.0 to 5.0 score with confidence level.

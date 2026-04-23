@@ -59,16 +59,22 @@ const STEPS = [
         {
           field: 'beds_min',
           label: 'Bedrooms minimum',
-          options: ['2+', '3+', '4+', '5+', '6+'],
           current: state.profile?.search?.hard_requirements?.beds_min,
-          currentSuffix: '+',
+          inputOnly: true,
+          inputType: 'number',
+          inputStep: 1,
+          inputMin: 0,
+          placeholder: 'e.g. 3',
         },
         {
           field: 'baths_min',
           label: 'Bathrooms minimum',
-          options: ['1+', '1.5+', '2+', '2.5+', '3+'],
           current: state.profile?.search?.hard_requirements?.baths_min,
-          currentSuffix: '+',
+          inputOnly: true,
+          inputType: 'number',
+          inputStep: 0.5,
+          inputMin: 0,
+          placeholder: 'e.g. 2.5',
         },
       ],
     }),
@@ -83,22 +89,34 @@ const STEPS = [
         {
           field: 'sqft_min',
           label: 'Minimum square footage',
-          options: ['1500+', '1800+', '2200+', '2700+', '3200+'],
           current: state.profile?.search?.hard_requirements?.sqft_min,
-          currentSuffix: '+',
+          inputOnly: true,
+          inputType: 'number',
+          inputStep: 50,
+          inputMin: 0,
+          placeholder: 'e.g. 2200',
+          unit: 'sq ft',
         },
         {
           field: 'garage_min',
           label: 'Garage spaces minimum',
-          options: ['0', '1+', '2+', '3+', '4+'],
           current: state.profile?.search?.hard_requirements?.garage_min,
-          currentSuffix: '+',
+          inputOnly: true,
+          inputType: 'number',
+          inputStep: 1,
+          inputMin: 0,
+          placeholder: 'e.g. 2',
         },
         {
           field: 'lot_min',
           label: 'Lot size minimum (acres)',
-          options: ['No minimum', '0.15+', '0.25+', '0.5+', '1+'],
           current: state.profile?.search?.hard_requirements?.lot_min_acres,
+          inputOnly: true,
+          inputType: 'number',
+          inputStep: 0.05,
+          inputMin: 0,
+          placeholder: 'e.g. 0.25 (leave blank for no minimum)',
+          unit: 'acres',
         },
       ],
     }),
@@ -124,15 +142,24 @@ const STEPS = [
         {
           field: 'year_built_min',
           label: 'Year built minimum',
-          options: ['No preference', '1990+', '2000+', '2010+', '2020+'],
           current: state.profile?.search?.soft_preferences?.year_built_min,
-          currentSuffix: '+',
+          inputOnly: true,
+          inputType: 'number',
+          inputStep: 1,
+          inputMin: 1800,
+          inputMax: 2100,
+          placeholder: 'e.g. 2000 (leave blank for no preference)',
         },
         {
           field: 'stories_preferred',
           label: 'Stories preferred',
-          options: ['No preference', '1 story', '2 stories', '3+ stories'],
           current: state.profile?.search?.soft_preferences?.stories_preferred,
+          inputOnly: true,
+          inputType: 'number',
+          inputStep: 1,
+          inputMin: 1,
+          inputMax: 5,
+          placeholder: 'e.g. 2 (leave blank for no preference)',
         },
       ],
       propertyTypesField: {
@@ -158,9 +185,13 @@ const STEPS = [
         {
           field: 'hoa_max',
           label: 'HOA max monthly',
-          options: ['No cap', '$100/mo', '$200/mo', '$300/mo', '$500/mo'],
           current: state.profile?.search?.soft_preferences?.hoa_max_monthly,
-          currentPrefix: '$', currentSuffix: '/mo',
+          inputOnly: true,
+          inputType: 'number',
+          inputStep: 25,
+          inputMin: 0,
+          placeholder: 'e.g. 200 (leave blank for no cap)',
+          unit: '$/mo',
         },
       ],
     }),
@@ -175,16 +206,24 @@ const STEPS = [
         {
           field: 'schools_min_rating',
           label: 'School rating minimum (GreatSchools 0-10)',
-          options: ['5+', '6+', '7+', '8+', '9+'],
           current: state.profile?.search?.hard_requirements?.schools_min_rating,
-          currentSuffix: '+',
+          inputOnly: true,
+          inputType: 'number',
+          inputStep: 1,
+          inputMin: 0,
+          inputMax: 10,
+          placeholder: 'e.g. 7',
         },
         {
           field: 'max_listing_age',
           label: 'Maximum days on market',
-          options: ['3 days', '7 days', '14 days', '30 days', '60 days'],
           current: state.profile?.search?.hard_requirements?.max_listing_age_days,
-          currentSuffix: ' days',
+          inputOnly: true,
+          inputType: 'number',
+          inputStep: 1,
+          inputMin: 1,
+          placeholder: 'e.g. 14',
+          unit: 'days',
         },
       ],
     }),
@@ -217,29 +256,11 @@ const STEPS = [
         { key: 'crime_safety', label: 'Crime and personal safety' },
         { key: 'traffic_commute', label: 'Traffic and daily commute friction' },
         { key: 'community', label: 'Neighbor quality and community feel' },
-        { key: 'school_quality', label: 'School reputation in the area' },
         { key: 'livability', label: 'Parks, groceries, everyday livability' },
       ],
       currentValues: normalizedToScale(state.profile?.sentiment?.weights),
     }),
     read: () => ({ sentiment_weights: state.answers.sentiment_weights ?? {} }),
-  },
-  {
-    id: 'school-weights',
-    title: 'School weight preferences',
-    hint: 'Same 0-100 scale for each school-quality dimension.',
-    render: () => renderSliders({
-      field: 'school_weights',
-      factors: [
-        { key: 'academic_performance', label: 'Academic performance' },
-        { key: 'parent_community_sentiment', label: 'Parent and community trust' },
-        { key: 'teacher_staff_quality', label: 'Teacher and staff quality' },
-        { key: 'safety_environment', label: 'School safety and student environment' },
-        { key: 'extracurriculars_resources', label: 'Extracurriculars and resources' },
-      ],
-      currentValues: normalizedToScale(state.profile?.school_sentiment?.weights),
-    }),
-    read: () => ({ school_weights: state.answers.school_weights ?? {} }),
   },
   {
     id: 'narrative',
@@ -1064,7 +1085,25 @@ function renderMultipleSingleChoice({ questions, propertyTypesField }) {
   if (propertyTypesField) wireMultiSelectBlock(propertyTypesField);
 }
 
-function renderSingleChoiceBlock({ field, label, options, current, currentPrefix = '', currentSuffix = '', includeCustom = true }) {
+function renderSingleChoiceBlock({ field, label, options, current, currentPrefix = '', currentSuffix = '', includeCustom = true, inputOnly = false, inputType = 'text', inputStep, inputMin, inputMax, placeholder = '', unit = '' }) {
+  if (inputOnly) {
+    const saved = state.answers[field];
+    const initial = saved ?? (current === undefined || current === null ? '' : current);
+    const stepAttr = inputStep !== undefined ? ` step="${escapeAttr(inputStep)}"` : '';
+    const minAttr = inputMin !== undefined ? ` min="${escapeAttr(inputMin)}"` : '';
+    const maxAttr = inputMax !== undefined ? ` max="${escapeAttr(inputMax)}"` : '';
+    const placeholderAttr = placeholder ? ` placeholder="${escapeAttr(placeholder)}"` : '';
+    const unitHtml = unit ? `<span class="unit">${escapeHtml(unit)}</span>` : '';
+    return `
+      <div class="sub-question" data-sc-field="${escapeAttr(field)}" data-sc-input-only="true">
+        <h3 class="tile-subtitle">${escapeHtml(label)}</h3>
+        <div class="free-input-row">
+          <input type="${escapeAttr(inputType)}"${stepAttr}${minAttr}${maxAttr}${placeholderAttr} value="${escapeAttr(initial)}" />
+          ${unitHtml}
+        </div>
+      </div>
+    `;
+  }
   // No "Keep current (X)" fallback -- if the saved profile value matches one
   // of the canonical options, pre-select it; otherwise leave unselected.
   const matched = findAnswerFromCurrent(options, current, currentPrefix, currentSuffix);
@@ -1092,9 +1131,23 @@ function renderSingleChoiceBlock({ field, label, options, current, currentPrefix
   `;
 }
 
-function wireSingleChoiceBlock({ field, includeCustom = true }) {
+function wireSingleChoiceBlock({ field, includeCustom = true, inputOnly = false }) {
   const scope = document.querySelector(`[data-sc-field="${CSS.escape(field)}"]`);
   if (!scope) return;
+  if (inputOnly) {
+    const input = scope.querySelector('input');
+    if (!input) return;
+    input.addEventListener('input', () => {
+      const value = input.value.trim();
+      if (value === '') {
+        delete state.answers[field];
+      } else {
+        state.answers[field] = value;
+      }
+      saveAnswersDebounced();
+    });
+    return;
+  }
   scope.querySelectorAll('.option').forEach((node) => {
     node.addEventListener('click', () => {
       scope.querySelectorAll('.option').forEach((opt) => opt.classList.remove('checked'));
@@ -1211,12 +1264,9 @@ const RESEARCH_SOURCE_GROUPS = [
   {
     key: 'schools',
     title: 'Schools',
-    note: 'Drives school sentiment and the school hard-requirement gate. Leave empty to skip school research.',
+    note: 'Drives school-metadata capture (rating, enrollment, demographics) for the final PDF and the school hard-requirement gate. Leave empty to skip school lookups.',
     sources: [
       { key: 'greatschools', label: 'GreatSchools' },
-      { key: 'niche', label: 'Niche' },
-      { key: 'state_report_cards', label: 'State report cards' },
-      { key: 'schooldigger', label: 'SchoolDigger' },
     ],
   },
   {
@@ -1225,7 +1275,6 @@ const RESEARCH_SOURCE_GROUPS = [
     note: 'Drives construction-pressure checks for road projects, rezonings, and subdivisions near a listing.',
     sources: [
       { key: 'state_dot', label: 'State DOT project list' },
-      { key: 'local_construction', label: 'Also check local construction around the home (permits, nearby builds)' },
     ],
   },
 ];
@@ -1465,7 +1514,6 @@ function buildSummary() {
     else lines.push('Research sources: (none selected -- defaults handled per group)');
   }
   if (state.answers.sentiment_weights) lines.push(`Neighborhood weights: ${JSON.stringify(state.answers.sentiment_weights)}`);
-  if (state.answers.school_weights) lines.push(`School weights: ${JSON.stringify(state.answers.school_weights)}`);
   if (state.answers.narrative?.wants) push('Wants', state.answers.narrative.wants);
   if (state.answers.narrative?.avoids) push('Avoids', state.answers.narrative.avoids);
   if (state.answers.narrative?.family) push('Family', state.answers.narrative.family);
@@ -1496,6 +1544,10 @@ function renderStep() {
   renderBreadcrumbs();
   const onReview = !!CURRENT_STEP.isReview;
   document.getElementById('submit-btn').hidden = !onReview;
+  const backBtn = document.getElementById('back-btn');
+  const nextBtn = document.getElementById('next-btn');
+  if (backBtn) backBtn.disabled = state.stepIndex === 0;
+  if (nextBtn) nextBtn.hidden = onReview || state.stepIndex >= STEPS.length - 1;
   restoreFocusSnapshot(focusSnapshot);
 
   // If the user was mid-typing in a commute county field when a data load
@@ -1631,7 +1683,7 @@ async function bootstrap() {
     schools: 'schools_min_rating', commute: 'commute',
     'research-sources': 'research_sources',
     'sentiment-weights': 'sentiment_weights',
-    'school-weights': 'school_weights', narrative: 'narrative',
+    narrative: 'narrative',
   };
   STEPS.forEach((step, index) => {
     const key = stepAnswerKeys[step.id];
@@ -1642,6 +1694,20 @@ async function bootstrap() {
 
   renderStep();
   document.getElementById('submit-btn').addEventListener('click', submit);
+  document.getElementById('back-btn').addEventListener('click', () => {
+    if (state.stepIndex === 0) return;
+    commitCurrentStep();
+    saveAnswersDebounced();
+    state.stepIndex -= 1;
+    renderStep();
+  });
+  document.getElementById('next-btn').addEventListener('click', () => {
+    if (state.stepIndex >= STEPS.length - 1) return;
+    commitCurrentStep();
+    saveAnswersDebounced();
+    state.stepIndex += 1;
+    renderStep();
+  });
 
   // Let users press ArrowLeft / ArrowRight while focused on nothing in
   // particular to step through the wizard. Forward is gated to the same

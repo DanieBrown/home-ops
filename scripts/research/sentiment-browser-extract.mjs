@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import { existsSync, readFileSync } from 'fs';
 import { mkdir, writeFile } from 'fs/promises';
 import { join } from 'path';
 import { chromium } from 'playwright';
@@ -26,7 +27,12 @@ const SENTIMENT_CACHE_NAME = 'sentiment';
 
 const DEFAULT_PROFILE = 'chrome-host';
 const OUTPUT_DIR = join(ROOT, 'output', 'sentiment');
+const COMMUNITY_DIR = join(ROOT, 'output', 'communities');
 const SUPPORTED_BROWSER_SOURCES = new Set(['facebook', 'nextdoor']);
+// Browser-backed sources (Facebook / Nextdoor) only populate these sentiment
+// dimensions. Traffic-commute is sourced from the public extractor and NCDOT
+// so it's not included here.
+const BROWSER_ALLOWED_CATEGORIES = new Set(['crime_safety', 'community', 'livability']);
 const STOP_WORDS = new Set(['and', 'the', 'for', 'with', 'from', 'near', 'road', 'drive', 'lane', 'court', 'place']);
 
 // Rate-limit knobs -- defensive, not evasive. Keeps query bursts from tripping
@@ -47,6 +53,18 @@ const MAX_CONCURRENCY = 4;
 const SHORTLIST_SIZE_THRESHOLD = 5;
 const HIGH_CONCURRENCY = 4;
 const LOW_CONCURRENCY = 2;
+
+// Membership announcement posts (e.g. "Jane joined the group") are not
+// sentiment evidence. Filter them before they reach the classifier.
+const MEMBERSHIP_PATTERNS = [
+  /\bjoined the group\b/i,
+  /\bis now a member\b/i,
+  /\bwelcome\b.*\bto the neighborhood\b/i,
+  /\bwelcome\b.*\bto the group\b/i,
+  /\bstarted following\b/i,
+  /\bjust moved\b.*\bto the (?:neighborhood|group)\b/i,
+  /^\s*welcome\s+[A-Z][a-z]+/i,
+];
 
 const BLOCK_PATTERNS = [
   /log in/i,
@@ -121,15 +139,7 @@ const THEME_PATTERNS = {
     /\byard sale\b/i, /\bwelcome/i, /\bkid-?friendly\b/i, /\bpet-?friendly\b/i,
     /\bdog park\b/i, /\bhoa (?:drama|meeting|violation|fine|board)/i,
   ],
-  // profile.sentiment.weights.school_quality (0.20)
-  school_quality: [
-    /\bschool\b/i, /\bteacher/i, /\bstudent/i, /\belementary\b/i,
-    /\bmiddle school\b/i, /\bhigh school\b/i, /\bbus\b/i, /\bcarpool\b/i,
-    /\bpta\b/i, /\bptsa\b/i, /\bredistricting\b/i, /\bprincipal\b/i,
-    /\btest scores?\b/i, /\bgifted\b/i, /\baig\b/i, /\bspecial (?:ed|education)\b/i,
-    /\bdrop[-\s]?off\b/i, /\bpick[-\s]?up\b/i, /\bafter[-\s]?school\b/i,
-  ],
-  // profile.sentiment.weights.livability (0.15)
+  // profile.sentiment.weights.livability
   livability: [
     /\bpark\b/i, /\btrail\b/i, /\bgrocery\b/i, /\brestaurant\b/i, /\bnois(?:e|y)\b/i,
     /\bquiet\b/i, /\bplayground\b/i, /\burgent care\b/i, /\bdaycare\b/i,
@@ -398,24 +408,27 @@ async function ensureHostedSession(profileName) {
   return session.data;
 }
 
-function buildSearchUrlCandidates(sourceKey, query) {
-  const encoded = encodeURIComponent(query);
+function buildBrowserSourceUrl(sourceKey, communityData) {
+  if (!communityData?.communityUrls) return null;
+  if (sourceKey === 'nextdoor') return communityData.communityUrls.nextdoor ?? null;
+  if (sourceKey === 'facebook') return communityData.communityUrls.facebook ?? null;
+  return null;
+}
 
-  if (sourceKey === 'facebook') {
-    return [
-      `https://www.facebook.com/search/posts/?q=${encoded}`,
-      `https://www.facebook.com/search/top/?q=${encoded}`,
-    ];
+function loadCommunityData(target) {
+  const slug = slugify(`${target.address}-${target.city}-${target.state || 'NC'}`);
+  if (!slug) return null;
+  const path = join(COMMUNITY_DIR, `${slug}.json`);
+  if (!existsSync(path)) return null;
+  try {
+    return JSON.parse(readFileSync(path, 'utf8'));
+  } catch {
+    return null;
   }
+}
 
-  if (sourceKey === 'nextdoor') {
-    return [
-      `https://nextdoor.com/search/?query=${encoded}`,
-      `https://nextdoor.com/search/?q=${encoded}`,
-    ];
-  }
-
-  return [];
+function isMembershipAnnouncement(text) {
+  return MEMBERSHIP_PATTERNS.some((pattern) => pattern.test(text));
 }
 
 function tokenizeQuery(query) {
@@ -431,9 +444,12 @@ function countPatternHits(text, patterns) {
   return patterns.reduce((count, pattern) => count + (pattern.test(text) ? 1 : 0), 0);
 }
 
-function classifySnippet(text) {
+function classifySnippet(text, allowedCategories = null) {
   const categories = Object.entries(THEME_PATTERNS)
-    .filter(([, patterns]) => patterns.some((pattern) => pattern.test(text)))
+    .filter(([key, patterns]) => {
+      if (allowedCategories && !allowedCategories.has(key)) return false;
+      return patterns.some((pattern) => pattern.test(text));
+    })
     .map(([key]) => key);
 
   return {
@@ -468,16 +484,18 @@ function extractBodyWindows(bodyText, queryTokens) {
   return dedupeStrings(windows);
 }
 
-function selectRelevantSnippets(pageData, query) {
+function selectRelevantSnippets(pageData, query, options = {}) {
   const queryTokens = tokenizeQuery(query);
   const exactNeedle = normalizeText(query).toLowerCase();
-  const candidates = dedupeStrings([...pageData.blocks, ...extractBodyWindows(pageData.bodyText, queryTokens)]);
+  const allowedCategories = options.allowedCategories ?? null;
+  const candidates = dedupeStrings([...pageData.blocks, ...extractBodyWindows(pageData.bodyText, queryTokens)])
+    .filter((text) => !isMembershipAnnouncement(text));
 
   return candidates
     .map((text) => {
       const normalized = text.toLowerCase();
       const matchedTokens = queryTokens.filter((token) => normalized.includes(token));
-      const classification = classifySnippet(text);
+      const classification = classifySnippet(text, allowedCategories);
       const score = (normalized.includes(exactNeedle) ? 8 : 0)
         + (matchedTokens.length * 2)
         + (classification.recent ? 2 : 0)
@@ -588,75 +606,82 @@ function detectBlockedReason(pageData) {
   return match ? match.source : null;
 }
 
-async function extractSourceQuery(context, source, query, options = {}) {
+async function extractCommunityPage(context, source, communityUrl, query, options = {}) {
   const attempts = [];
-  const maxScrolls = options.quick ? QUICK_MAX_SCROLLS_PER_PAGE : MAX_SCROLLS_PER_PAGE;
+  const maxScrolls = source.key === 'facebook'
+    ? 0
+    : options.quick ? QUICK_MAX_SCROLLS_PER_PAGE : MAX_SCROLLS_PER_PAGE;
+  const allowedCategories = options.allowedCategories ?? null;
 
-  for (const searchUrl of buildSearchUrlCandidates(source.key, query)) {
-    const page = await context.newPage();
-
-    try {
-      await page.goto(searchUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
-      await page.waitForTimeout(2500);
-      await page.waitForSelector('article, [role="article"]', { timeout: 4000 }).catch(() => {});
-      // Automated crawl: load more posts past the initial viewport so the
-      // snippet pool reflects recent activity, not just the first page.
+  const page = await context.newPage();
+  try {
+    await page.goto(communityUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+    await page.waitForTimeout(2500);
+    await page.waitForSelector('article, [role="article"]', { timeout: 4000 }).catch(() => {});
+    if (maxScrolls > 0) {
       await autoScrollForMoreResults(page, maxScrolls);
-      const pageData = await collectPageData(page);
-      const blockedReason = detectBlockedReason(pageData);
+    }
+    const pageData = await collectPageData(page);
+    const blockedReason = detectBlockedReason(pageData);
 
-      if (blockedReason) {
-        attempts.push({ status: 'blocked', searchUrl, finalUrl: pageData.finalUrl, reason: blockedReason });
-        continue;
-      }
-
-      const snippets = selectRelevantSnippets(pageData, query);
-      if (snippets.length === 0) {
-        attempts.push({
-          status: 'empty',
-          searchUrl,
-          finalUrl: pageData.finalUrl,
-          pageTitle: pageData.title,
-          preview: pageData.bodyText.slice(0, 220),
-        });
-        continue;
-      }
-
+    if (blockedReason) {
+      attempts.push({ status: 'blocked', searchUrl: communityUrl, finalUrl: pageData.finalUrl, reason: blockedReason });
       return {
-        status: 'ok',
+        status: 'blocked',
         query,
-        searchUrl,
+        searchUrl: communityUrl,
         finalUrl: pageData.finalUrl,
         pageTitle: pageData.title,
-        snippets,
-        themes: summarizeThemes(snippets),
+        snippets: [],
+        themes: [],
+        preview: pageData.bodyText.slice(0, 220),
+        reason: blockedReason,
+        attempts,
+      };
+    }
+
+    const snippets = selectRelevantSnippets(pageData, query, { allowedCategories });
+    if (snippets.length === 0) {
+      return {
+        status: 'empty',
+        query,
+        searchUrl: communityUrl,
+        finalUrl: pageData.finalUrl,
+        pageTitle: pageData.title,
+        snippets: [],
+        themes: [],
         preview: pageData.bodyText.slice(0, 220),
         attempts,
       };
-    } catch (error) {
-      attempts.push({
-        status: 'error',
-        searchUrl,
-        reason: error.message.split('\n')[0],
-      });
-    } finally {
-      await page.close().catch(() => {});
     }
-  }
 
-  const lastAttempt = attempts.at(-1) ?? { status: 'error', reason: 'no search URL templates available' };
-  return {
-    status: lastAttempt.status,
-    query,
-    searchUrl: lastAttempt.searchUrl ?? '',
-    finalUrl: lastAttempt.finalUrl ?? '',
-    pageTitle: lastAttempt.pageTitle ?? '',
-    snippets: [],
-    themes: [],
-    preview: lastAttempt.preview ?? '',
-    reason: lastAttempt.reason ?? 'no matching content found',
-    attempts,
-  };
+    return {
+      status: 'ok',
+      query,
+      searchUrl: communityUrl,
+      finalUrl: pageData.finalUrl,
+      pageTitle: pageData.title,
+      snippets,
+      themes: summarizeThemes(snippets),
+      preview: pageData.bodyText.slice(0, 220),
+      attempts,
+    };
+  } catch (error) {
+    return {
+      status: 'error',
+      query,
+      searchUrl: communityUrl,
+      finalUrl: '',
+      pageTitle: '',
+      snippets: [],
+      themes: [],
+      preview: '',
+      reason: error.message.split('\n')[0],
+      attempts,
+    };
+  } finally {
+    await page.close().catch(() => {});
+  }
 }
 
 function buildTargetOutputPath(target) {
@@ -783,18 +808,41 @@ async function extractTarget(context, target, researchContext, cacheState, optio
 
   const runFreshExtraction = async () => {
     const sourceResults = [];
+    const communityData = loadCommunityData(target);
 
     for (const source of sentimentPlan.entries.filter((entry) => entry.browserSupported && SUPPORTED_BROWSER_SOURCES.has(entry.key))) {
-      const queryResults = [];
-      const queries = source.recommendedQueries.slice(0, maxQueries);
-      for (let index = 0; index < queries.length; index += 1) {
-        if (index > 0) {
-          // Pause between queries so burst rate stays low -- reduces risk of
-          // account-level rate limits kicking in mid-run.
-          await randomDelay(QUERY_PAUSE_MIN_MS, QUERY_PAUSE_MAX_MS);
-        }
-        queryResults.push(await extractSourceQuery(context, source, queries[index], { quick }));
+      const communityUrl = buildBrowserSourceUrl(source.key, communityData);
+
+      if (!communityUrl) {
+        sourceResults.push({
+          key: source.key,
+          name: source.name,
+          url: source.url,
+          note: source.note,
+          lookbackDays: source.lookbackDays,
+          queryResults: [{
+            status: source.key === 'nextdoor' ? 'no-community-match' : 'no-community-url',
+            query: '',
+            searchUrl: '',
+            finalUrl: '',
+            pageTitle: '',
+            snippets: [],
+            themes: [],
+            reason: communityData
+              ? 'no community URL available for this source'
+              : 'no community lookup found; run community-lookup.mjs first',
+          }],
+        });
+        continue;
       }
+
+      const queryLabel = communityData.community
+        ? `${communityData.community} neighborhood ${target.city}`
+        : `${target.city} neighborhood`;
+      const result = await extractCommunityPage(context, source, communityUrl, queryLabel, {
+        quick,
+        allowedCategories: BROWSER_ALLOWED_CATEGORIES,
+      });
 
       sourceResults.push({
         key: source.key,
@@ -802,8 +850,12 @@ async function extractTarget(context, target, researchContext, cacheState, optio
         url: source.url,
         note: source.note,
         lookbackDays: source.lookbackDays,
-        queryResults,
+        community: communityData.community,
+        communityUrl,
+        queryResults: [result],
       });
+
+      await randomDelay(QUERY_PAUSE_MIN_MS, QUERY_PAUSE_MAX_MS);
     }
 
     const kpiWeights = researchContext.profile?.sentiment?.weights ?? {};
@@ -818,6 +870,8 @@ async function extractTarget(context, target, researchContext, cacheState, optio
       subdivisionHints: sentimentPlan.subdivisionHints,
       roadHints: sentimentPlan.roadHints,
       schoolNames: sentimentPlan.schoolNames,
+      community: communityData?.community ?? null,
+      communityStatus: communityData?.status ?? 'community-lookup-missing',
       kpiWeights,
       kpiRollup,
       sources: sourceResults,

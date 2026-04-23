@@ -107,11 +107,12 @@ Score every listing from 1.0 to 5.0 using five dimensions.
 
 | Dimension | Weight | What it measures |
 |-----------|--------|------------------|
-| Property Fit | 0.35 | Hard requirements, layout, condition, lot usability, resale preference |
-| Neighborhood Sentiment | 0.25 | Safety, traffic, community feel, local reputation, daily livability |
-| School Sentiment | 0.20 | Ratings plus parent/community confidence and school environment |
+| Property Fit | 0.40 | Hard requirements, layout, condition, lot usability, resale preference |
+| Neighborhood Sentiment | 0.35 | Safety, traffic, community feel, local reputation, daily livability |
 | Financial Fit | 0.10 | Price fit, estimated monthly cost, HOA, taxes, affordability margin |
-| Resale / Risk | 0.10 | Busy-road exposure, flood risk, future development, marketability |
+| Resale / Risk | 0.15 | Busy-road exposure, flood risk, future development, marketability |
+
+Schools are enforced at the hard-requirement gate via `schools_min_rating` and are surfaced as metadata (ratings, enrollment, demographics) in the final report. They are not a weighted scoring dimension.
 
 ### Score Interpretation
 
@@ -124,7 +125,7 @@ Score every listing from 1.0 to 5.0 using five dimensions.
 ### Score Caps and Overrides
 
 - Any hard fail on price, beds, garage, or square footage caps the overall score at 2.4.
-- Clear school underperformance versus the threshold caps at 2.9.
+- Any assigned school below the buyer's `schools_min_rating` caps at 2.9.
 - Flood-zone exposure, major road adjacency, or HOA above the configured ceiling caps at 2.2 unless disproven.
 - New construction is allowed, but only as a fallback path. Penalize it when an established resale alternative would clearly be preferable.
 - A listing can never receive a strong recommendation when confidence is low and multiple required facts remain unknown.
@@ -137,11 +138,12 @@ Use the configured weights from `config/profile.yml`.
 
 | Category | Weight | What to look for |
 |----------|--------|------------------|
-| Crime / Safety | 25% | Crime discussions, traffic safety, personal safety concerns, nuisance patterns |
-| Traffic / Commute | 15% | Congestion, key road access, daily convenience, bottlenecks, school pickup stress |
-| Community | 25% | Neighbor quality, family friendliness, upkeep, neighborhood cohesion |
-| School Quality Signal | 20% | Local confidence in assigned schools, even beyond formal ratings |
-| Livability | 15% | Parks, groceries, healthcare, noise, recreation, day-to-day comfort |
+| Crime / Safety | 27% | Crime discussions, traffic safety, personal safety concerns, nuisance patterns |
+| Traffic / Commute | 24% | Congestion, key road access, daily convenience, bottlenecks, school pickup stress |
+| Community | 27% | Neighbor quality, family friendliness, upkeep, neighborhood cohesion |
+| Livability | 22% | Parks, groceries, healthcare, noise, recreation, day-to-day comfort |
+
+Facebook and Nextdoor extractions only populate Crime/Safety, Community, and Livability. Traffic/Commute is sourced from Reddit, Google Maps, and the NCDOT construction check. School quality is no longer a sentiment dimension -- it is captured as metadata (see the School Metadata section below).
 
 Preferred sources:
 - Reddit communities focused on the Triangle and Raleigh area
@@ -159,28 +161,24 @@ Rules:
 
 ---
 
-## School Sentiment Method
+## School Metadata Capture
 
-Use these weighted categories from `config/profile.yml`.
+Schools are surfaced as a metadata table in the final PDF report, not as a weighted sentiment score. For each assigned school (elementary, middle, high) capture:
 
-| Category | Weight | What to look for |
-|----------|--------|------------------|
-| Academic Performance | 25% | GreatSchools, NC report cards, proficiency, growth, graduation signals |
-| Parent / Community Sentiment | 25% | Review patterns, recurring praise/complaints, community trust |
-| Teacher / Staff Quality | 15% | Comments on communication, support, turnover, leadership |
-| Safety / Environment | 20% | Discipline climate, bullying concerns, classroom order, student support |
-| Extracurriculars / Resources | 15% | Clubs, sports, arts, enrichment, program strength |
-
-Preferred sources:
-- GreatSchools
-- Niche
-- North Carolina School Report Cards
-- SchoolDigger
+| Field | Source |
+|-------|--------|
+| Name and grade level | Listing page (Redfin / Zillow) as primary, GreatSchools as verification |
+| GreatSchools rating (1-10) | GreatSchools |
+| State report-card rating, if available | State report card source configured in `research_sources.schools` |
+| Total enrollment | GreatSchools |
+| Student / teacher ratio | GreatSchools |
+| Ethnicity distribution (percent by group) | GreatSchools |
+| Direct link | GreatSchools URL |
 
 Rules:
-- Quote actual ratings when available.
-- When ratings conflict, explain the mismatch instead of averaging blindly.
-- Do not over-index on a single angry review.
+- The hard-requirement gate still enforces `schools_min_rating`. A school below threshold caps the composite score per the Score Caps rules.
+- Quote actual ratings and percentages directly. Do not paraphrase.
+- If a field cannot be captured, show `--` and note the source status in the report rather than inventing values.
 
 ---
 

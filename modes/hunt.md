@@ -44,6 +44,7 @@ If the command arguments include scan platform flags such as:
 - `--zillow`
 - `--redfin`
 - `--relator`
+- `--homes`
 
 apply those flags only to the `scan` phase.
 

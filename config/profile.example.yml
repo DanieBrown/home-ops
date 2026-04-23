@@ -29,6 +29,7 @@ search:
     price_min: 400000
     price_max: 600000
     beds_min: 3
+    baths_min: 2
     garage_min: 2
     sqft_min: 2000
     yard: "Fenced backyard suitable for pets and children"
@@ -55,19 +56,10 @@ search:
 
 sentiment:
   weights:
-    crime_safety: 0.25
-    traffic_commute: 0.15
-    community: 0.25
-    school_quality: 0.20
-    livability: 0.15
-
-school_sentiment:
-  weights:
-    academic_performance: 0.25
-    parent_community_sentiment: 0.25
-    teacher_staff_quality: 0.15
-    safety_environment: 0.20
-    extracurriculars_resources: 0.15
+    crime_safety: 0.31
+    traffic_commute: 0.19
+    community: 0.31
+    livability: 0.19
 
 commute:
   destinations:
@@ -87,7 +79,7 @@ financial:
 # Home-Ops uses. Each group maps to a specific pipeline stage:
 #   portals      -> /home-ops scan (which portals get scanned for new listings)
 #   sentiment    -> /home-ops deep + sentiment extract (community posts)
-#   schools      -> school sentiment + hard-requirement gate (evidence coverage)
+#   schools      -> school metadata fetch (rating, enrollment, demographics) for PDF
 #   development  -> construction-pressure check (planned roads, rezonings)
 # generate-portals.mjs honors these toggles when rebuilding portals.yml.
 research_sources:

@@ -423,11 +423,17 @@ function buildSearchQueries(areas, hardRequirements, selection, scanKeywords = [
   const priceMin = Number.parseInt(hardRequirements?.price_min ?? 0, 10);
   const priceMax = Number.parseInt(hardRequirements?.price_max ?? 0, 10);
   const bedsMin = Number.parseFloat(hardRequirements?.beds_min ?? 0);
+  const bathsMin = Number.parseFloat(hardRequirements?.baths_min ?? 0);
+  const sqftMin = Number.parseInt(hardRequirements?.sqft_min ?? 0, 10);
+  const garageMin = Number.parseInt(hardRequirements?.garage_min ?? 0, 10);
   const formatPrice = (value) => `$${Number(value).toLocaleString('en-US')}`;
   const priceFragment = priceMin && priceMax
     ? `${formatPrice(priceMin)} ${formatPrice(priceMax)}`
     : '';
   const bedsFragment = bedsMin ? `${bedsMin} bed` : '';
+  const bathsFragment = bathsMin ? `${bathsMin} bath` : '';
+  const sqftFragment = sqftMin ? `${sqftMin}+ sqft` : '';
+  const garageFragment = garageMin ? `${garageMin}-car garage` : '';
 
   const topKeywords = Array.isArray(scanKeywords) ? scanKeywords.slice(0, 4) : [];
   const topNegatives = Array.isArray(scanNegativeKeywords) ? scanNegativeKeywords.slice(0, 3) : [];
@@ -451,6 +457,9 @@ function buildSearchQueries(areas, hardRequirements, selection, scanKeywords = [
         `"${area.name}, ${state}"`,
         'house',
         bedsFragment,
+        bathsFragment,
+        sqftFragment,
+        garageFragment,
         priceFragment,
         keywordFragment,
         negativeFragment,

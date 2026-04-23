@@ -45,12 +45,15 @@ const PLATFORM_FLAG_MAP = {
   '--realtor': 'realtor',
   '--realtor.com': 'realtor',
   '--relator': 'realtor',
+  '--homes': 'homes',
+  '--homes.com': 'homes',
 };
 
 const DETAIL_URL_PATTERNS = {
   zillow: /\/homedetails\//i,
   redfin: /\/home\//i,
   realtor: /\/realestateandhomes-detail\//i,
+  homes: /\/property\//i,
 };
 
 const BLOCK_PATTERNS = [
@@ -79,7 +82,7 @@ const ADDRESS_PATTERN = /\b\d{1,5}\s+[^|,]+(?:\s+[^|,]+)*,\s*[A-Za-z .'-]+,\s*[A
 
 const HELP_TEXT = `Usage:
   node scan-listings.mjs
-  node scan-listings.mjs --zillow --redfin --relator
+  node scan-listings.mjs --zillow --redfin --relator --homes
   node scan-listings.mjs --profile chrome-host
 
 Options:
@@ -87,6 +90,7 @@ Options:
   --redfin      Scan Redfin only.
   --relator     Scan Realtor.com only.
   --realtor     Backward-compatible alias for --relator.
+  --homes       Scan Homes.com only.
   --profile     Hosted browser profile to reuse. Defaults to chrome-host.
   --help        Show this help text.`;
 
@@ -101,6 +105,10 @@ function platformHost(platform) {
 
   if (platform === 'realtor') {
     return 'realtor.com';
+  }
+
+  if (platform === 'homes') {
+    return 'homes.com';
   }
 
   return '';
@@ -860,6 +868,13 @@ function syncZillowSearchUrl(rawUrl, requirements) {
       };
     }
 
+    if (requirements.bathsMin > 0) {
+      filterState.baths = {
+        ...(filterState.baths ?? {}),
+        min: requirements.bathsMin,
+      };
+    }
+
     if (requirements.sqftMin > 0) {
       filterState.sqft = {
         ...(filterState.sqft ?? {}),
@@ -894,7 +909,7 @@ function syncRedfinSearchUrl(rawUrl, requirements) {
     const parsed = new URL(String(rawUrl).trim());
     const [pathnameRoot, rawFilterSegment] = parsed.pathname.split('/filter/');
     const existingTokens = rawFilterSegment ? rawFilterSegment.split(',').filter(Boolean) : [];
-    const managedPrefixes = ['min-price=', 'max-price=', 'min-beds=', 'min-sqft=', 'hoa='];
+    const managedPrefixes = ['min-price=', 'max-price=', 'min-beds=', 'min-baths=', 'min-sqft=', 'hoa='];
     const unmanagedTokens = existingTokens.filter((token) => !managedPrefixes.some((prefix) => token.startsWith(prefix)));
     const syncedTokens = [...unmanagedTokens];
     const minPrice = formatCompactThousands(requirements.priceMin);
@@ -911,6 +926,10 @@ function syncRedfinSearchUrl(rawUrl, requirements) {
 
     if (requirements.bedsMin > 0) {
       syncedTokens.push(`min-beds=${Math.ceil(requirements.bedsMin)}`);
+    }
+
+    if (requirements.bathsMin > 0) {
+      syncedTokens.push(`min-baths=${requirements.bathsMin}`);
     }
 
     if (minSqft) {
@@ -939,12 +958,16 @@ function syncRealtorSearchUrl(rawUrl, requirements) {
     }
 
     const [searchRoot, areaSegment, ...existingSegments] = segments;
-    const managedPrefixes = ['beds-', 'price-', 'sqft-', 'garage-', 'age-'];
+    const managedPrefixes = ['beds-', 'baths-', 'price-', 'sqft-', 'garage-', 'age-'];
     const unmanagedSegments = existingSegments.filter((segment) => !managedPrefixes.some((prefix) => segment.startsWith(prefix)));
     const syncedSegments = [...unmanagedSegments];
 
     if (requirements.bedsMin > 0) {
       syncedSegments.push(`beds-${Math.ceil(requirements.bedsMin)}`);
+    }
+
+    if (requirements.bathsMin > 0) {
+      syncedSegments.push(`baths-${requirements.bathsMin}`);
     }
 
     if (requirements.priceMin > 0 || requirements.priceMax < Number.MAX_SAFE_INTEGER) {
@@ -972,6 +995,53 @@ function syncRealtorSearchUrl(rawUrl, requirements) {
   }
 }
 
+function syncHomesSearchUrl(rawUrl, requirements) {
+  try {
+    const parsed = new URL(String(rawUrl).trim());
+    const params = parsed.searchParams;
+
+    params.delete('price_min');
+    params.delete('price_max');
+    params.delete('bed_min');
+    params.delete('bath_min');
+    params.delete('sqft_min');
+    params.delete('garage_min');
+    params.delete('days_on_site_max');
+
+    if (requirements.priceMin > 0) {
+      params.set('price_min', String(requirements.priceMin));
+    }
+
+    if (requirements.priceMax < Number.MAX_SAFE_INTEGER) {
+      params.set('price_max', String(requirements.priceMax));
+    }
+
+    if (requirements.bedsMin > 0) {
+      params.set('bed_min', String(Math.ceil(requirements.bedsMin)));
+    }
+
+    if (requirements.bathsMin > 0) {
+      params.set('bath_min', String(requirements.bathsMin));
+    }
+
+    if (requirements.sqftMin > 0) {
+      params.set('sqft_min', String(requirements.sqftMin));
+    }
+
+    if (requirements.garageMin > 0) {
+      params.set('garage_min', String(requirements.garageMin));
+    }
+
+    if (requirements.maxListingAgeDays < Number.MAX_SAFE_INTEGER) {
+      params.set('days_on_site_max', String(requirements.maxListingAgeDays));
+    }
+
+    return parsed.toString();
+  } catch {
+    return rawUrl;
+  }
+}
+
 function syncPlatformSearchUrl(platform, rawUrl, requirements) {
   if (platform === 'zillow') {
     return syncZillowSearchUrl(rawUrl, requirements);
@@ -983,6 +1053,10 @@ function syncPlatformSearchUrl(platform, rawUrl, requirements) {
 
   if (platform === 'realtor') {
     return syncRealtorSearchUrl(rawUrl, requirements);
+  }
+
+  if (platform === 'homes') {
+    return syncHomesSearchUrl(rawUrl, requirements);
   }
 
   return rawUrl;
@@ -1035,6 +1109,7 @@ function loadRequirements(parsed = readYamlFile(PROFILE_PATH)) {
     priceMin: Number.parseInt(hard.price_min ?? 0, 10),
     priceMax: Number.parseInt(hard.price_max ?? Number.MAX_SAFE_INTEGER, 10),
     bedsMin: Number.parseFloat(hard.beds_min ?? 0),
+    bathsMin: Number.parseFloat(hard.baths_min ?? 0),
     garageMin: Number.parseInt(hard.garage_min ?? 0, 10),
     sqftMin: Number.parseInt(hard.sqft_min ?? 0, 10),
     maxListingAgeDays: Number.parseInt(hard.max_listing_age_days ?? Number.MAX_SAFE_INTEGER, 10),
@@ -1049,6 +1124,10 @@ function formatRerunCommand(platform) {
 
   if (platform === 'redfin') {
     return '/home-ops scan --redfin';
+  }
+
+  if (platform === 'homes') {
+    return '/home-ops scan --homes';
   }
 
   return '/home-ops scan --relator';
@@ -1137,6 +1216,18 @@ async function extractRawItems(page, platform) {
           addressText: normalize(card?.querySelector('[data-testid*="card-address"], [class*="address"]')?.textContent),
           priceText: normalize(card?.querySelector('[data-testid*="card-price"], [class*="price"]')?.textContent),
           metaText: normalize(card?.querySelector('[data-testid*="property-meta"], [class*="meta"]')?.textContent),
+          ariaLabel: normalize(anchor.getAttribute('aria-label')),
+          text: normalize(card?.innerText),
+        };
+      }),
+      homes: () => [...document.querySelectorAll('a[href*="/property/"]')].map((anchor) => {
+        const card = anchor.closest('article, li, section, [class*="placard"], [class*="property-card"], [class*="PropertyCard"], [class*="listing-card"]') ?? anchor.parentElement;
+        return {
+          href: anchor.href,
+          anchorText: normalize(anchor.textContent),
+          addressText: normalize(card?.querySelector('[class*="address"], [class*="Address"]')?.textContent),
+          priceText: normalize(card?.querySelector('[class*="price"], [class*="Price"]')?.textContent),
+          metaText: normalize(card?.querySelector('[class*="detailed-info"], [class*="property-details"], [class*="PropertyDetails"]')?.textContent),
           ariaLabel: normalize(anchor.getAttribute('aria-label')),
           text: normalize(card?.innerText),
         };

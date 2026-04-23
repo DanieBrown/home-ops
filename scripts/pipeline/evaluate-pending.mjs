@@ -332,20 +332,32 @@ function parseCurrency(value) {
 
 function parseBedsBaths(value) {
   const text = String(value ?? '');
-  const matches = [...text.matchAll(/(\d+(?:\.\d+)?)\s*\/\s*(\d+(?:\.\d+)?)/g)];
-  if (matches.length > 0) {
+
+  // Prefer the explicit "N bed(s) / M bath(s)" phrasing over a naked `N/M`
+  // pattern, because pages often also contain GreatSchools-style `8/10`
+  // ratings that the loose slash regex would otherwise mistake for beds/baths.
+  const bedMatch = text.match(/(\d+(?:\.\d+)?)\s*(?:bd|beds?|bedrooms?)/i);
+  const bathMatch = text.match(/(\d+(?:\.\d+)?)\s*(?:ba|baths?|bathrooms?)/i);
+  if (bedMatch || bathMatch) {
     return {
-      beds: Number.parseFloat(matches[0][1]),
-      baths: Number.parseFloat(matches[0][2]),
+      beds: bedMatch ? Number.parseFloat(bedMatch[1]) : null,
+      baths: bathMatch ? Number.parseFloat(bathMatch[1]) : null,
     };
   }
 
-  const bedMatch = text.match(/(\d+(?:\.\d+)?)\s*(?:bd|beds?|bedrooms?)/i);
-  const bathMatch = text.match(/(\d+(?:\.\d+)?)\s*(?:ba|baths?|bathrooms?)/i);
-  return {
-    beds: bedMatch ? Number.parseFloat(bedMatch[1]) : null,
-    baths: bathMatch ? Number.parseFloat(bathMatch[1]) : null,
-  };
+  // Fall back to "N/M" only when both numbers land inside the plausible
+  // residential range documented in modes/_shared.md (beds 1-7, baths 1-8).
+  // This filters out "8/10" school ratings and similar out-of-range noise.
+  const slashMatches = [...text.matchAll(/(\d+(?:\.\d+)?)\s*\/\s*(\d+(?:\.\d+)?)/g)];
+  for (const match of slashMatches) {
+    const beds = Number.parseFloat(match[1]);
+    const baths = Number.parseFloat(match[2]);
+    if (Number.isFinite(beds) && Number.isFinite(baths) && beds >= 1 && beds <= 7 && baths >= 1 && baths <= 8) {
+      return { beds, baths };
+    }
+  }
+
+  return { beds: null, baths: null };
 }
 
 function formatCurrency(number) {

@@ -19,14 +19,15 @@ import { slugify } from '../shared/text-utils.mjs';
 
 const OUTPUT_DIR = join(ROOT, 'output', 'deep-packets');
 const SENTIMENT_DIR = join(ROOT, 'output', 'sentiment');
+const COMMUNITY_DIR = join(ROOT, 'output', 'communities');
 // Composite weights. construction_pressure is a modifier applied to resale_risk
-// rather than a new top-level slot so the sum still equals 1.0.
+// rather than a new top-level slot so the sum still equals 1.0. Schools are no
+// longer a scored dimension -- they are captured as metadata on the report.
 const COMPOSITE_WEIGHTS = {
-  property_fit: 0.35,
-  neighborhood_sentiment: 0.25,
-  school_sentiment: 0.20,
+  property_fit: 0.40,
+  neighborhood_sentiment: 0.35,
   financial_fit: 0.10,
-  resale_risk: 0.10,
+  resale_risk: 0.15,
 };
 
 const HELP_TEXT = `Usage:
@@ -121,6 +122,11 @@ function buildOutputPath(target) {
 function buildSentimentPath(target) {
   const slug = slugify(`${target.address}-${target.city}-${target.state || 'NC'}`) || 'deep-target';
   return join(SENTIMENT_DIR, `${slug}.json`);
+}
+
+function buildCommunityPath(target) {
+  const slug = slugify(`${target.address}-${target.city}-${target.state || 'NC'}`) || 'deep-target';
+  return join(COMMUNITY_DIR, `${slug}.json`);
 }
 
 function readJsonIfExists(filePath) {
@@ -359,6 +365,8 @@ async function buildPacket(target, researchContext) {
   const sentimentEvidence = readJsonIfExists(sentimentPath);
   const sentimentSummary = summarizeSentimentEvidence(sentimentEvidence, researchContext.profile.sentiment?.weights ?? {});
   const constructionSummary = summarizeConstruction(readConstructionRecord(target));
+  const communityPath = buildCommunityPath(target);
+  const communityEvidence = readJsonIfExists(communityPath);
   const audit = auditParsedReport(target);
   const criticalFindings = getCriticalAuditFindings(audit, {
     headings: ['Neighborhood Sentiment', 'School Review', 'Development and Infrastructure'],
@@ -382,7 +390,6 @@ async function buildPacket(target, researchContext) {
     profileWeights: {
       composite: COMPOSITE_WEIGHTS,
       sentiment: researchContext.profile.sentiment?.weights ?? {},
-      school: researchContext.profile.school_sentiment?.weights ?? {},
     },
     audit: {
       issues: audit.issues,
@@ -410,12 +417,31 @@ async function buildPacket(target, researchContext) {
         entries: decorateGenericPlan(schoolPlan.entries),
       },
     },
+    community: communityEvidence?.community ?? null,
+    communityStatus: communityEvidence?.status
+      ?? (communityEvidence ? 'ok' : 'community-lookup-missing'),
+    communityUrls: communityEvidence?.communityUrls ?? { nextdoor: null, facebook: null },
     sentimentEvidence: {
       filePath: existsSync(sentimentPath) ? toWorkspacePath(sentimentPath) : null,
       status: sentimentSummary.status,
       coverageSummary: sentimentSummary.coverageSummary,
       sourceCoverage: sentimentSummary.sourceCoverage,
       weightedSignals: sentimentSummary.weightedSignals,
+    },
+    schoolMetadataPlan: {
+      minimumRating: schoolPlan.minimumRating,
+      assignedSchools: schoolPlan.schoolNames,
+      fields: [
+        'name',
+        'gradeLevel',
+        'greatSchoolsRating',
+        'stateRating',
+        'enrollment',
+        'studentTeacherRatio',
+        'ethnicityDistribution',
+        'url',
+      ],
+      note: 'Workers must capture these fields per assigned school from GreatSchools plus the listing source (Redfin / Zillow). Leave missing values null.',
     },
     constructionEvidence: constructionSummary,
     reportSections: {
@@ -427,7 +453,11 @@ async function buildPacket(target, researchContext) {
     },
     workerRequirements: [
       'Explicitly mark Facebook, Nextdoor, NCDOT, county planning, municipal planning, and school-source coverage as captured, blocked, no-match, or still missing.',
-      'Use profileWeights.sentiment and profileWeights.school when explaining metric importance and deep rerank changes.',
+      'Use profileWeights.sentiment when explaining metric importance and deep rerank changes. Facebook and Nextdoor only contribute to crime_safety, community, and livability; traffic_commute must come from Reddit, Google Maps, or the NCDOT construction record.',
+      'Nextdoor must be loaded via communityUrls.nextdoor (built from the mapdevelopers community lookup). If community is null, skip Nextdoor and record nextdoor: { status: "no-community-match" } in sourceCoverage -- do not fall back to a generic Nextdoor search.',
+      'Facebook must be loaded via communityUrls.facebook (the /search/top?q=<community> neighborhood <city> URL). Filter out membership-announcement posts ("X joined the group", "Welcome X to the neighborhood") before scoring.',
+      'Return schoolMetadata as an array of per-school objects matching schoolMetadataPlan.fields. Do not return a schoolMetrics sentiment rollup -- schools are metadata-only.',
+      'After the main agent collects schoolMetadata from all workers, write it to output/school-metadata/<slug>.json (slug matches the sentiment and construction sidecars). The briefing PDF reads that file to render the Schools & Metadata table.',
       'Do not claim browser-backed neighborhood sentiment if sentimentEvidence.status is not captured.',
       'Do not give full development confidence when NCDOT or local planning sources were not reviewed directly.',
       'Treat constructionEvidence.level as a resale-risk modifier: "high" should lower the deep rerank unless the pressure is clearly benign (e.g. completed projects only).',

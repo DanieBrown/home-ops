@@ -20,15 +20,17 @@
     <section id="tile" class="tile"></section>
 
     <footer class="nav">
+      <button id="back-btn" type="button" class="ghost">&larr; Back</button>
       <div class="nav-spacer"></div>
+      <button id="next-btn" type="button" class="primary">Next &rarr;</button>
       <button id="submit-btn" type="button" class="primary" hidden>Submit profile</button>
     </footer>
 
     <section id="done" class="done" hidden>
       <h2>Profile submitted</h2>
       <p>Your answers are saved to <code>.home-ops/profile-wizard-submission.json</code>.</p>
-      <p>Return to your AI chatbot and say: <em>"finish my profile from the wizard submission."</em></p>
-      <p class="muted">Home-Ops will regenerate <code>portals.yml</code> from your source picks after ingest. You can close this tab.</p>
+      <p>Home-Ops is picking up the submission automatically &mdash; switch back to your chatbot to watch it ingest. You can close this tab.</p>
+      <p class="muted">If the chatbot does not react within a minute, say: <em>"finish my profile from the wizard submission."</em></p>
     </section>
   </main>
 

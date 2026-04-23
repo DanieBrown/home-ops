@@ -163,8 +163,7 @@ async function handleSubmit(req, res, options) {
     if (parsed?.answers) writeAnswers(parsed.answers);
     sendJson(res, 200, { ok: true, file: '.home-ops/profile-wizard-submission.json' });
     console.log(`\nWizard submission written to .home-ops/profile-wizard-submission.json`);
-    console.log('Return to your AI chatbot and say: finish my profile from the wizard submission.');
-    console.log('Home-Ops will regenerate portals.yml from your selections.\n');
+    console.log('Home-Ops will pick it up automatically and regenerate portals.yml from your selections.\n');
     if (options.once) {
       setTimeout(() => process.exit(0), 250);
     }

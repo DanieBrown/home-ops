@@ -29,6 +29,7 @@ const OUTPUT_DIR = join(ROOT, 'output', 'briefings');
 const SENTIMENT_DIR = join(ROOT, 'output', 'sentiment');
 const CONSTRUCTION_DIR = join(ROOT, 'output', 'construction');
 const DEEP_PACKET_DIR = join(ROOT, 'output', 'deep-packets');
+const SCHOOL_METADATA_DIR = join(ROOT, 'output', 'school-metadata');
 
 const HELP_TEXT = `Usage:
   node briefing-pdf.mjs [--profile chrome-host] [--no-open]
@@ -152,18 +153,25 @@ function parseDollarAmount(raw) {
 }
 
 function parseBedsNumber(raw) {
-  const match = String(raw ?? '').match(/(\d+)\s*\/\s*(\d+(?:\.\d+)?)/);
-  if (!match) {
-    const fallback = String(raw ?? '').match(/(\d+)\s*(?:bed|bd|br)/i);
-    return fallback ? Number.parseInt(fallback[1], 10) : null;
+  const text = String(raw ?? '');
+
+  // Prefer explicit "N bed" phrasing so "Hoke Elementary 8/10" style strings
+  // that leaked into Beds/Baths never get mistaken for a bed count.
+  const explicit = text.match(/(\d+)\s*(?:bed|bd|br)/i);
+  if (explicit) {
+    const beds = Number.parseInt(explicit[1], 10);
+    return Number.isFinite(beds) ? beds : null;
   }
+
+  const match = text.match(/(\d+)\s*\/\s*(\d+(?:\.\d+)?)/);
+  if (!match) return null;
   const beds = Number.parseInt(match[1], 10);
   const baths = Number.parseFloat(match[2]);
-  // Sanity guard: the upstream evaluator occasionally conflates a school
-  // rating (e.g. "8/10") with beds/baths. Treat values outside plausible
-  // home-listing ranges as untrustworthy and decline to report them here.
-  if (!Number.isFinite(beds) || beds <= 0 || beds > 10) return null;
-  if (!Number.isFinite(baths) || baths <= 0 || baths > 10) return null;
+  // Sanity guard per modes/_shared.md -- plausible residential ranges are
+  // beds 1-7 and baths 1-8; anything outside that is almost certainly a
+  // parsing mistake (school rating, mislabeled field, etc.).
+  if (!Number.isFinite(beds) || beds < 1 || beds > 7) return null;
+  if (!Number.isFinite(baths) || baths < 1 || baths > 8) return null;
   return beds;
 }
 
@@ -568,10 +576,83 @@ function buildSchoolRatings(report) {
   return ratings;
 }
 
+function loadSchoolMetadata(report) {
+  const payload = findCompanionJson(report, SCHOOL_METADATA_DIR);
+  if (!payload) return null;
+  if (!companionMatchesReport(payload, report)) return null;
+  return payload;
+}
+
+function formatEthnicityDistribution(distribution) {
+  if (!distribution || typeof distribution !== 'object') return '--';
+  const entries = Object.entries(distribution)
+    .filter(([, value]) => value !== null && value !== undefined && value !== '')
+    .map(([group, value]) => {
+      const label = group.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+      const pct = typeof value === 'number' ? `${value}%` : escapeHtml(String(value));
+      return `${escapeHtml(label)} ${pct}`;
+    });
+  return entries.length ? entries.join('<br>') : '--';
+}
+
+function formatSchoolField(value) {
+  if (value === null || value === undefined || value === '') return '--';
+  return escapeHtml(String(value));
+}
+
 function buildSchoolsCard(report, profile) {
+  const metadata = loadSchoolMetadata(report);
+  const min = profile?.search?.hard_requirements?.schools_min_rating;
+
+  if (metadata && Array.isArray(metadata.schools) && metadata.schools.length > 0) {
+    const rows = metadata.schools.map((school) => {
+      const rating = Number.parseFloat(school.greatSchoolsRating);
+      const pass = Number.isFinite(rating) && Number.isFinite(min) ? rating >= min : null;
+      const ratingClass = pass === null ? 'school-neutral' : pass ? 'school-pass' : 'school-fail';
+      const nameCell = school.url
+        ? `<a href="${escapeHtml(school.url)}">${escapeHtml(school.name ?? '--')}</a>`
+        : formatSchoolField(school.name);
+      return `
+        <tr>
+          <td>${nameCell}</td>
+          <td>${formatSchoolField(school.gradeLevel)}</td>
+          <td class="num"><span class="school-rating ${ratingClass}">${formatSchoolField(school.greatSchoolsRating)}</span></td>
+          <td class="num">${formatSchoolField(school.stateRating)}</td>
+          <td class="num">${formatSchoolField(school.enrollment)}</td>
+          <td class="num">${formatSchoolField(school.studentTeacherRatio)}</td>
+          <td>${formatEthnicityDistribution(school.ethnicityDistribution)}</td>
+        </tr>`;
+    }).join('');
+
+    const footnote = Number.isFinite(min)
+      ? `<p class="muted">GreatSchools ratings below your ${escapeHtml(String(min))}/10 minimum are highlighted.</p>`
+      : '';
+
+    return `
+      <div class="card wide schools">
+        <h3>Schools &amp; Metadata</h3>
+        <table class="school-metadata">
+          <thead>
+            <tr>
+              <th>School</th>
+              <th>Level</th>
+              <th class="num">GS Rating</th>
+              <th class="num">State Rating</th>
+              <th class="num">Enrollment</th>
+              <th class="num">Stu/Tch</th>
+              <th>Ethnicity</th>
+            </tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>
+        ${footnote}
+      </div>`;
+  }
+
+  // Fallback: regex-extract ratings from the report when the metadata sidecar
+  // has not been populated (e.g. the deep workers did not land their captures).
   const ratings = buildSchoolRatings(report);
   if (ratings.length === 0) return '';
-  const min = profile?.search?.hard_requirements?.schools_min_rating;
   const rows = ratings.map((entry) => {
     const pass = Number.isFinite(min) ? entry.rating >= min : null;
     const badgeClass = pass === null ? 'school-neutral' : pass ? 'school-pass' : 'school-fail';
@@ -582,8 +663,8 @@ function buildSchoolsCard(report, profile) {
       </li>`;
   }).join('');
   const footnote = Number.isFinite(min)
-    ? `<p class="muted">Ratings below your ${escapeHtml(String(min))}/10 minimum are highlighted.</p>`
-    : '';
+    ? `<p class="muted">Ratings below your ${escapeHtml(String(min))}/10 minimum are highlighted. Run the deep-mode school-metadata capture to populate the full table.</p>`
+    : '<p class="muted">Run the deep-mode school-metadata capture to populate the full table (enrollment, demographics).</p>';
   return `
     <div class="card wide schools">
       <h3>Schools &amp; Ratings</h3>
@@ -916,6 +997,12 @@ function buildHtml(finalists, profile) {
   .school-fail { background: #fee2e2; color: #991b1b; }
   .school-neutral { background: #eef2ff; color: #3730a3; }
 
+  .school-metadata { width: 100%; font-size: 8.5pt; }
+  .school-metadata th { font-size: 8pt; color: #475569; text-transform: uppercase; letter-spacing: 0.03em; }
+  .school-metadata td { vertical-align: top; padding: 4px 6px; }
+  .school-metadata td a { color: #1d4ed8; text-decoration: none; }
+  .school-metadata .school-rating { display: inline-block; min-width: 24px; text-align: center; }
+
   .card.commute h3 { color: #0369a1; }
   .commute-list { list-style: none; padding: 0; margin: 0; }
   .commute-row {
@@ -938,7 +1025,7 @@ function buildHtml(finalists, profile) {
     <p class="cover-meta">Generated ${escapeHtml(generatedAt)} UTC &middot; ${escapeHtml(String(finalists.length))} finalist${finalists.length === 1 ? '' : 's'}${buyerLabel}</p>
     ${toc}
     <div class="cover-legend">
-      <p>Each page shows a quick take, a "why this fits" summary tied to your buyer profile, top concerns tailored to that listing, construction pressure, schools and ratings, neighborhood sentiment, and any research gaps worth filling in.</p>
+      <p>Each page shows a quick take, a "why this fits" summary tied to your buyer profile, top concerns tailored to that listing, construction pressure, a schools metadata table (rating, enrollment, student/teacher ratio, ethnicity distribution), neighborhood sentiment, and any research gaps worth filling in.</p>
       <p>Anything marked <strong>Not yet captured</strong> is unknown, not favorable. Ask for a deeper dive to fill in the research gaps before a final decision. Tap a finalist above to jump to its page; listing links open directly in the browser.</p>
     </div>
   </section>

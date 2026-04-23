@@ -49,7 +49,6 @@ const THEME_PATTERNS = {
   crime_safety: [/\bcrime\b/i, /\bunsafe\b/i, /\bpolice\b/i, /\btheft\b/i, /\bbreak[-\s]?in\b/i, /\bsuspicious\b/i, /\bsafety\b/i],
   traffic_commute: [/\btraffic\b/i, /\bcommute\b/i, /\bbackup\b/i, /\bcongestion\b/i, /\bspeeding\b/i, /\baccident\b/i, /\broad work\b/i, /\bwidening\b/i],
   community: [/\bcommunity\b/i, /\bneighbor/i, /\bhoa\b/i, /\bfamily/i, /\bfriendly\b/i, /\bevent/i, /\bplayground\b/i],
-  school_quality: [/\bschool\b/i, /\bteacher/i, /\bstudent/i, /\belementary\b/i, /\bmiddle school\b/i, /\bhigh school\b/i, /\bredistricting\b/i],
   livability: [/\bpark\b/i, /\btrail\b/i, /\bgrocery\b/i, /\brestaurant\b/i, /\bquiet\b/i, /\bwalkable\b/i, /\bgreenway\b/i, /\bsidewalk\b/i],
 };
 

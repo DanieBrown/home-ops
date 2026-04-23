@@ -133,6 +133,17 @@ html, body {
 }
 .custom-row button { flex-shrink: 0; }
 
+.free-input-row {
+  display: flex; gap: 10px; align-items: center; margin-top: 10px;
+}
+.free-input-row input[type="text"], .free-input-row input[type="number"] {
+  flex: 1;
+  background: var(--panel-alt); border: 1px solid var(--border);
+  color: var(--ink); border-radius: 10px;
+  padding: 10px 12px; font-size: 14px;
+}
+.free-input-row .unit { color: var(--ink-soft); font-size: 13px; flex-shrink: 0; }
+
 .text-input, .number-input {
   width: 100%;
   background: var(--panel-alt); border: 1px solid var(--border);

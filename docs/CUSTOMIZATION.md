@@ -21,8 +21,7 @@ Key sections to tune:
 - `search.hard_requirements`: price, bedrooms, garage, square footage, listing age, and similar gates
 - `soft_preferences`: lot, resale, layout, and livability preferences
 - `deal_breakers`: flood risk, busy roads, HOA, or similar hard negatives
-- `sentiment.weights`: neighborhood weighting model
-- `school_sentiment.weights`: school weighting model
+- `sentiment.weights`: neighborhood weighting model (`crime_safety`, `traffic_commute`, `community`, `livability`)
 - `financial`: down payment, closing cost, and payment assumptions
 - `workflow.shortlist.preserve_on_reset`: keep `data/shortlist.md` stable during recurring reset and hunt runs
 
