@@ -25,6 +25,7 @@
     "dashboard:build": "node scripts/system/run-dashboard.mjs --build",
     "reset:data": "node scripts/pipeline/reset-search-state.mjs",
     "scan": "node scripts/pipeline/scan-listings.mjs",
+    "scan:verify": "node scripts/pipeline/verify-pipeline-write.mjs",
     "portals:generate": "node scripts/config/generate-portals.mjs",
     "doctor": "node scripts/system/doctor.mjs",
     "verify": "node scripts/pipeline/verify-pipeline.mjs",

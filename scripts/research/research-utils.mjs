@@ -590,18 +590,6 @@ function buildSentimentSearchUrls(key, source, queries) {
     }
   }
 
-  if (key === 'nextdoor') {
-    for (const encoded of encodedQueries.slice(0, 3)) {
-      urls.push(`https://nextdoor.com/search/?query=${encoded}`);
-    }
-  }
-
-  if (key === 'facebook') {
-    for (const encoded of encodedQueries.slice(0, 3)) {
-      urls.push(`https://www.facebook.com/search/posts/?q=${encoded}`);
-    }
-  }
-
   return urls;
 }
 
@@ -624,8 +612,9 @@ export function buildSentimentSourcePlan(report, context) {
         loginRequired: source.login_required !== false,
         lookbackDays: Number.isFinite(source.lookback_days) ? source.lookback_days : null,
         // Facebook and Nextdoor require login and are reached via Playwright
-        // against the hosted session. Reddit and Google Maps are public and
-        // reachable via WebFetch, so workers can hit searchUrls directly.
+        // against the hosted session via communityUrls from community-lookup.
+        // Reddit and Google Maps are public and reachable via WebFetch, so
+        // only those sources expose searchUrls directly.
         browserSupported: key === 'facebook' || key === 'nextdoor',
         publicFetchSupported: key === 'reddit' || key === 'google_maps',
         searchUrls: buildSentimentSearchUrls(key, source, recommendedQueries),

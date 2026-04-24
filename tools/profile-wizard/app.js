@@ -1035,20 +1035,22 @@ function readCheckedOptions() {
   return Array.from(document.querySelectorAll('.option')).filter((node) => node.querySelector('input').checked).map((node) => node.dataset.value);
 }
 
-function renderRangeInputs({ field, minLabel, maxLabel, currentMin, currentMax, step }) {
+function renderRangeInputs({ field, minLabel, maxLabel, currentMin, currentMax, step, placeholderMin, placeholderMax }) {
   const current = state.answers[field] ?? {};
   const resolvedMin = current.min ?? currentMin ?? '';
   const resolvedMax = current.max ?? currentMax ?? '';
+  const minHint = placeholderMin ?? (field === 'price' ? 'e.g. 500000' : '');
+  const maxHint = placeholderMax ?? (field === 'price' ? 'e.g. 750000' : '');
   const target = document.getElementById('tile');
   target.innerHTML = `
     <h2>${escapeHtml(CURRENT_STEP.title)}</h2>
     <p class="tile-hint">${escapeHtml(CURRENT_STEP.hint ?? '')}</p>
     <div class="range-grid">
       <label>${escapeHtml(minLabel)}
-        <input class="number-input" type="number" id="range-min" step="${step}" value="${escapeAttr(resolvedMin)}" />
+        <input class="number-input" type="number" id="range-min" step="${step}" value="${escapeAttr(resolvedMin)}" placeholder="${escapeAttr(minHint)}" />
       </label>
       <label>${escapeHtml(maxLabel)}
-        <input class="number-input" type="number" id="range-max" step="${step}" value="${escapeAttr(resolvedMax)}" />
+        <input class="number-input" type="number" id="range-max" step="${step}" value="${escapeAttr(resolvedMax)}" placeholder="${escapeAttr(maxHint)}" />
       </label>
     </div>
     <div class="validation" id="validation"></div>

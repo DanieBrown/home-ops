@@ -45,6 +45,8 @@ When any of those flags are present:
 - Each selected platform should fill up to 3 pending homes per configured area.
 - Use the current search results to refill those area buckets even when the URLs appeared in older scan history.
 - If Zillow blocks with a sign-in, press-and-hold, or similar human-verification prompt, skip Zillow for the rest of the current scan, record the blocker, tell the user how to clear it manually, and continue scanning the other selected platforms. If Zillow was the only selected platform, finish the scan with a blocker summary.
+- If a single search-page scan exceeds the per-page wall-clock budget (default 45s) -- for example Zillow or Homes.com keeps the page in a loading state, returns a Cloudflare interstitial that never resolves, or hangs an `evaluate` call -- treat it as a navigation block, mark that platform as `skipped_blocked`, and move on. The same skip applies to any platform whose total wall-clock time exceeds the per-platform budget (default 150s). These budgets exist so the scan never hangs on a single portal; tune them in `scripts/pipeline/scan-listings.mjs` if a portal legitimately needs more time.
+- The block-pattern detector also catches common interstitial copy ("Just a moment", "Checking your browser", "Enable JavaScript and cookies", "PerimeterX", "Are you a robot", "One more step"), so portals like Homes.com that gate behind Cloudflare or PerimeterX usually fail fast on the first search URL instead of waiting for the wall-clock budget.
 
 For platforms that reject automated sign-in or keep surfacing anti-bot prompts, prefer the hosted real-Chrome path over the Playwright-managed browser path.
 
@@ -110,6 +112,24 @@ Rules:
 - Search-result cards from platform URLs are good enough to add to the pipeline.
 - WebSearch results must be verified before adding to the pipeline.
 - If a listing is clearly sold, pending, or off market, record it as skipped.
+
+## Pipeline Handoff -- Mandatory
+
+`scripts/pipeline/scan-listings.mjs` writes every accepted candidate directly into `data/pipeline.md` under the `Pending` section before exiting. The script logs one of:
+
+- `Pipeline file updated: data/pipeline.md (+N entries)`
+- `Pipeline file updated: data/pipeline.md (duplicates removed, no new entries appended)`
+- `Pipeline file not modified: no new entries passed filters`
+
+After the scan finishes, always run the write gate as a separate step:
+
+```
+npm run scan:verify
+```
+
+This invokes `scripts/pipeline/verify-pipeline-write.mjs`, which confirms `data/pipeline.md` exists, has valid `## Pending` and `## Processed` sections, and was modified recently. The contract hook (Claude + Copilot) enforces this run, so skipping it will block turn completion.
+
+If the verifier fails, re-run the scan or investigate the root cause -- do not edit `data/pipeline.md` by hand to silence the gate.
 
 ## Pipeline Format
 

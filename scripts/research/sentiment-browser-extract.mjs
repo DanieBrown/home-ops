@@ -29,6 +29,16 @@ const DEFAULT_PROFILE = 'chrome-host';
 const OUTPUT_DIR = join(ROOT, 'output', 'sentiment');
 const COMMUNITY_DIR = join(ROOT, 'output', 'communities');
 const SUPPORTED_BROWSER_SOURCES = new Set(['facebook', 'nextdoor']);
+const INVALID_COMMUNITY_PATTERNS = [
+  /map my location along with the neighborhood you are in at the moment/i,
+  /find my neighborhood/i,
+  /what neighborhood am i in/i,
+  /share my location/i,
+  /your approximiate location/i,
+  /this is the location information for the address you searched/i,
+  /you can share this map with the link below/i,
+  /^not found$/i,
+];
 // Browser-backed sources (Facebook / Nextdoor) only populate these sentiment
 // dimensions. Traffic-commute is sourced from the public extractor and NCDOT
 // so it's not included here.
@@ -41,13 +51,13 @@ const QUERY_PAUSE_MIN_MS = 2000;
 const QUERY_PAUSE_MAX_MS = 5000;
 const SCROLL_PAUSE_MIN_MS = 900;
 const SCROLL_PAUSE_MAX_MS = 1600;
-const MAX_SCROLLS_PER_PAGE = 3;
+const MAX_SCROLLS_PER_PAGE = 8;
 const MAX_QUERIES_PER_SOURCE = 6;
 
 // Quick-mode caps trade depth for latency when deep is running a progressive
 // pass. The numbers are roughly half the normal depth, which in practice lands
 // each target at ~1/3 the wall-clock time because scroll pauses dominate.
-const QUICK_MAX_SCROLLS_PER_PAGE = 1;
+const QUICK_MAX_SCROLLS_PER_PAGE = 3;
 const QUICK_MAX_QUERIES_PER_SOURCE = 3;
 const MAX_CONCURRENCY = 4;
 const SHORTLIST_SIZE_THRESHOLD = 5;
@@ -326,6 +336,33 @@ function normalizeText(value) {
   return String(value ?? '').replace(/\u00a0/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
+function buildNextdoorNeighborhoodUrl(community, city, state) {
+  const communitySlug = slugify(community).replace(/-/g, '');
+  const citySlug = slugify(city);
+  const stateSlug = slugify(state || 'NC').toLowerCase();
+  return communitySlug && citySlug && stateSlug
+    ? `https://nextdoor.com/neighborhood/${communitySlug}--${citySlug}--${stateSlug}/`
+    : null;
+}
+
+function buildFacebookSearchUrl(community, city) {
+  const query = encodeURIComponent(`${community} neighborhood ${city}`.trim());
+  return query ? `https://www.facebook.com/search/top?q=${query}` : null;
+}
+
+function sanitizeCommunityName(value) {
+  const community = normalizeText(value);
+  if (!community) {
+    return null;
+  }
+
+  if (INVALID_COMMUNITY_PATTERNS.some((pattern) => pattern.test(community))) {
+    return null;
+  }
+
+  return community;
+}
+
 function dedupeStrings(values) {
   return [...new Set(values.map((value) => normalizeText(value)).filter(Boolean))];
 }
@@ -409,9 +446,13 @@ async function ensureHostedSession(profileName) {
 }
 
 function buildBrowserSourceUrl(sourceKey, communityData) {
-  if (!communityData?.communityUrls) return null;
-  if (sourceKey === 'nextdoor') return communityData.communityUrls.nextdoor ?? null;
-  if (sourceKey === 'facebook') return communityData.communityUrls.facebook ?? null;
+  if (!communityData?.community) return null;
+  if (sourceKey === 'nextdoor') {
+    return buildNextdoorNeighborhoodUrl(communityData.community, communityData.city, communityData.state);
+  }
+  if (sourceKey === 'facebook') {
+    return buildFacebookSearchUrl(communityData.community, communityData.city);
+  }
   return null;
 }
 
@@ -421,7 +462,23 @@ function loadCommunityData(target) {
   const path = join(COMMUNITY_DIR, `${slug}.json`);
   if (!existsSync(path)) return null;
   try {
-    return JSON.parse(readFileSync(path, 'utf8'));
+    const parsed = JSON.parse(readFileSync(path, 'utf8'));
+    const community = sanitizeCommunityName(parsed?.community);
+    const status = parsed?.status === 'no-community-match' || !community
+      ? 'no-community-match'
+      : parsed?.status ?? 'ok';
+
+    return {
+      ...parsed,
+      community,
+      city: normalizeText(parsed?.city || target.city),
+      state: normalizeText(parsed?.state || target.state || 'NC'),
+      status,
+      communityUrls: community ? {
+        nextdoor: buildNextdoorNeighborhoodUrl(community, parsed?.city || target.city, parsed?.state || target.state || 'NC'),
+        facebook: buildFacebookSearchUrl(community, parsed?.city || target.city),
+      } : { nextdoor: null, facebook: null },
+    };
   } catch {
     return null;
   }
@@ -608,9 +665,7 @@ function detectBlockedReason(pageData) {
 
 async function extractCommunityPage(context, source, communityUrl, query, options = {}) {
   const attempts = [];
-  const maxScrolls = source.key === 'facebook'
-    ? 0
-    : options.quick ? QUICK_MAX_SCROLLS_PER_PAGE : MAX_SCROLLS_PER_PAGE;
+  const maxScrolls = options.quick ? QUICK_MAX_SCROLLS_PER_PAGE : MAX_SCROLLS_PER_PAGE;
   const allowedCategories = options.allowedCategories ?? null;
 
   const page = await context.newPage();
@@ -821,7 +876,7 @@ async function extractTarget(context, target, researchContext, cacheState, optio
           note: source.note,
           lookbackDays: source.lookbackDays,
           queryResults: [{
-            status: source.key === 'nextdoor' ? 'no-community-match' : 'no-community-url',
+            status: communityData?.status === 'no-community-match' ? 'no-community-match' : source.key === 'nextdoor' ? 'no-community-match' : 'no-community-url',
             query: '',
             searchUrl: '',
             finalUrl: '',
@@ -829,7 +884,9 @@ async function extractTarget(context, target, researchContext, cacheState, optio
             snippets: [],
             themes: [],
             reason: communityData
-              ? 'no community URL available for this source'
+              ? communityData.status === 'no-community-match'
+                ? 'community lookup did not produce a valid neighborhood; browser searches skipped'
+                : 'no community URL available for this source'
               : 'no community lookup found; run community-lookup.mjs first',
           }],
         });

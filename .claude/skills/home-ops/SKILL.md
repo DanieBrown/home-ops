@@ -53,7 +53,7 @@ Available commands:
   /home-ops {listing-url}   -> Evaluate a single listing and update the tracker
   /home-ops profile         -> Interview the buyer and update the profile files
   /home-ops init            -> Launch or confirm the hosted browser session for portal logins
-  /home-ops hunt            -> Reset generated state, scan fresh listings, and batch-evaluate the refreshed pipeline
+  /home-ops hunt            -> Reset, scan, batch-evaluate the refreshed pipeline, then run the deep shortlist flow (rerank, finalist gate, top-3 briefing PDF)
   /home-ops init --zillow --redfin --relator -> Initialize only those platform sessions in the hosted browser
   /home-ops evaluate        -> Evaluate one address or listing URL, or batch-evaluate pending pipeline homes when no target is supplied
   /home-ops compare         -> Compare and rank multiple homes
@@ -102,7 +102,7 @@ Prefer a subagent for `scan` because it can involve multiple pages and platform-
 
 `profile` should use the interactive question flow from `modes/profile.md` and keep the buyer-layer writes in the main agent.
 
-`hunt` should orchestrate `reset`, then `scan`, then `evaluate` sequentially. Do not overlap those three phases. If subagents are used, keep them inside the scan or evaluate phases rather than across the full hunt flow.
+`hunt` should orchestrate `reset`, then `scan`, then `evaluate`, then the `deep` shortlist batch branch sequentially. Do not overlap those four phases. The deep phase's internal step-6 fan-out is allowed and expected. If subagents are used outside the deep phase, keep them inside the scan or evaluate phases rather than across the full hunt flow. The contract hook in `scripts/hooks/contract-shared.mjs` enforces that every deep-shortlist script (`research-source-plan`, `sentiment-browser-extract`, `construction-check`, `deep-research-packet`, `shortlist-finalist-gate`, `review-tabs shortlist-top3`, `briefing-pdf`) actually runs before the turn ends.
 
 When multiple listings are being evaluated, the main agent should own the final tracker merge, pipeline edits, and summary. Workers should return full report drafts plus structured evaluation results or other staged output rather than racing to edit `data/listings.md` directly, and browser-backed verification should stay serialized across the run.
 

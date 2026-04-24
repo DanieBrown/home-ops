@@ -36,6 +36,24 @@
         "cwd": ".",
         "timeoutSec": 15
       }
+    ],
+    "stop": [
+      {
+        "type": "command",
+        "bash": "node scripts/hooks/on-stop.mjs",
+        "powershell": "node scripts/hooks/on-stop.mjs",
+        "cwd": ".",
+        "timeoutSec": 10
+      }
+    ],
+    "responseEnded": [
+      {
+        "type": "command",
+        "bash": "node scripts/hooks/on-stop.mjs",
+        "powershell": "node scripts/hooks/on-stop.mjs",
+        "cwd": ".",
+        "timeoutSec": 10
+      }
     ]
   }
 }

@@ -23,6 +23,7 @@ const PORTAL_ALIASES = {
   nextdoor: 'nextdoor',
   relator: 'realtor',
   'realtor.com': 'realtor',
+  'homes.com': 'homes',
 };
 
 const FALLBACK_PORTAL_TARGETS = {
@@ -42,6 +43,12 @@ const FALLBACK_PORTAL_TARGETS = {
     name: 'Realtor.com',
     baseUrl: 'https://www.realtor.com/',
     searchUrls: ['https://www.realtor.com/'],
+    loginRequired: true,
+  },
+  homes: {
+    name: 'Homes.com',
+    baseUrl: 'https://www.homes.com/',
+    searchUrls: ['https://www.homes.com/'],
     loginRequired: true,
   },
   facebook: {
@@ -67,13 +74,15 @@ const PLATFORM_FLAG_MAP = {
   '--realtor': 'realtor',
   '--realtor.com': 'realtor',
   '--relator': 'realtor',
+  '--homes': 'homes',
+  '--homes.com': 'homes',
 };
 
 const LOG_FILE_HEADER = 'opened_at\tclosed_at\tcaller\tprofile\tchannel\tplatforms\tuser_data_dir\tstatus\ttargets\n';
 
 const HELP_TEXT = `Usage:
   node browser-session.mjs [portal|configured|all|url] [--profile NAME] [--channel CHANNEL]
-  node browser-session.mjs --zillow --redfin --relator --facebook --nextdoor --greatschools [--searches] [--caller scan]
+  node browser-session.mjs --zillow --redfin --relator --homes --facebook --nextdoor --greatschools [--searches] [--caller scan]
   node browser-session.mjs configured --hosted --channel chrome [--caller setup]
   node browser-session.mjs --status [--profile NAME]
 
@@ -83,6 +92,7 @@ Examples:
   node browser-session.mjs --zillow --redfin --searches --caller scan
   node browser-session.mjs configured --hosted --channel chrome
   node browser-session.mjs --platform realtor --searches
+  node browser-session.mjs --homes --hosted --caller init
   node browser-session.mjs --facebook --nextdoor --hosted --caller init
   node browser-session.mjs --greatschools --hosted --caller research
   node browser-session.mjs --status --profile chrome-host

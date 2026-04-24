@@ -36,8 +36,11 @@ const PIPELINE_TEMPLATE = [
   '## Processed',
   '',
 ].join('\n');
-const NAVIGATION_TIMEOUT_MS = 20000;
+const NAVIGATION_TIMEOUT_MS = 15000;
 const SETTLE_TIMEOUT_MS = 2500;
+const SEARCH_PAGE_BUDGET_MS = 45000;
+const PLATFORM_BUDGET_MS = 150000;
+const DEFAULT_ACTION_TIMEOUT_MS = 15000;
 
 const PLATFORM_FLAG_MAP = {
   '--zillow': 'zillow',
@@ -66,6 +69,12 @@ const BLOCK_PATTERNS = [
   /unblock/i,
   /unusual traffic/i,
   /err_blocked_by_response/i,
+  /just a moment/i,
+  /checking your browser/i,
+  /enable javascript and cookies/i,
+  /one more step/i,
+  /are you a robot/i,
+  /perimeterx/i,
 ];
 
 const SOLD_PATTERNS = [
@@ -1142,6 +1151,42 @@ function buildManualActionMessage(platform, platformName, area, loginPrompt) {
   return `${platformName} | ${area} | this platform was skipped for the rest of this scan after a login or verification blocker. Check the refreshed hosted browser tab, complete any prompt manually, then rerun ${formatRerunCommand(platform)}.`;
 }
 
+function buildBudgetTimeoutResult(platform, platformName, area, url, loginPrompt, budgetMs) {
+  return {
+    extracted: 0,
+    duplicates: 0,
+    filtered: 0,
+    added: [],
+    blockers: [`${platformName} | ${area} | wall-clock budget of ${budgetMs}ms exceeded -- treating as a navigation block`],
+    pageAction: 'budget-timeout',
+    manualActionRequired: {
+      platform,
+      platformName,
+      area,
+      url,
+      message: buildManualActionMessage(platform, platformName, area, loginPrompt),
+    },
+  };
+}
+
+async function raceWithBudget(workPromise, budgetMs) {
+  let timeoutHandle = null;
+  const budgetPromise = new Promise((resolve) => {
+    timeoutHandle = setTimeout(() => resolve({ __budgetExceeded: true }), budgetMs);
+  });
+
+  try {
+    const winner = await Promise.race([workPromise, budgetPromise]);
+    if (winner && winner.__budgetExceeded) {
+      workPromise.catch(() => {});
+      return null;
+    }
+    return winner;
+  } finally {
+    if (timeoutHandle) clearTimeout(timeoutHandle);
+  }
+}
+
 async function closeBrowserConnection(browser) {
   if (!browser) {
     return;
@@ -1460,6 +1505,9 @@ async function main() {
       throw new Error('Hosted browser session is running, but no default context was exposed.');
     }
 
+    context.setDefaultTimeout(DEFAULT_ACTION_TIMEOUT_MS);
+    context.setDefaultNavigationTimeout(NAVIGATION_TIMEOUT_MS);
+
     for (const platform of selectedPlatforms) {
       if (blockedPlatforms.has(platform)) {
         continue;
@@ -1467,7 +1515,32 @@ async function main() {
 
       const config = portals[platform];
       const sourceKey = canonicalPlatformKey(platform);
+      const platformStartedAt = Date.now();
       for (const search of config.searchUrls) {
+        if (Date.now() - platformStartedAt > PLATFORM_BUDGET_MS) {
+          const areaLabel = search.area || 'Unknown area';
+          const blockerMessage = `${config.name} | ${areaLabel} | platform wall-clock budget of ${PLATFORM_BUDGET_MS}ms exceeded -- skipping remaining areas`;
+          blockers.push(blockerMessage);
+          historyRows.push({
+            url: search.url,
+            firstSeen: new Date().toISOString().slice(0, 10),
+            platform: config.name,
+            area: areaLabel,
+            address: '',
+            status: 'skipped_blocked',
+          });
+          manualActionsRequired.push({
+            platform,
+            platformName: config.name,
+            area: areaLabel,
+            url: search.url,
+            message: buildManualActionMessage(platform, config.name, areaLabel, config.loginPrompt),
+          });
+          blockedPlatforms.add(platform);
+          console.log(`Skipping remaining ${config.name} areas for this scan after exceeding the ${PLATFORM_BUDGET_MS}ms platform budget.`);
+          break;
+        }
+
         const areaLabel = search.area || 'Unknown area';
         const bucketKey = buildPendingBucketKey(sourceKey, areaLabel);
         let pendingCount = bucketKey ? (pendingCountsByBucket.get(bucketKey)?.count ?? 0) : 0;
@@ -1497,7 +1570,7 @@ async function main() {
         }
 
         console.log(`Scanning ${config.name} | ${areaLabel} | remaining slots: ${remainingSlots}`);
-        const result = await scanSearchPage(
+        const scanPromise = scanSearchPage(
           context,
           platform,
           config.name,
@@ -1511,6 +1584,11 @@ async function main() {
           historyRows,
           remainingSlots,
         );
+        let result = await raceWithBudget(scanPromise, SEARCH_PAGE_BUDGET_MS);
+        if (result === null) {
+          console.log(`Scan of ${config.name} | ${areaLabel} exceeded the ${SEARCH_PAGE_BUDGET_MS}ms per-page budget -- treating as a navigation block.`);
+          result = buildBudgetTimeoutResult(platform, config.name, areaLabel, search.url, config.loginPrompt, SEARCH_PAGE_BUDGET_MS);
+        }
 
         extractedCount += result.extracted;
         duplicateCount += result.duplicates;
@@ -1533,8 +1611,17 @@ async function main() {
     await closeBrowserConnection(browser);
   }
 
-  appendPipelineEntries(addedCandidates.map((candidate) => buildPipelineLine(candidate, candidate.platformName)));
+  const newPipelineLines = addedCandidates.map((candidate) => buildPipelineLine(candidate, candidate.platformName));
+  appendPipelineEntries(newPipelineLines);
   appendScanHistory(historyRows);
+
+  if (newPipelineLines.length > 0) {
+    console.log(`Pipeline file updated: ${PIPELINE_PATH} (+${newPipelineLines.length} entries)`);
+  } else if (refreshResult.duplicatesRemoved > 0) {
+    console.log(`Pipeline file updated: ${PIPELINE_PATH} (duplicates removed, no new entries appended)`);
+  } else {
+    console.log(`Pipeline file not modified: no new entries passed filters (${PIPELINE_PATH})`);
+  }
 
   console.log(`Platforms scanned: ${selectedPlatforms.map((platform) => portals[platform].name).join(', ')}`);
   console.log('Session bootstrap actions taken: reused existing hosted Chrome session and refreshed reusable search tabs');

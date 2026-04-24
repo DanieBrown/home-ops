@@ -270,8 +270,9 @@ function main() {
   server.listen(options.port, '127.0.0.1', () => {
     const url = `http://127.0.0.1:${options.port}/`;
     console.log('Home-Ops Profile Wizard is running.');
+    console.log(`  READY ${url}`);
     console.log(`  Open in your browser (or via Chrome MCP): ${url}`);
-    console.log('  Complete the questions, click Submit, and return to your AI chatbot.');
+    console.log('  Complete the questions, click Submit, then tell your AI chatbot you are done.');
     if (options.once) {
       console.log('  Server will exit after the first successful submission.');
     }

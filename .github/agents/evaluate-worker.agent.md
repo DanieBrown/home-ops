@@ -1,8 +1,9 @@
 ---
 description: "Use for Home-Ops batch evaluate subagent work on one canonical property. Draft a report from a prepared evidence packet, return structured scoring metadata, and avoid live browser, deduplication, and tracker merge work."
 name: "Evaluate Worker"
-tools: []
+tools: ['playwright/*']
 agents: []
+model: GPT-5.4
 argument-hint: "One canonical property evidence packet"
 user-invocable: false
 ---

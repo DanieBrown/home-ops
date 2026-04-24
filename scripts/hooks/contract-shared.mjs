@@ -18,14 +18,32 @@ const req = (id, description, patterns, opts = {}) => ({
 });
 
 const CONTRACTS = {
+  scan: {
+    mode: 'scan',
+    description: '/home-ops scan -- portal scan that writes to data/pipeline.md',
+    required: [
+      req('scan', 'Portal scan for new listings', [
+        /scan-listings\.mjs\b/,
+        /npm(?:\.cmd)?\s+run\s+scan\b/,
+      ]),
+      req('pipeline-write-verified', 'Verify scan updated data/pipeline.md', [
+        /verify-pipeline-write\.mjs\b/,
+        /npm(?:\.cmd)?\s+run\s+scan:verify\b/,
+      ], { requires: ['scan'], isGate: true }),
+    ],
+  },
   hunt: {
     mode: 'hunt',
-    description: '/home-ops hunt -- reset, scan, evaluate pending',
+    description: '/home-ops hunt -- session check (auto-init if needed), reset, scan, evaluate pending, deep shortlist',
     required: [
+      req('browser-status', 'Hosted browser session check (auto-runs init if closed)', [
+        /npm(?:\.cmd)?\s+run\s+browser:status\b/,
+        /browser-session\.mjs[^\n]*--status\b/,
+      ]),
       req('reset:data', 'Clear generated search state', [
         /npm(?:\.cmd)?\s+run\s+reset:data\b/,
         /reset-search-state\.mjs\b/,
-      ]),
+      ], { requires: ['browser-status'] }),
       req('verify-pipeline', 'Post-reset pipeline health check', [
         /verify-pipeline\.mjs\b/,
         /npm(?:\.cmd)?\s+run\s+verify\b/,
@@ -34,10 +52,14 @@ const CONTRACTS = {
         /scan-listings\.mjs\b/,
         /npm(?:\.cmd)?\s+run\s+scan\b/,
       ], { requires: ['verify-pipeline'] }),
+      req('pipeline-write-verified', 'Verify scan updated data/pipeline.md', [
+        /verify-pipeline-write\.mjs\b/,
+        /npm(?:\.cmd)?\s+run\s+scan:verify\b/,
+      ], { requires: ['scan'] }),
       req('evaluate-pending', 'Batch evaluate the pending pipeline', [
         /evaluate-pending\.mjs\b/,
         /npm(?:\.cmd)?\s+run\s+evaluate:pending\b/,
-      ], { requires: ['scan'] }),
+      ], { requires: ['pipeline-write-verified'] }),
       req('merge-tracker', 'Merge staged tracker TSVs', [
         /merge-tracker\.mjs\b/,
         /npm(?:\.cmd)?\s+run\s+merge\b/,
@@ -50,8 +72,41 @@ const CONTRACTS = {
         /review-tabs\.mjs[^\n]*shortlist-top10/,
         /npm(?:\.cmd)?\s+run\s+browser:review[^\n]*shortlist-top10/,
       ], {
+        requires: ['reset:data', 'verify-pipeline', 'scan', 'pipeline-write-verified', 'evaluate-pending', 'merge-tracker', 'research-audit'],
+      }),
+      req('research-source-plan', 'Deep phase: shortlist source plan (fan-out 6a)', [
+        /research-source-plan\.mjs[^\n]*--shortlist/,
+        /npm(?:\.cmd)?\s+run\s+plan:research[^\n]*--shortlist/,
+      ], { requires: ['review-tabs-top10'] }),
+      req('sentiment-extract', 'Deep phase: shortlist sentiment capture (fan-out 6c)', [
+        /sentiment-browser-extract\.mjs[^\n]*--shortlist/,
+        /npm(?:\.cmd)?\s+run\s+extract:sentiment[^\n]*--shortlist/,
+      ], { requires: ['review-tabs-top10'] }),
+      req('construction-check', 'Deep phase: shortlist NCDOT construction check (fan-out 6d)', [
+        /construction-check\.mjs[^\n]*--shortlist/,
+        /npm(?:\.cmd)?\s+run\s+check:construction[^\n]*--shortlist/,
+      ], { requires: ['review-tabs-top10'] }),
+      req('deep-research-packet', 'Deep phase: research packets per shortlisted home', [
+        /deep-research-packet\.mjs[^\n]*--shortlist/,
+        /npm(?:\.cmd)?\s+run\s+prepare:deep[^\n]*--shortlist/,
+      ], { requires: ['research-source-plan', 'sentiment-extract', 'construction-check'] }),
+      req('finalist-gate', 'Deep phase: finalist gate before promoting top 3', [
+        /shortlist-finalist-gate\.mjs\b/,
+        /npm(?:\.cmd)?\s+run\s+gate:finalists\b/,
+      ], { requires: ['deep-research-packet'] }),
+      req('review-tabs-top3', 'Deep phase: replace tabs with top-3 finalists', [
+        /review-tabs\.mjs[^\n]*shortlist-top3/,
+        /npm(?:\.cmd)?\s+run\s+browser:review[^\n]*shortlist-top3/,
+      ], {
         isGate: true,
-        requires: ['reset:data', 'verify-pipeline', 'scan', 'evaluate-pending', 'merge-tracker', 'research-audit'],
+        requires: ['research-source-plan', 'sentiment-extract', 'construction-check', 'deep-research-packet', 'finalist-gate'],
+      }),
+      req('briefing-pdf', 'Deep phase: render top-3 briefing PDF', [
+        /briefing-pdf\.mjs\b/,
+        /npm(?:\.cmd)?\s+run\s+brief:top3\b/,
+      ], {
+        isGate: true,
+        requires: ['review-tabs-top3'],
       }),
     ],
   },
@@ -132,6 +187,9 @@ export function detectMode(prompt) {
 
   const hunt = /(?:^|\s)\/home-ops[-\s]+hunt\b/i;
   if (hunt.test(p)) return 'hunt';
+
+  const scan = /(?:^|\s)\/home-ops[-\s]+scan\b/i;
+  if (scan.test(p)) return 'scan';
 
   const deep = /(?:^|\s)\/home-ops[-\s]+deep\b/i;
   if (deep.test(p)) {

@@ -38,6 +38,17 @@ const OUTPUT_DIR = join(ROOT, 'output', 'communities');
 const LOOKUP_URL = 'https://www.mapdevelopers.com/what-neighborhood-am-i-in.php';
 const PAGE_TIMEOUT_MS = 30000;
 const RESULT_TIMEOUT_MS = 15000;
+const INVALID_COMMUNITY_PATTERNS = [
+  /map my location along with the neighborhood you are in at the moment/i,
+  /find my neighborhood/i,
+  /what neighborhood am i in/i,
+  /share my location/i,
+  /your approximiate location/i,
+  /this is the location information for the address you searched/i,
+  /you can share this map with the link below/i,
+  /^not found$/i,
+];
+const FIELD_LABEL_TOKENS = new Set(['address', 'city', 'state', 'zipcode', 'zip', 'code', 'county']);
 
 const HELP_TEXT = `Usage:
   node community-lookup.mjs --shortlist [--profile chrome-host]
@@ -97,6 +108,60 @@ function parseArgs(argv) {
 
 function normalizeText(value) {
   return String(value ?? '').replace(/ /g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+function isFieldLabelCluster(value) {
+  const tokens = normalizeText(value).toLowerCase().split(/\s+/).filter(Boolean);
+  return tokens.length >= 3 && tokens.every((token) => FIELD_LABEL_TOKENS.has(token));
+}
+
+function sanitizeCommunityName(value) {
+  let community = normalizeText(value)
+    .replace(/^Neighborhood\s*[:\-]\s*/i, '')
+    .replace(/\b(?:subdivision|community|hoa|neighborhood)\b\s*$/i, '')
+    .replace(/[.,;:]+$/, '')
+    .trim();
+
+  if (!community) {
+    return null;
+  }
+
+  if (community.length > 80 || isFieldLabelCluster(community)) {
+    return null;
+  }
+
+  if (FIELD_LABEL_TOKENS.has(community.toLowerCase())) {
+    return null;
+  }
+
+  if (/https?:\/\//i.test(community)) {
+    return null;
+  }
+
+  if (/^\d+\s+.*\b(?:street|st|road|rd|avenue|ave|drive|dr|lane|ln|court|ct|place|pl|terrace|ter|boulevard|blvd|way|parkway|pkwy)\b/i.test(community)) {
+    return null;
+  }
+
+  if (/\b\d{5}\b/.test(community) || (community.includes(',') && /\b(?:north carolina|south carolina|nc|sc)\b/i.test(community))) {
+    return null;
+  }
+
+  if (INVALID_COMMUNITY_PATTERNS.some((pattern) => pattern.test(community))) {
+    return null;
+  }
+
+  return community;
+}
+
+function pickCommunityCandidate(candidates) {
+  for (const candidate of candidates ?? []) {
+    const community = sanitizeCommunityName(candidate);
+    if (community) {
+      return community;
+    }
+  }
+
+  return null;
 }
 
 function buildManualTarget(config) {
@@ -171,16 +236,18 @@ async function ensureHostedSession(profileName) {
 }
 
 function buildCommunityUrls(community, city, state) {
-  if (!community) {
+  const sanitizedCommunity = sanitizeCommunityName(community);
+  if (!sanitizedCommunity) {
     return { nextdoor: null, facebook: null };
   }
-  const communitySlug = slugify(community);
+  const communitySlug = slugify(sanitizedCommunity);
+  const nextdoorCommunitySlug = communitySlug.replace(/-/g, '');
   const citySlug = slugify(city);
   const stateSlug = slugify(state).toLowerCase();
-  const nextdoor = communitySlug && citySlug && stateSlug
-    ? `https://nextdoor.com/neighborhood/${communitySlug}--${citySlug}--${stateSlug}/`
+  const nextdoor = nextdoorCommunitySlug && citySlug && stateSlug
+    ? `https://nextdoor.com/neighborhood/${nextdoorCommunitySlug}--${citySlug}--${stateSlug}/`
     : null;
-  const facebookQuery = encodeURIComponent(`${community} neighborhood ${city}`.trim());
+  const facebookQuery = encodeURIComponent(`${sanitizedCommunity} neighborhood ${city}`.trim());
   const facebook = `https://www.facebook.com/search/top?q=${facebookQuery}`;
   return { nextdoor, facebook };
 }
@@ -203,7 +270,7 @@ async function scrapeCommunity(context, target) {
     await page.waitForTimeout(1500);
 
     const input = await page.waitForSelector(
-      'input[id*="address" i], input[name*="address" i], input[placeholder*="address" i], #address',
+      'input[id*="address" i]:visible, input[name*="address" i]:visible, input[placeholder*="address" i]:visible, #address:visible',
       { timeout: RESULT_TIMEOUT_MS },
     ).catch(() => null);
     if (!input) {
@@ -214,18 +281,27 @@ async function scrapeCommunity(context, target) {
     await input.fill(fullAddress);
     await page.waitForTimeout(600);
 
-    // Click the search button. Use a broad text/css match: the page's primary
-    // button is labeled "Search" and sits next to the input.
-    const clicked = await page.evaluate(() => {
-      const candidates = Array.from(document.querySelectorAll('button, input[type="submit"], input[type="button"], a.btn'));
-      const match = candidates.find((el) => {
-        const label = (el.innerText || el.value || '').trim().toLowerCase();
-        return label === 'search' || label === 'go' || label === 'lookup';
-      });
-      if (!match) return false;
-      match.click();
-      return true;
-    });
+    // Submit the typed address through the page's dedicated address lookup
+    // control. Use a real Playwright click so the site receives the same
+    // interaction path as the manual flow.
+    const addressButton = page.locator('button:visible, input[type="submit"]:visible, input[type="button"]:visible, a.btn:visible')
+      .filter({ hasText: /^Find Address$/i })
+      .first();
+    let clicked = false;
+    if (await addressButton.count()) {
+      await addressButton.click();
+      clicked = true;
+    }
+
+    if (!clicked) {
+      const fallbackButton = page.locator('button:visible, input[type="submit"]:visible, input[type="button"]:visible, a.btn:visible')
+        .filter({ hasText: /^(Search|Go|Lookup)$/i })
+        .first();
+      if (await fallbackButton.count()) {
+        await fallbackButton.click();
+        clicked = true;
+      }
+    }
     if (!clicked) {
       // Fall back to submitting the enclosing form by pressing Enter.
       await input.press('Enter').catch(() => {});
@@ -236,27 +312,121 @@ async function scrapeCommunity(context, target) {
     // "Neighborhood" to appear; if none appears within the timeout we treat it
     // as an unmatched address.
     await page.waitForFunction(() => {
-      const text = document.body?.innerText ?? '';
-      return /Neighborhood\s*[:\-]/i.test(text)
+      const normalize = (value) => String(value ?? '').replace(/\u00a0/g, ' ').replace(/\s+/g, ' ').trim();
+      const invalidPatterns = [
+        /map my location along with the neighborhood you are in at the moment/i,
+        /find my neighborhood/i,
+        /what neighborhood am i in/i,
+        /share my location/i,
+        /your approximiate location/i,
+        /this is the location information for the address you searched/i,
+        /you can share this map with the link below/i,
+      ];
+      const fieldLabelTokens = new Set(['address', 'city', 'state', 'zipcode', 'zip', 'code', 'county']);
+      const isFieldLabelCluster = (value) => {
+        const tokens = normalize(value).toLowerCase().split(/\s+/).filter(Boolean);
+        return tokens.length >= 3 && tokens.every((token) => fieldLabelTokens.has(token));
+      };
+      const sanitizeCommunityName = (value) => {
+        let community = normalize(value)
+          .replace(/^Neighborhood\s*[:\-]\s*/i, '')
+          .replace(/\b(?:subdivision|community|hoa|neighborhood)\b\s*$/i, '')
+          .replace(/[.,;:]+$/, '')
+          .trim();
+        if (!community) return null;
+        if (community.length > 80 || isFieldLabelCluster(community)) return null;
+        if (fieldLabelTokens.has(community.toLowerCase())) return null;
+        if (/https?:\/\//i.test(community)) return null;
+        if (/^\d+\s+.*\b(?:street|st|road|rd|avenue|ave|drive|dr|lane|ln|court|ct|place|pl|terrace|ter|boulevard|blvd|way|parkway|pkwy)\b/i.test(community)) return null;
+        if (/\b\d{5}\b/.test(community) || (community.includes(',') && /\b(?:north carolina|south carolina|nc|sc)\b/i.test(community))) return null;
+        if (invalidPatterns.some((pattern) => pattern.test(community))) return null;
+        return community;
+      };
+
+      const candidates = [];
+      const pushCandidate = (value) => {
+        const candidate = normalize(value);
+        if (candidate && !candidates.includes(candidate)) {
+          candidates.push(candidate);
+        }
+      };
+
+      for (const element of Array.from(document.querySelectorAll('body *'))) {
+        const label = normalize(element.innerText || element.textContent || '');
+        if (label.toLowerCase() !== 'neighborhood') {
+          continue;
+        }
+
+        pushCandidate(element.nextElementSibling?.innerText || element.nextElementSibling?.textContent || element.nextElementSibling?.value || '');
+
+        const parent = element.parentElement;
+        if (parent) {
+          const siblings = Array.from(parent.children);
+          const index = siblings.indexOf(element);
+          if (index !== -1) {
+            pushCandidate(siblings[index + 1]?.innerText || siblings[index + 1]?.textContent || siblings[index + 1]?.value || '');
+          }
+        }
+      }
+
+      const text = normalize(document.body?.innerText ?? '');
+      return candidates.some((candidate) => Boolean(sanitizeCommunityName(candidate)))
         || /This address is (?:not|in)/i.test(text)
         || /no neighborhood/i.test(text);
     }, { timeout: RESULT_TIMEOUT_MS }).catch(() => {});
 
     const scraped = await page.evaluate(() => {
-      const text = (document.body?.innerText ?? '').replace(/ /g, ' ');
-      // Match "Neighborhood: Wescott" or "Neighborhood - Wescott".
+      const normalize = (value) => String(value ?? '').replace(/ /g, ' ').replace(/\s+/g, ' ').trim();
+      const text = normalize(document.body?.innerText ?? '');
+      const candidates = [];
+      const pushCandidate = (value) => {
+        const candidate = normalize(value);
+        if (candidate && !candidates.includes(candidate)) {
+          candidates.push(candidate);
+        }
+      };
+
+      for (const element of Array.from(document.querySelectorAll('body *'))) {
+        const label = normalize(element.innerText || element.textContent || '');
+        if (label.toLowerCase() !== 'neighborhood') {
+          continue;
+        }
+
+        pushCandidate(element.nextElementSibling?.innerText || element.nextElementSibling?.textContent || element.nextElementSibling?.value || '');
+
+        const parent = element.parentElement;
+        if (parent) {
+          const siblings = Array.from(parent.children);
+          const index = siblings.indexOf(element);
+          if (index !== -1) {
+            pushCandidate(siblings[index + 1]?.innerText || siblings[index + 1]?.textContent || siblings[index + 1]?.value || '');
+          }
+        }
+      }
+
+      for (const element of Array.from(document.querySelectorAll('[id*="neighborhood" i], [name*="neighborhood" i], input, textarea'))) {
+        pushCandidate(element.value || element.getAttribute('value') || element.innerText || '');
+      }
+
       const neighborhoodMatch = text.match(/Neighborhood\s*[:\-]\s*([^\n\r]+)/i);
+      if (neighborhoodMatch) {
+        pushCandidate(neighborhoodMatch[1]);
+      }
+
+      const lines = (document.body?.innerText ?? '').split(/\r?\n+/).map(normalize).filter(Boolean);
+      for (let index = 0; index < lines.length; index += 1) {
+        if (lines[index].toLowerCase() === 'neighborhood') {
+          pushCandidate(lines[index + 1] ?? '');
+        }
+      }
+
       return {
         bodyExcerpt: text.slice(0, 2000),
-        neighborhood: neighborhoodMatch ? neighborhoodMatch[1].trim() : '',
+        candidates,
       };
     });
 
-    let community = normalizeText(scraped.neighborhood);
-    // Trim noisy trailing labels ("Subdivision", "(HOA)", etc.) that some
-    // mapdevelopers responses append.
-    community = community.replace(/\b(?:subdivision|community|hoa|neighborhood)\b\s*$/i, '').trim();
-    community = community.replace(/[.,;:]+$/, '').trim();
+    const community = pickCommunityCandidate(scraped.candidates);
 
     if (!community || /^(?:n\/a|none|no neighborhood)$/i.test(community)) {
       return { community: null, status: 'no-community-match', raw: scraped.bodyExcerpt };
@@ -273,18 +443,24 @@ async function lookupTarget(context, target, cacheState) {
 
   if (cacheState?.cache && !cacheState.disabled && !cacheState.refresh && cacheKey) {
     const existing = getCacheEntry(cacheState.cache, cacheKey);
-    if (existing && isCacheFresh(existing, COMMUNITY_CACHE_TTL_MS)) {
+    const cachedCommunity = sanitizeCommunityName(existing?.community);
+    const cachedStatus = cachedCommunity
+      ? (existing?.status || 'ok')
+      : existing?.status === 'no-community-match'
+        ? 'no-community-match'
+        : null;
+    if (existing && isCacheFresh(existing, COMMUNITY_CACHE_TTL_MS) && cachedStatus) {
       cacheState.hits += 1;
-      const urls = buildCommunityUrls(existing.community, target.city, target.state);
+      const urls = buildCommunityUrls(cachedCommunity, target.city, target.state);
       const cachedOutput = {
         generatedAt: new Date().toISOString(),
         address: target.address,
         city: target.city,
         state: target.state,
         reportPath: target.relativePath,
-        community: existing.community,
+        community: cachedCommunity,
         communityUrls: urls,
-        status: existing.status || (existing.community ? 'ok' : 'no-community-match'),
+        status: cachedStatus,
         source: 'cache',
       };
       const outputPath = buildOutputPath(target);

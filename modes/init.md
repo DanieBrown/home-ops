@@ -27,15 +27,18 @@ If the command arguments include any of these flags, treat them as a platform fi
 - `--zillow`
 - `--redfin`
 - `--relator`
+- `--homes`
 - `--facebook`
 - `--nextdoor`
 - `--greatschools`
 
 Treat `--realtor` as a backward-compatible alias, but prefer `--relator` in commands and documentation.
+Treat `--homes.com` as a backward-compatible alias for `--homes`.
 Treat `--greatschools` as a direct school-research target rather than a login-required portal.
 
 When no platform flags are present:
-- Initialize all login-required browser targets from `portals.yml`, including Facebook and Nextdoor when they are configured as login-required sentiment sources.
+- Initialize all login-required browser targets from `portals.yml`, including Homes.com when it is configured as a login-required listing portal and Facebook/Nextdoor when they are configured as login-required sentiment sources.
+- Confirm that the hosted Chrome window opens one tab per `login_required: true` platform in `portals.yml`. If Homes.com is present in `portals.yml` but no Homes.com tab appears, stop and report it instead of silently continuing.
 
 ## Behavior
 
