@@ -905,6 +905,30 @@ function syncZillowSearchUrl(rawUrl, requirements) {
       };
     }
 
+    if (requirements.hoaMaxMonthly > 0) {
+      filterState.hoa = {
+        ...(filterState.hoa ?? {}),
+        max: requirements.hoaMaxMonthly,
+      };
+    }
+
+    if (requirements.yearBuiltMin > 0) {
+      filterState.built = {
+        ...(filterState.built ?? {}),
+        min: requirements.yearBuiltMin,
+      };
+    }
+
+    if (requirements.homeTypePreference === 'resale_only') {
+      filterState.isMultiFamily = { value: false };
+      filterState.isApartment = { value: false };
+      filterState.isCondo = { value: false };
+      filterState.isTownhouse = { value: false };
+      filterState.isManufactured = { value: false };
+      filterState.isLotLand = { value: false };
+      filterState.nc = { value: false };
+    }
+
     state.filterState = filterState;
     parsed.searchParams.set('searchQueryState', JSON.stringify(state));
     return parsed.toString();
@@ -918,7 +942,10 @@ function syncRedfinSearchUrl(rawUrl, requirements) {
     const parsed = new URL(String(rawUrl).trim());
     const [pathnameRoot, rawFilterSegment] = parsed.pathname.split('/filter/');
     const existingTokens = rawFilterSegment ? rawFilterSegment.split(',').filter(Boolean) : [];
-    const managedPrefixes = ['min-price=', 'max-price=', 'min-beds=', 'min-baths=', 'min-sqft=', 'hoa='];
+    const managedPrefixes = [
+      'min-price=', 'max-price=', 'min-beds=', 'min-baths=', 'min-sqft=', 'hoa=',
+      'min-parking-spots=', 'min-year-built=', 'property-type=', 'include=',
+    ];
     const unmanagedTokens = existingTokens.filter((token) => !managedPrefixes.some((prefix) => token.startsWith(prefix)));
     const syncedTokens = [...unmanagedTokens];
     const minPrice = formatCompactThousands(requirements.priceMin);
@@ -949,6 +976,19 @@ function syncRedfinSearchUrl(rawUrl, requirements) {
       syncedTokens.push(`hoa=${requirements.hoaMaxMonthly}`);
     }
 
+    if (requirements.garageMin > 0) {
+      syncedTokens.push(`min-parking-spots=${requirements.garageMin}`);
+    }
+
+    if (requirements.yearBuiltMin > 0) {
+      syncedTokens.push(`min-year-built=${requirements.yearBuiltMin}`);
+    }
+
+    if (requirements.homeTypePreference === 'resale_only') {
+      syncedTokens.push('property-type=house');
+      syncedTokens.push('include=resale-only');
+    }
+
     parsed.pathname = syncedTokens.length > 0
       ? `${pathnameRoot.replace(/\/+$/, '')}/filter/${syncedTokens.join(',')}`
       : pathnameRoot;
@@ -967,7 +1007,7 @@ function syncRealtorSearchUrl(rawUrl, requirements) {
     }
 
     const [searchRoot, areaSegment, ...existingSegments] = segments;
-    const managedPrefixes = ['beds-', 'baths-', 'price-', 'sqft-', 'garage-', 'age-'];
+    const managedPrefixes = ['beds-', 'baths-', 'price-', 'sqft-', 'garage-', 'age-', 'hoa-', 'built-after-', 'type-'];
     const unmanagedSegments = existingSegments.filter((segment) => !managedPrefixes.some((prefix) => segment.startsWith(prefix)));
     const syncedSegments = [...unmanagedSegments];
 
@@ -997,6 +1037,18 @@ function syncRealtorSearchUrl(rawUrl, requirements) {
       syncedSegments.push(`age-${requirements.maxListingAgeDays}`);
     }
 
+    if (requirements.hoaMaxMonthly > 0) {
+      syncedSegments.push(`hoa-${requirements.hoaMaxMonthly}`);
+    }
+
+    if (requirements.yearBuiltMin > 0) {
+      syncedSegments.push(`built-after-${requirements.yearBuiltMin}`);
+    }
+
+    if (requirements.homeTypePreference === 'resale_only') {
+      syncedSegments.push('type-single-family-home');
+    }
+
     parsed.pathname = `/${[searchRoot, areaSegment, ...syncedSegments].join('/')}`;
     return parsed.toString();
   } catch {
@@ -1009,41 +1061,67 @@ function syncHomesSearchUrl(rawUrl, requirements) {
     const parsed = new URL(String(rawUrl).trim());
     const params = parsed.searchParams;
 
-    params.delete('price_min');
-    params.delete('price_max');
-    params.delete('bed_min');
-    params.delete('bath_min');
-    params.delete('sqft_min');
-    params.delete('garage_min');
-    params.delete('days_on_site_max');
+    const HOMES_QUERY_KEYS = [
+      'price-min', 'price-max', 'bath-min', 'bath-max', 'sfmin',
+      'yb-min', 'hoa-max', 'gsr-min', 'gsr-max', 'parking', 'dom-max', 'ssit',
+    ];
+    for (const key of HOMES_QUERY_KEYS) {
+      params.delete(key);
+    }
 
     if (requirements.priceMin > 0) {
-      params.set('price_min', String(requirements.priceMin));
+      params.set('price-min', String(requirements.priceMin));
     }
 
     if (requirements.priceMax < Number.MAX_SAFE_INTEGER) {
-      params.set('price_max', String(requirements.priceMax));
-    }
-
-    if (requirements.bedsMin > 0) {
-      params.set('bed_min', String(Math.ceil(requirements.bedsMin)));
+      params.set('price-max', String(requirements.priceMax));
     }
 
     if (requirements.bathsMin > 0) {
-      params.set('bath_min', String(requirements.bathsMin));
+      params.set('bath-min', String(Math.ceil(requirements.bathsMin)));
     }
 
     if (requirements.sqftMin > 0) {
-      params.set('sqft_min', String(requirements.sqftMin));
+      params.set('sfmin', String(requirements.sqftMin));
+    }
+
+    if (requirements.yearBuiltMin > 0) {
+      params.set('yb-min', String(requirements.yearBuiltMin));
+    }
+
+    if (requirements.hoaMaxMonthly > 0) {
+      params.set('hoa-max', String(requirements.hoaMaxMonthly));
+    }
+
+    if (requirements.schoolsMinRating > 0) {
+      params.set('gsr-min', String(requirements.schoolsMinRating));
+      params.set('gsr-max', '10');
     }
 
     if (requirements.garageMin > 0) {
-      params.set('garage_min', String(requirements.garageMin));
+      params.set('parking', String(requirements.garageMin));
     }
 
     if (requirements.maxListingAgeDays < Number.MAX_SAFE_INTEGER) {
-      params.set('days_on_site_max', String(requirements.maxListingAgeDays));
+      params.set('dom-max', `${requirements.maxListingAgeDays}d`);
     }
+
+    const segments = parsed.pathname.split('/').filter(Boolean);
+    const baseSegments = [];
+    for (const segment of segments) {
+      if (segment === 'houses-for-sale') continue;
+      if (segment === 'resale' || segment === 'new-construction') continue;
+      if (/^\d+(?:-to-\d+)?-bedroom$/.test(segment)) continue;
+      baseSegments.push(segment);
+    }
+    if (requirements.homeTypePreference === 'resale_only') {
+      baseSegments.push('resale');
+    }
+    if (requirements.bedsMin > 0) {
+      const min = Math.ceil(requirements.bedsMin);
+      baseSegments.push(`${min}-to-${Math.max(min + 1, 5)}-bedroom`);
+    }
+    parsed.pathname = `/${baseSegments.join('/')}/`;
 
     return parsed.toString();
   } catch {
@@ -1123,6 +1201,9 @@ function loadRequirements(parsed = readYamlFile(PROFILE_PATH)) {
     sqftMin: Number.parseInt(hard.sqft_min ?? 0, 10),
     maxListingAgeDays: Number.parseInt(hard.max_listing_age_days ?? Number.MAX_SAFE_INTEGER, 10),
     hoaMaxMonthly: Number.parseInt(soft.hoa_max_monthly ?? 0, 10),
+    yearBuiltMin: Number.parseInt(soft.year_built_min ?? 0, 10),
+    homeTypePreference: String(hard.home_type_preference ?? '').trim().toLowerCase(),
+    schoolsMinRating: Number.parseInt(hard.schools_min_rating ?? 0, 10),
   };
 }
 

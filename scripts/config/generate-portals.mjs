@@ -190,7 +190,10 @@ function redfinUrl(slugs, warnings, areaName) {
 }
 
 function homesUrl(slugs) {
-  return `https://www.homes.com/${slugs.zillowSlug}/houses-for-sale/`;
+  // Use the bare /{slug}/ path, not /houses-for-sale/. The /houses-for-sale/
+  // segment is a SFH filter that also drops Coming Soon listings; the syncer
+  // adds /resale/ and /N-to-M-bedroom/ path segments on its own.
+  return `https://www.homes.com/${slugs.zillowSlug}/`;
 }
 
 const PORTAL_DEFINITIONS = {

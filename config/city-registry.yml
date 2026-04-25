@@ -41,3 +41,13 @@ cities:
     # Zillow and Realtor.com canonical slugs use the singular form.
     zillow_slug: "willow-spring-nc"
     realtor_slug: "Willow-Spring_NC"
+
+  - name: "Raleigh"
+    state: "NC"
+    redfin_city_id: 14916
+    primary_zip: "27601"
+
+  - name: "Wake Forest"
+    state: "NC"
+    redfin_city_id: 19454
+    primary_zip: "27587"
