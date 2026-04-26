@@ -79,18 +79,25 @@ const CONTRACTS = {
         /research-source-plan\.mjs[^\n]*--shortlist/,
         /npm(?:\.cmd)?\s+run\s+plan:research[^\n]*--shortlist/,
       ], { requires: ['review-tabs'], isGate: true }),
-      req('sentiment-extract', 'Deep phase: shortlist sentiment capture (fan-out 6c)', [
+      req('community-lookup', 'Deep phase: shortlist community name resolution (fan-out 6b)', [
+        /community-lookup\.mjs[^\n]*--shortlist/,
+        /npm(?:\.cmd)?\s+run\s+lookup:community[^\n]*--shortlist/,
+      ], { requires: ['review-tabs'], isGate: true }),
+      req('sentiment-extract', 'Deep phase: shortlist browser sentiment capture — Facebook/Nextdoor (fan-out 6c)', [
         /sentiment-browser-extract\.mjs[^\n]*--shortlist/,
         /npm(?:\.cmd)?\s+run\s+extract:sentiment[^\n]*--shortlist/,
-      ], { requires: ['review-tabs'], isGate: true }),
+      ], { requires: ['community-lookup'], isGate: true }),
       req('construction-check', 'Deep phase: shortlist NCDOT construction check (fan-out 6d)', [
         /construction-check\.mjs[^\n]*--shortlist/,
         /npm(?:\.cmd)?\s+run\s+check:construction[^\n]*--shortlist/,
       ], { requires: ['review-tabs'], isGate: true }),
+      req('sentiment-public-extract', 'Deep phase: shortlist public sentiment — Reddit/Google Maps/traffic_commute (fan-out 6e)', [
+        /sentiment-public-extract\.mjs[^\n]*--shortlist/,
+      ], { requires: ['review-tabs'], isGate: true }),
       req('deep-research-packet', 'Deep phase: research packets per shortlisted home', [
         /deep-research-packet\.mjs[^\n]*--shortlist/,
         /npm(?:\.cmd)?\s+run\s+prepare:deep[^\n]*--shortlist/,
-      ], { requires: ['research-source-plan', 'sentiment-extract', 'construction-check'], isGate: true }),
+      ], { requires: ['research-source-plan', 'community-lookup', 'sentiment-extract', 'construction-check', 'sentiment-public-extract'], isGate: true }),
       req('promote-finalists', 'Deep phase: auto-promote top-3 into Refined Top 3 section', [
         /promote-finalists\.mjs\b/,
         /npm(?:\.cmd)?\s+run\s+promote:finalists\b/,
@@ -104,7 +111,7 @@ const CONTRACTS = {
         /npm(?:\.cmd)?\s+run\s+browser:review[^\n]*shortlist-top3/,
       ], {
         isGate: true,
-        requires: ['research-source-plan', 'sentiment-extract', 'construction-check', 'deep-research-packet', 'promote-finalists', 'finalist-gate'],
+        requires: ['research-source-plan', 'community-lookup', 'sentiment-extract', 'construction-check', 'sentiment-public-extract', 'deep-research-packet', 'promote-finalists', 'finalist-gate'],
       }),
       req('briefing-pdf', 'Deep phase: render top-3 briefing PDF', [
         /briefing-pdf\.mjs\b/,
@@ -152,18 +159,25 @@ const CONTRACTS = {
         /research-source-plan\.mjs[^\n]*--shortlist/,
         /npm(?:\.cmd)?\s+run\s+plan:research[^\n]*--shortlist/,
       ], { requires: ['research-audit'], isGate: true }),
-      req('sentiment-extract', 'Shortlist sentiment capture (fan-out 6b)', [
+      req('community-lookup', 'Shortlist community name resolution — Nextdoor/Facebook key (fan-out 6b)', [
+        /community-lookup\.mjs[^\n]*--shortlist/,
+        /npm(?:\.cmd)?\s+run\s+lookup:community[^\n]*--shortlist/,
+      ], { requires: ['research-audit'], isGate: true }),
+      req('sentiment-extract', 'Shortlist browser sentiment capture — Facebook/Nextdoor (fan-out 6c)', [
         /sentiment-browser-extract\.mjs[^\n]*--shortlist/,
         /npm(?:\.cmd)?\s+run\s+extract:sentiment[^\n]*--shortlist/,
-      ], { requires: ['research-audit'], isGate: true }),
-      req('construction-check', 'Shortlist NCDOT construction check (fan-out 6c)', [
+      ], { requires: ['community-lookup'], isGate: true }),
+      req('construction-check', 'Shortlist NCDOT construction check (fan-out 6d)', [
         /construction-check\.mjs[^\n]*--shortlist/,
         /npm(?:\.cmd)?\s+run\s+check:construction[^\n]*--shortlist/,
+      ], { requires: ['research-audit'], isGate: true }),
+      req('sentiment-public-extract', 'Shortlist public sentiment — Reddit/Google Maps/traffic_commute (fan-out 6e)', [
+        /sentiment-public-extract\.mjs[^\n]*--shortlist/,
       ], { requires: ['research-audit'], isGate: true }),
       req('deep-research-packet', 'Deep research packets per shortlisted home', [
         /deep-research-packet\.mjs[^\n]*--shortlist/,
         /npm(?:\.cmd)?\s+run\s+prepare:deep[^\n]*--shortlist/,
-      ], { requires: ['research-source-plan', 'sentiment-extract', 'construction-check'], isGate: true }),
+      ], { requires: ['research-source-plan', 'community-lookup', 'sentiment-extract', 'construction-check', 'sentiment-public-extract'], isGate: true }),
       req('promote-finalists', 'Auto-promote top-3 into Refined Top 3 section', [
         /promote-finalists\.mjs\b/,
         /npm(?:\.cmd)?\s+run\s+promote:finalists\b/,
@@ -177,7 +191,7 @@ const CONTRACTS = {
         /npm(?:\.cmd)?\s+run\s+browser:review[^\n]*shortlist-top3/,
       ], {
         isGate: true,
-        requires: ['research-audit', 'research-source-plan', 'sentiment-extract', 'construction-check', 'deep-research-packet', 'promote-finalists', 'finalist-gate'],
+        requires: ['research-audit', 'research-source-plan', 'community-lookup', 'sentiment-extract', 'construction-check', 'sentiment-public-extract', 'deep-research-packet', 'promote-finalists', 'finalist-gate'],
       }),
       req('briefing-pdf', 'Render top-3 briefing PDF', [
         /briefing-pdf\.mjs\b/,

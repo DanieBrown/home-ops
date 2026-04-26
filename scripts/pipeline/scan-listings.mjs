@@ -241,10 +241,15 @@ function canonicalizeUrl(rawUrl) {
   }
 }
 
-function normalizeSearchPageKey(rawUrl) {
+function normalizeSearchPageKey(rawUrl, platform) {
   try {
     const parsed = new URL(String(rawUrl).trim());
-    const pathname = parsed.pathname.replace(/\/+$/, '') || '/';
+    let pathname = parsed.pathname.replace(/\/+$/, '') || '/';
+    // Redfin embeds filter params in the path (/filter/min-price=...); strip them so
+    // an already-open city tab is reused even if the filter string differs.
+    if (platform === 'redfin') {
+      pathname = (pathname.split('/filter/')[0]).replace(/\/+$/, '') || '/';
+    }
     return `${parsed.origin}${pathname}`;
   } catch {
     return String(rawUrl ?? '').trim();
@@ -272,14 +277,14 @@ function urlMatchesPlatform(rawUrl, platform) {
 }
 
 function findReusableSearchPage(context, platform, targetUrl) {
-  const targetKey = normalizeSearchPageKey(targetUrl);
+  const targetKey = normalizeSearchPageKey(targetUrl, platform);
 
   return context.pages().find((page) => {
     const currentUrl = page.url();
     return currentUrl
       && urlMatchesPlatform(currentUrl, platform)
       && !DETAIL_URL_PATTERNS[platform].test(currentUrl)
-      && normalizeSearchPageKey(currentUrl) === targetKey;
+      && normalizeSearchPageKey(currentUrl, platform) === targetKey;
   }) ?? null;
 }
 
@@ -747,12 +752,14 @@ function parseCandidate(platform, area, rawItem) {
     rawItem.ariaLabel,
     rawItem.text,
   ].filter(Boolean).join(' '));
-  const explicitAddress = parseAddressFromText([
-    rawItem.anchorText,
-    rawItem.addressText,
-    rawItem.text,
-    rawItem.ariaLabel,
-  ].filter(Boolean).join(' '));
+  const explicitAddress = parseAddressFromText(
+    [rawItem.anchorText, rawItem.addressText, rawItem.text, rawItem.ariaLabel]
+      .filter(Boolean)
+      .join(' ')
+      // strip sqft values (e.g. "2,810 Sq Ft") that precede the street number
+      // on Homes.com cards and confuse the address-start regex
+      .replace(/[\d,]+\s+(?:sq\.?\s*ft|sqft)\b/gi, ''),
+  );
   const fallbackAddress = deriveAddressFromUrl(platform, href);
   const resolvedAddress = explicitAddress ?? fallbackAddress;
   const addressParts = resolvedAddress ? splitAddress(resolvedAddress) : { address: null, city: null, stateZip: null };
@@ -1484,20 +1491,28 @@ async function scanSearchPage(context, platform, platformName, area, url, loginP
       address: '',
       status: 'skipped_blocked',
     });
+
+    // A confirmed bot-detection block kills the whole platform to avoid wasting time.
+    // Zero listing cards without a detected block pattern means the page loaded but
+    // had no matching results (or selectors missed) — only skip this area, not all
+    // remaining areas, so other cities for this platform still get scanned.
+    const isPlatformKillingBlock = Boolean(blockMatch);
     return {
       extracted: 0,
       duplicates: 0,
       filtered: 0,
       added: [],
-      blockers: [`${platformName} | ${area} | ${bodyPreview || extracted.title || 'no listing cards found'}`],
+      blockers: [`${platformName} | ${area} | ${blockMatch ? 'bot/captcha: ' : ''}${bodyPreview || extracted.title || 'no listing cards found'}`],
       pageAction: preparedPage.action,
-      manualActionRequired: {
-        platform,
-        platformName,
-        area,
-        url,
-        message: buildManualActionMessage(platform, platformName, area, loginPrompt),
-      },
+      manualActionRequired: isPlatformKillingBlock
+        ? {
+            platform,
+            platformName,
+            area,
+            url,
+            message: buildManualActionMessage(platform, platformName, area, loginPrompt),
+          }
+        : null,
     };
   }
 

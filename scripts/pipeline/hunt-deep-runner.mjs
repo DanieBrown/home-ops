@@ -8,9 +8,11 @@
  *
  * Steps:
  *   1. research-source-plan      — build per-home sentiment/school/development source plan
- *   2. sentiment-browser-extract — capture Facebook/Nextdoor evidence via hosted browser
- *   3. construction-check        — fetch NCDOT construction signals
- *   4. deep-research-packet      — assemble one packet per shortlisted home
+ *   2. community-lookup          — resolve each address to its named community (Nextdoor/Facebook key)
+ *   3. sentiment-browser-extract — capture Facebook/Nextdoor evidence via hosted browser
+ *   4. construction-check        — fetch NCDOT construction signals
+ *   5. sentiment-public-extract  — fetch Reddit/Google Maps public sentiment (traffic_commute sole source)
+ *   6. deep-research-packet      — assemble one packet per shortlisted home
  *
  * After this runner exits 0, the main agent reads output/deep-packets/ and
  * launches one subagent per home (see hunt.md Step 5b and modes/deep.md step 9).
@@ -36,8 +38,14 @@ const PHASES = [
     args: ['scripts/research/research-source-plan.mjs', '--shortlist', '--type', 'all'],
   },
   {
+    contractId: 'community-lookup',
+    label: 'Shortlist community name resolution (Nextdoor/Facebook key)',
+    cmd: NODE,
+    args: ['scripts/research/community-lookup.mjs', '--shortlist', '--profile', 'chrome-host'],
+  },
+  {
     contractId: 'sentiment-extract',
-    label: 'Shortlist sentiment extraction',
+    label: 'Shortlist browser sentiment extraction (Facebook/Nextdoor)',
     cmd: NODE,
     args: ['scripts/research/sentiment-browser-extract.mjs', '--shortlist', '--profile', 'chrome-host', '--concurrency', '4'],
   },
@@ -46,6 +54,12 @@ const PHASES = [
     label: 'Shortlist NCDOT construction check',
     cmd: NODE,
     args: ['scripts/research/construction-check.mjs', '--shortlist'],
+  },
+  {
+    contractId: 'sentiment-public-extract',
+    label: 'Shortlist public sentiment extraction (Reddit/Google Maps — traffic_commute source)',
+    cmd: NODE,
+    args: ['scripts/research/sentiment-public-extract.mjs', '--shortlist'],
   },
   {
     contractId: 'deep-research-packet',

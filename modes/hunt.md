@@ -140,9 +140,9 @@ npm.cmd run hunt:deep
 Use a **600000ms timeout** (10 minutes).
 
 **The runner handles these steps internally — do not call them separately:**
-- research-source-plan → sentiment-browser-extract → construction-check → deep-research-packet
+- research-source-plan → community-lookup → sentiment-browser-extract → construction-check → sentiment-public-extract → deep-research-packet
 
-The runner exits 0 when all four prep steps succeed and the packets are written to `output/deep-packets/`. If it exits non-zero, fix the failing step before continuing.
+The runner exits 0 when all six prep steps succeed and the packets are written to `output/deep-packets/`. If it exits non-zero, fix the failing step before continuing.
 
 #### 5b. Per-home subagent fan-out
 
