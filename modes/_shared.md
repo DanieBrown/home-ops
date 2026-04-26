@@ -70,12 +70,23 @@ Before asking the user any follow-up question after a command has started, run t
 1. Confirm every required script for the active mode has either run successfully or failed with a concrete blocker that prevents downstream steps.
 2. If a required script has not been run yet, run it now instead of asking the user if you should continue.
 3. Only ask the user a follow-up when one of these is true:
-   - a missing prerequisite must be supplied by the user,
+   - a missing prerequisite must be supplied by the user (e.g., manual portal sign-in),
    - a destructive override decision is required,
-   - a hard external blocker prevents all remaining required steps.
+   - a hard external blocker prevents all remaining required steps AND every self-recovery action has already been attempted.
 4. For all other conditions (partial evidence, blocked source, thin worker output, timeout on one source), record the gap and continue the command to completion.
 
+### Hard Rule: Never Offer Choices Mid-Command
+
+Do NOT ask "would you like to retry / restart / troubleshoot / continue?" after a script failure.
+
+When a phase script exits non-zero or a runner reports a failure:
+- If the failure is browser/session-related and the session can be re-initialized without user action: attempt `npm.cmd run browser:status` once, then `npm.cmd run browser:setup` once, then retry the failed phase once.
+- If the failure is still unrecoverable after one auto-recovery attempt, OR if it is a CDP timeout, connection lost, or browser launch failure: write `.home-ops/contract-abort.json` with the specific failure reason and end the turn. Report what happened and what the user must do manually to resume (e.g., restart the hosted browser, then re-run `/home-ops hunt`).
+- Never present a menu of options. Never ask the user to choose between retry, restart, or troubleshoot. Decide and act (or abort cleanly).
+
 This hook applies to all modes, especially `hunt`, `evaluate`, and `deep`.
+
+NEVER terminate a batch job to run the next step. Always make sure that we wait for the completion of a batch job before moving on to run the next one as the order of these scripts is meant to be sequential.
 
 ---
 

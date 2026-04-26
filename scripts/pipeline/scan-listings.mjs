@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'fs';
+import { appendFileSync, existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'fs';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 import { chromium } from 'playwright';
@@ -14,6 +14,9 @@ import {
 import { parseListingRow as parseListingRowFull } from '../shared/listings.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
+const HOME_OPS_DIR = join(ROOT, '.home-ops');
+const SCAN_RUNNING_PATH = join(HOME_OPS_DIR, 'scan-running.json');
+const SCAN_COMPLETE_PATH = join(HOME_OPS_DIR, 'scan-complete.json');
 const PORTALS_PATH = join(ROOT, 'portals.yml');
 const PROFILE_PATH = join(ROOT, 'config', 'profile.yml');
 const PIPELINE_PATH = join(ROOT, 'data', 'pipeline.md');
@@ -89,9 +92,12 @@ const SOLD_PATTERNS = [
 
 const ADDRESS_PATTERN = /\b\d{1,5}\s+[^|,]+(?:\s+[^|,]+)*,\s*[A-Za-z .'-]+,\s*[A-Z]{2}(?:\s+\d{5})?\b/;
 
+const ZILLOW_BLOCKED_PATH = join(HOME_OPS_DIR, 'zillow-session-blocked.json');
+
 const HELP_TEXT = `Usage:
   node scan-listings.mjs
   node scan-listings.mjs --zillow --redfin --relator --homes
+  node scan-listings.mjs --no-zillow --redfin --relator --homes
   node scan-listings.mjs --profile chrome-host
 
 Options:
@@ -100,6 +106,7 @@ Options:
   --relator     Scan Realtor.com only.
   --realtor     Backward-compatible alias for --relator.
   --homes       Scan Homes.com only.
+  --no-zillow   Skip Zillow entirely (useful when Zillow bot detection is active).
   --profile     Hosted browser profile to reuse. Defaults to chrome-host.
   --help        Show this help text.`;
 
@@ -135,6 +142,7 @@ function parseArgs(argv) {
   const config = {
     profileName: DEFAULT_PROFILE,
     selectedPlatforms: new Set(),
+    excludedPlatforms: new Set(),
     help: false,
   };
 
@@ -149,6 +157,11 @@ function parseArgs(argv) {
     if (arg === '--profile') {
       config.profileName = argv[index + 1] ?? '';
       index += 1;
+      continue;
+    }
+
+    if (arg === '--no-zillow') {
+      config.excludedPlatforms.add('zillow');
       continue;
     }
 
@@ -707,6 +720,16 @@ function deriveAddressFromUrl(platform, url) {
       const address = parts[parts.length - 5].replace(/-/g, ' ');
       return `${address}, ${city}, ${state} ${zip}`;
     }
+
+    // homes.com URL format: /property/<address-city-state-zip>/<id>/
+    // e.g. /property/123-main-st-apex-nc-27502/12345678/
+    if (platform === 'homes') {
+      const slug = segments[1] ?? '';
+      if (!slug) {
+        return null;
+      }
+      return slug.replace(/-/g, ' ').replace(/\s+/g, ' ').trim();
+    }
   } catch {
     return null;
   }
@@ -937,6 +960,16 @@ function syncZillowSearchUrl(rawUrl, requirements) {
   }
 }
 
+function redfinDaysOnMarketToken(days) {
+  if (days <= 1) return '1day';
+  if (days <= 7) return '1wk';
+  if (days <= 14) return '2wk';
+  if (days <= 30) return '1mo';
+  if (days <= 90) return '3mo';
+  if (days <= 180) return '6mo';
+  return null;
+}
+
 function syncRedfinSearchUrl(rawUrl, requirements) {
   try {
     const parsed = new URL(String(rawUrl).trim());
@@ -944,7 +977,7 @@ function syncRedfinSearchUrl(rawUrl, requirements) {
     const existingTokens = rawFilterSegment ? rawFilterSegment.split(',').filter(Boolean) : [];
     const managedPrefixes = [
       'min-price=', 'max-price=', 'min-beds=', 'min-baths=', 'min-sqft=', 'hoa=',
-      'min-parking-spots=', 'min-year-built=', 'property-type=', 'include=',
+      'min-parking=', 'min-year-built=', 'max-days-on-market=', 'property-type=', 'include=',
     ];
     const unmanagedTokens = existingTokens.filter((token) => !managedPrefixes.some((prefix) => token.startsWith(prefix)));
     const syncedTokens = [...unmanagedTokens];
@@ -977,17 +1010,25 @@ function syncRedfinSearchUrl(rawUrl, requirements) {
     }
 
     if (requirements.garageMin > 0) {
-      syncedTokens.push(`min-parking-spots=${requirements.garageMin}`);
+      syncedTokens.push(`min-parking=${requirements.garageMin}`);
     }
 
     if (requirements.yearBuiltMin > 0) {
       syncedTokens.push(`min-year-built=${requirements.yearBuiltMin}`);
     }
 
+    if (requirements.maxListingAgeDays < Number.MAX_SAFE_INTEGER) {
+      const domToken = redfinDaysOnMarketToken(requirements.maxListingAgeDays);
+      if (domToken) {
+        syncedTokens.push(`max-days-on-market=${domToken}`);
+      }
+    }
+
     if (requirements.homeTypePreference === 'resale_only') {
       syncedTokens.push('property-type=house');
-      syncedTokens.push('include=resale-only');
     }
+
+    syncedTokens.push('include=forsale+fsbo');
 
     parsed.pathname = syncedTokens.length > 0
       ? `${pathnameRoot.replace(/\/+$/, '')}/filter/${syncedTokens.join(',')}`
@@ -1149,7 +1190,7 @@ function syncPlatformSearchUrl(platform, rawUrl, requirements) {
   return rawUrl;
 }
 
-function loadPortalsConfig(selectedPlatforms, requirements) {
+function loadPortalsConfig(selectedPlatforms, requirements, excludedPlatforms = new Set()) {
   const parsed = readYamlFile(PORTALS_PATH);
   const platformsNode = parsed.platforms ?? {};
   const configured = {};
@@ -1157,6 +1198,9 @@ function loadPortalsConfig(selectedPlatforms, requirements) {
   for (const [rawKey, rawValue] of Object.entries(platformsNode)) {
     const key = canonicalPlatformKey(rawKey);
     if (selectedPlatforms.size > 0 && !selectedPlatforms.has(key)) {
+      continue;
+    }
+    if (excludedPlatforms.has(key)) {
       continue;
     }
 
@@ -1277,6 +1321,21 @@ async function closeBrowserConnection(browser) {
     browser.close().catch(() => {}),
     new Promise((resolve) => setTimeout(resolve, 1000)),
   ]);
+}
+
+async function scrollToRevealListings(page) {
+  try {
+    await page.evaluate(async () => {
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      const step = window.innerHeight || 800;
+      for (let i = 0; i < 6; i += 1) {
+        window.scrollBy(0, step);
+        await sleep(350);
+      }
+      window.scrollTo(0, 0);
+      await sleep(200);
+    });
+  } catch {}
 }
 
 async function ensureHostedSession(profileName) {
@@ -1410,6 +1469,7 @@ async function scanSearchPage(context, platform, platformName, area, url, loginP
   }
 
   const page = preparedPage.page;
+  await scrollToRevealListings(page);
   const extracted = await extractRawItems(page, platform);
   const blockMatch = detectBlockedOrChallenged({ title: extracted.title, bodyText: extracted.bodyText });
   if (blockMatch || extracted.items.length === 0) {
@@ -1541,10 +1601,32 @@ async function main() {
     return;
   }
 
+  mkdirSync(HOME_OPS_DIR, { recursive: true });
+  if (existsSync(SCAN_COMPLETE_PATH)) unlinkSync(SCAN_COMPLETE_PATH);
+  writeFileSync(SCAN_RUNNING_PATH, JSON.stringify({ pid: process.pid, started_at: new Date().toISOString() }));
+
   const session = await ensureHostedSession(options.profileName);
   const profile = readYamlFile(PROFILE_PATH);
   const requirements = loadRequirements(profile);
-  const portals = loadPortalsConfig(options.selectedPlatforms, requirements);
+
+  // If Zillow was blocked in a previous scan this session, auto-exclude it unless --zillow was explicitly requested
+  const autoExcluded = new Set(options.excludedPlatforms);
+  if (!options.selectedPlatforms.has('zillow') && existsSync(ZILLOW_BLOCKED_PATH)) {
+    try {
+      const blockedData = JSON.parse(readFileSync(ZILLOW_BLOCKED_PATH, 'utf8'));
+      const ageMs = Date.now() - new Date(blockedData.blocked_at ?? 0).getTime();
+      if (ageMs < 24 * 60 * 60 * 1000) { // 24-hour TTL
+        console.log('Zillow auto-skipped: bot detection was active in a recent scan. Use --zillow to override.');
+        autoExcluded.add('zillow');
+      } else {
+        unlinkSync(ZILLOW_BLOCKED_PATH); // expired, remove it
+      }
+    } catch {
+      // ignore malformed file
+    }
+  }
+
+  const portals = loadPortalsConfig(options.selectedPlatforms, requirements, autoExcluded);
   const selectedPlatforms = Object.keys(portals);
 
   if (selectedPlatforms.length === 0) {
@@ -1684,6 +1766,12 @@ async function main() {
           manualActionsRequired.push(result.manualActionRequired);
           blockedPlatforms.add(platform);
           console.log(`Skipping remaining ${config.name} areas for this scan after blocker in ${areaLabel}.`);
+          // Write a session-level flag so the next scan auto-skips Zillow (24-hour TTL)
+          if (platform === 'zillow') {
+            try {
+              writeFileSync(ZILLOW_BLOCKED_PATH, JSON.stringify({ blocked_at: new Date().toISOString(), area: areaLabel }));
+            } catch { /* non-fatal */ }
+          }
           break;
         }
       }
@@ -1745,6 +1833,7 @@ async function main() {
       : '\nNo new listings qualify.');
   }
 
+  writeFileSync(SCAN_COMPLETE_PATH, JSON.stringify({ completed_at: new Date().toISOString(), added: addedCandidates.length }));
   process.exit(0);
 }
 

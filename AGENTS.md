@@ -20,7 +20,7 @@ Execution model:
 - On Windows PowerShell, prefer `npm.cmd` over `npm` if execution policy blocks `npm.ps1`.
 - Reuse the hosted browser session created by `/home-ops init` or `npm.cmd run browser:setup`; do not try to bootstrap a new session from scan, evaluate, or hunt.
 - Keep Playwright-backed listing verification and fact extraction serialized against the hosted browser session. Do not run multiple browser checks in parallel.
-- In hunt mode, run reset -> scan -> evaluate sequentially. Do not overlap those phases.
+- In hunt mode, run reset -> scan -> evaluate sequentially. Do not overlap those phases. Do not terminate any running batch jobs.
 - For batch evaluate with no explicit target, deduplicate homes by normalized address + city before dispatching report work.
 - Use one report-writing worker per canonical home. If the queue is large, dispatch workers in waves of up to 5.
 - Keep tracker merges, shortlist updates, and processed-pipeline edits in the main agent. Subagents should return evidence and report drafts only.

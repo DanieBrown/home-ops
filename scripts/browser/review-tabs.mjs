@@ -137,7 +137,16 @@ async function readUtf8(filePath) {
 
 async function extractReviewTargetFromReport(projectRoot, reportPath) {
   const absoluteReportPath = resolveWorkspacePath(projectRoot, reportPath);
-  const content = await readUtf8(absoluteReportPath);
+  let content;
+  try {
+    content = await readUtf8(absoluteReportPath);
+  } catch (err) {
+    if (err.code === 'ENOENT') {
+      console.warn(`[warn] Skipping shortlist entry — report not found: ${reportPath}`);
+      return null;
+    }
+    throw err;
+  }
   const urlLine = content.split(/\r?\n/).find((line) => line.startsWith('**URL:**'));
 
   if (urlLine) {
@@ -155,21 +164,27 @@ function validateFinalistGate(projectRoot, rows, config) {
     return;
   }
 
-  const blocked = rows.map((row) => {
-    const report = parseReport(projectRoot, row.reportPath);
+  const blocked = rows.flatMap((row) => {
+    let report;
+    try {
+      report = parseReport(projectRoot, row.reportPath);
+    } catch (err) {
+      if (err.code === 'ENOENT' || String(err.message).includes('ENOENT')) {
+        console.warn(`[warn] Skipping finalist gate check — report not found: ${row.reportPath}`);
+        return [];
+      }
+      throw err;
+    }
     const audit = auditParsedReport(report);
     const blockers = getCriticalAuditFindings(audit, {
       headings: ['Neighborhood Sentiment', 'School Review', 'Development and Infrastructure'],
       strictWarnings: true,
     });
 
-    return {
-      address: row.address,
-      city: row.city,
-      reportPath: report.relativePath,
-      blockers,
-    };
-  }).filter((row) => row.blockers.length > 0);
+    return blockers.length > 0
+      ? [{ address: row.address, city: row.city, reportPath: report.relativePath, blockers }]
+      : [];
+  });
 
   if (blocked.length === 0) {
     return;

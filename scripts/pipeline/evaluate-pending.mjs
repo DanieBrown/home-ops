@@ -49,6 +49,7 @@ const PLATFORM_LABELS = {
   zillow: 'Zillow',
   redfin: 'Redfin',
   realtor: 'Realtor.com',
+  homes: 'Homes.com',
   'local-report': 'Local report',
   other: 'Other source',
 };
@@ -56,9 +57,10 @@ const PLATFORM_LABELS = {
 const PLATFORM_PRIORITY = {
   'local-report': 0,
   zillow: 1,
-  redfin: 2,
-  realtor: 3,
-  other: 4,
+  redfin: 1,
+  realtor: 1,
+  homes: 1,
+  other: 2,
 };
 
 const BLOCK_PATTERNS = [
@@ -125,8 +127,6 @@ const ACTIVE_PATTERNS = [
 const ADDRESS_PATTERN = /\b\d{1,5}\s+[A-Za-z0-9.'# -]+\s+(street|st|road|rd|avenue|ave|lane|ln|drive|dr|court|ct|circle|cir|boulevard|blvd|way|place|pl|parkway|pkwy|trail|trl|terrace|ter|highway|hwy)\b/i;
 const FULL_ADDRESS_PATTERN = /(\d{1,5}\s+[A-Za-z0-9.'# -]+?),\s*([A-Za-z .'-]+),\s*([A-Z]{2})(?:\s+(\d{5}))?/i;
 const INLINE_ADDRESS_PATTERN = /(\d{1,5}\s+[A-Za-z0-9.'# -]+?)\s+([A-Za-z .'-]+)\s+(NC|SC|VA|GA|TN)\s+(\d{5})/i;
-const CITY_STATE_ONLY_PATTERN = /^[A-Za-z .'-]+,\s*[A-Z]{2}(?:\s+\d{5})?$/i;
-const STREET_SUFFIX_PATTERN = /\b(?:street|st|road|rd|avenue|ave|boulevard|blvd|drive|dr|lane|ln|court|ct|circle|cir|parkway|pkwy|place|pl|trail|trl|terrace|ter|way|loop|highway|hwy|run|bend|grove|point|path|trace|ridge|view)\b/i;
 const REPORT_FILENAME_PATTERN = /^(\d+)-(.+)-(\d{4}-\d{2}-\d{2})\.md$/i;
 
 const HELP_TEXT = `Usage:
@@ -218,6 +218,9 @@ function detectPlatformFromUrl(value) {
   }
   if (url.includes('realtor.com')) {
     return 'realtor';
+  }
+  if (url.includes('homes.com')) {
+    return 'homes';
   }
   return 'other';
 }
@@ -412,73 +415,8 @@ function capitalizeWords(value) {
     .join(' ');
 }
 
-function sanitizeAddressSourceText(value) {
-  return String(value ?? '')
-    .replace(/^\s*\d[\d,]*\s+sq\.?\s*ft\s+/i, '')
-    .replace(/^\s*\d[\d,]*\s+square\s+feet\s+/i, '')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
-function looksLikeStreetAddress(value) {
-  const text = sanitizeAddressSourceText(value);
-  if (!text || CITY_STATE_ONLY_PATTERN.test(text)) {
-    return false;
-  }
-
-  return /^\d{1,5}\s+/.test(text) && STREET_SUFFIX_PATTERN.test(text);
-}
-
-function normalizeAddressParts(parts, fallbackCity = '') {
-  return {
-    address: sanitizeAddressSourceText(parts?.address ?? ''),
-    city: String(parts?.city ?? '').trim() || fallbackCity,
-    state: String(parts?.state ?? '').trim(),
-    zip: String(parts?.zip ?? '').trim(),
-  };
-}
-
-function chooseBestAddressParts(candidates, fallbackCity = '') {
-  const normalized = candidates.map((candidate) => normalizeAddressParts(candidate, fallbackCity));
-  const streetAddress = normalized.find((candidate) => looksLikeStreetAddress(candidate.address));
-  if (streetAddress) {
-    return streetAddress;
-  }
-
-  return normalized.find((candidate) => candidate.address || candidate.city) ?? normalizeAddressParts({}, fallbackCity);
-}
-
-function extractAddressPartsFromText(value, fallbackCity = '') {
-  const text = String(value ?? '').replace(/\s+/g, ' ').trim();
-  if (!text) {
-    return normalizeAddressParts({}, fallbackCity);
-  }
-
-  const fullMatch = text.match(FULL_ADDRESS_PATTERN);
-  if (fullMatch) {
-    return normalizeAddressParts({
-      address: fullMatch[1],
-      city: fullMatch[2],
-      state: fullMatch[3],
-      zip: fullMatch[4] ?? '',
-    }, fallbackCity);
-  }
-
-  const inlineMatch = text.match(INLINE_ADDRESS_PATTERN);
-  if (inlineMatch) {
-    return normalizeAddressParts({
-      address: inlineMatch[1],
-      city: inlineMatch[2],
-      state: inlineMatch[3],
-      zip: inlineMatch[4] ?? '',
-    }, fallbackCity);
-  }
-
-  return normalizeAddressParts({}, fallbackCity);
-}
-
 function splitAddressParts(value, fallbackCity = '') {
-  const text = sanitizeAddressSourceText(value);
+  const text = String(value ?? '').replace(/\s+/g, ' ').trim();
   if (!text) {
     return {
       address: '',
@@ -664,7 +602,7 @@ function parseSchoolRatings(text) {
 
 function parseDaysOnMarket(text) {
   const content = String(text ?? '');
-  const hoursMatch = content.match(/(\d+)\s+hours?\s+(?:on\s+(?:zillow|redfin|realtor)|on\s+market|ago)/i);
+  const hoursMatch = content.match(/(\d+)\s+hours?\s+(?:on\s+(?:zillow|redfin|realtor|homes)|on\s+market|ago)/i);
   if (hoursMatch) {
     return {
       text: `${hoursMatch[1]} hours on market`,
@@ -672,7 +610,7 @@ function parseDaysOnMarket(text) {
     };
   }
 
-  const daysMatch = content.match(/(\d+)\s+days?\s+(?:on\s+(?:zillow|redfin|realtor)|on\s+market|ago)/i);
+  const daysMatch = content.match(/(\d+)\s+days?\s+(?:on\s+(?:zillow|redfin|realtor|homes)|on\s+market|ago)/i);
   if (daysMatch) {
     return {
       text: `${daysMatch[1]} days on market`,
@@ -753,31 +691,38 @@ function normalizePropertyType(value, text) {
 
 function parseListingFacts(snapshot, entry) {
   const structured = extractStructuredData(snapshot.jsonLd ?? []);
-  const fallbackCity = entry.city || entry.area;
   const combined = [
     snapshot.title,
     snapshot.headings.join('\n'),
     extractMeta(snapshot, 'og:title'),
     extractMeta(snapshot, 'description'),
     extractMeta(snapshot, 'og:description'),
+    snapshot.supplemental ?? '',
     snapshot.bodyText,
   ].join('\n');
 
-  const metadataAddressParts = splitAddressParts(
+  const addressParts = splitAddressParts(
     chooseFirst(
       [structured.address, structured.city, structured.state, structured.zip].filter(Boolean).join(', '),
       extractMeta(snapshot, 'og:title'),
       snapshot.title,
+      entry.addressLine,
+      entry.address,
     ) ?? '',
-    fallbackCity,
+    entry.city || entry.area,
   );
-  const explicitAddressParts = extractAddressPartsFromText(combined, fallbackCity);
-  const pipelineAddressParts = splitAddressParts(chooseFirst(entry.addressLine, entry.address) ?? '', fallbackCity);
-  const addressParts = chooseBestAddressParts([
-    explicitAddressParts,
-    metadataAddressParts,
-    pipelineAddressParts,
-  ], fallbackCity);
+
+  const explicitAddressMatch = combined.match(FULL_ADDRESS_PATTERN) ?? combined.match(INLINE_ADDRESS_PATTERN);
+  if (!addressParts.address && explicitAddressMatch) {
+    addressParts.address = explicitAddressMatch[1].trim();
+    addressParts.city = explicitAddressMatch[2].trim();
+    addressParts.state = explicitAddressMatch[3].trim().toUpperCase();
+    addressParts.zip = explicitAddressMatch[4] ?? '';
+  }
+
+  if (!addressParts.city && entry.area) {
+    addressParts.city = entry.area;
+  }
 
   const priceNumber = chooseFirst(
     structured.price,
@@ -923,32 +868,8 @@ async function scrollToFullyLoad(page) {
   } catch {}
 }
 
-function isExecutionContextDestroyedError(error) {
-  return /execution context was destroyed/i.test(String(error?.message ?? ''));
-}
-
-async function evaluateWithNavigationRetry(page, evaluator, attempts = 2) {
-  let lastError = null;
-
-  for (let attempt = 1; attempt <= attempts; attempt += 1) {
-    try {
-      return await page.evaluate(evaluator);
-    } catch (error) {
-      lastError = error;
-      if (!isExecutionContextDestroyedError(error) || attempt === attempts) {
-        throw error;
-      }
-
-      await page.waitForLoadState('domcontentloaded', { timeout: NAVIGATION_TIMEOUT_MS }).catch(() => {});
-      await page.waitForTimeout(SETTLE_TIMEOUT_MS);
-    }
-  }
-
-  throw lastError;
-}
-
-async function capturePageSnapshot(page) {
-  return evaluateWithNavigationRetry(page, () => {
+async function capturePageSnapshot(page, platformKey) {
+  return page.evaluate((platform) => {
     const meta = {};
     for (const element of document.querySelectorAll('meta[name], meta[property]')) {
       const key = element.getAttribute('property') || element.getAttribute('name');
@@ -979,6 +900,53 @@ async function capturePageSnapshot(page) {
       }
     }
 
+    const qsAll = (selector) => {
+      try {
+        return Array.from(document.querySelectorAll(selector))
+          .map((el) => el.textContent?.replace(/\s+/g, ' ').trim() ?? '')
+          .filter(Boolean)
+          .join(' ');
+      } catch {
+        return '';
+      }
+    };
+
+    const PORTAL_SELECTORS = {
+      homes: [
+        '[class*="listing-price"], [class*="home-price"], [class*="price-container"]',
+        '[class*="listing-address"], [class*="property-address"]',
+        '[class*="property-stat"], [class*="listing-stat"], [class*="bed-bath"]',
+        '[class*="property-details-table"], [class*="facts-table"], [class*="key-details"]',
+        '[class*="hoa"], [class*="HOA"], [class*="association"]',
+        '[class*="garage"], [class*="parking"]',
+        '[class*="year-built"], [class*="yearBuilt"]',
+        '[class*="lot-size"], [class*="lotSize"]',
+      ],
+      zillow: [
+        '[data-testid="price"]',
+        '[data-testid="home-details-address"]',
+        '[data-testid="bed-bath-beyond"], [data-testid="bed-bath-item"]',
+        '[data-testid="fact-category"], [data-testid="facts-section"]',
+        '[data-testid="price-section"]',
+      ],
+      realtor: [
+        '[data-testid="list-price"], [data-testid="sdp-price-and-tags"]',
+        '[data-testid="address-line1"], [data-testid="address-line2"]',
+        '[data-testid="property-meta"], [data-testid="summary-facts"]',
+        '[data-testid="facts-section"], [data-testid="features-section"]',
+      ],
+      redfin: [
+        '[data-rf-test-id="abp-price"]',
+        '.homeAddressInfo, [data-rf-test-id="abp-streetLine"]',
+        '[data-rf-test-id="abp-beds"], [data-rf-test-id="abp-baths"], [data-rf-test-id="abp-sqFt"]',
+        '.keyDetailsList, [class*="keyDetailItem"]',
+        '[data-rf-test-id="facts-table"]',
+      ],
+    };
+
+    const selectors = PORTAL_SELECTORS[platform] ?? [];
+    const supplemental = selectors.map((selector) => qsAll(selector)).filter(Boolean).join('\n');
+
     return {
       url: window.location.href,
       title: document.title ?? '',
@@ -986,15 +954,16 @@ async function capturePageSnapshot(page) {
       headings,
       meta,
       jsonLd: jsonLd.slice(0, 25),
+      supplemental,
     };
-  });
+  }, platformKey ?? '');
 }
 
 function buildEntryFromColumns(trimmed, columns, index) {
   const value = columns[0].replace(/^- \[[ x]\]\s*/i, '').trim();
   const platform = columns[1] ?? platformLabel(detectPlatformFromUrl(value));
   const area = columns[2] ?? '';
-  const addressLine = sanitizeAddressSourceText(columns[3] ?? '');
+  const addressLine = columns[3] ?? '';
   const price = columns[4] ?? '';
   const parsedAddress = splitAddressParts(addressLine, area);
 
@@ -1348,7 +1317,7 @@ async function extractFromBrowser(context, entry) {
 
     await page.waitForTimeout(SETTLE_TIMEOUT_MS);
     await scrollToFullyLoad(page);
-    const snapshot = await capturePageSnapshot(page);
+    const snapshot = await capturePageSnapshot(page, entry.platformKey);
     const facts = parseListingFacts(snapshot, entry);
     const verification = classifyVerification(snapshot, response, navigationError, facts, entry);
 

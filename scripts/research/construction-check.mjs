@@ -101,7 +101,22 @@ function resolveTargets(config) {
         ? 'No refined top-3 homes found in data/shortlist.md.'
         : 'No populated top-10 homes found in data/shortlist.md.');
     }
-    return rows.map((row) => parseReport(ROOT, row.reportPath));
+    const targets = [];
+    for (const row of rows) {
+      try {
+        targets.push(parseReport(ROOT, row.reportPath));
+      } catch (err) {
+        if (err.code === 'ENOENT' || String(err.message).includes('ENOENT')) {
+          console.warn(`[warn] Skipping shortlist entry — report not found: ${row.reportPath}`);
+        } else {
+          throw err;
+        }
+      }
+    }
+    if (targets.length === 0) {
+      throw new Error('No shortlist entries have readable reports. Re-run hunt to generate fresh evaluation reports.');
+    }
+    return targets;
   }
 
   if (config.files.length === 0) {

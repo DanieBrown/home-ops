@@ -14,6 +14,10 @@ const PIPELINE_PATH = join(ROOT, 'data', 'pipeline.md');
 const SHORTLIST_PATH = join(ROOT, 'data', 'shortlist.md');
 const SCAN_HISTORY_PATH = join(ROOT, 'data', 'scan-history.tsv');
 const PROFILE_PATH = join(ROOT, 'config', 'profile.yml');
+const HOME_OPS_DIR = join(ROOT, '.home-ops');
+const SCAN_RUNNING_PATH = join(HOME_OPS_DIR, 'scan-running.json');
+const SCAN_COMPLETE_PATH = join(HOME_OPS_DIR, 'scan-complete.json');
+const ZILLOW_BLOCKED_PATH = join(HOME_OPS_DIR, 'zillow-session-blocked.json');
 
 const HISTORY_HEADER = 'url\tfirst_seen\tplatform\tarea\taddress\tstatus\n';
 const LISTINGS_TEMPLATE = [
@@ -144,6 +148,22 @@ function listResettableFiles(dirPath, matcher) {
     .map((name) => join(dirPath, name));
 }
 
+function extractShortlistReportPaths(shortlistPath) {
+  if (!existsSync(shortlistPath)) return new Set();
+  try {
+    const content = readFileSync(shortlistPath, 'utf8');
+    const paths = new Set();
+    const pattern = /\[.*?\]\((reports\/[^)]+\.md)\)/g;
+    let match;
+    while ((match = pattern.exec(content)) !== null) {
+      paths.add(join(ROOT, match[1]));
+    }
+    return paths;
+  } catch {
+    return new Set();
+  }
+}
+
 function loadResetPolicy() {
   if (!existsSync(PROFILE_PATH)) {
     return {
@@ -179,12 +199,18 @@ function main() {
     return;
   }
 
-  const reportFiles = listResettableFiles(REPORTS_DIR, () => true);
+  const allReportFiles = listResettableFiles(REPORTS_DIR, () => true);
   const trackerAdditionFiles = listResettableFiles(TRACKER_ADDITIONS_DIR, (name) => name.endsWith('.tsv'));
   const trackerMergedFiles = listResettableFiles(TRACKER_MERGED_DIR, (name) => name.endsWith('.tsv'));
   const resetPolicy = loadResetPolicy();
 
-  console.log(`Reports to remove: ${reportFiles.length}`);
+  const preservedReportPaths = resetPolicy.preserveShortlistOnReset
+    ? extractShortlistReportPaths(SHORTLIST_PATH)
+    : new Set();
+  const reportFiles = allReportFiles.filter((f) => !preservedReportPaths.has(f));
+  const preservedReportCount = allReportFiles.length - reportFiles.length;
+
+  console.log(`Reports to remove: ${reportFiles.length}${preservedReportCount > 0 ? ` (${preservedReportCount} preserved with shortlist)` : ''}`);
   console.log(`Tracker TSVs to remove: ${trackerAdditionFiles.length + trackerMergedFiles.length}`);
   console.log('Files to reset:');
   console.log('- data/listings.md');
@@ -209,6 +235,11 @@ function main() {
     writeFileSync(SHORTLIST_PATH, SHORTLIST_TEMPLATE, 'utf8');
   }
   writeFileSync(SCAN_HISTORY_PATH, HISTORY_HEADER, 'utf8');
+
+  // Clear scan flag files so verify-pipeline-write starts clean after reset
+  rmSync(SCAN_RUNNING_PATH, { force: true });
+  rmSync(SCAN_COMPLETE_PATH, { force: true });
+  rmSync(ZILLOW_BLOCKED_PATH, { force: true });
 
   console.log('\nReset complete. Buyer profiles, portal config, and browser sessions were preserved.');
   if (resetPolicy.preserveShortlistOnReset) {

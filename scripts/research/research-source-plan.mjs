@@ -165,7 +165,23 @@ function resolveTargets(projectRoot, config) {
       throw new Error(config.top3 ? 'No refined top-3 homes found in data/shortlist.md.' : 'No populated top-10 homes found in data/shortlist.md.');
     }
 
-    return rows.map((row) => parseReport(projectRoot, row.reportPath));
+    const targets = [];
+    for (const row of rows) {
+      try {
+        targets.push(parseReport(projectRoot, row.reportPath));
+      } catch (err) {
+        if (err.code === 'ENOENT' || String(err.message).includes('ENOENT')) {
+          console.warn(`[warn] Skipping shortlist entry — report not found: ${row.reportPath}`);
+          console.warn('[warn] The shortlist may reference a report from a previous run. Re-run hunt to generate fresh reports.');
+        } else {
+          throw err;
+        }
+      }
+    }
+    if (targets.length === 0) {
+      throw new Error('No shortlist entries have readable reports. Re-run hunt to generate fresh evaluation reports.');
+    }
+    return targets;
   }
 
   if (config.address || config.city) {

@@ -26,7 +26,7 @@ const CONTRACTS = {
         /scan-listings\.mjs\b/,
         /npm(?:\.cmd)?\s+run\s+scan\b/,
       ]),
-      req('pipeline-write-verified', 'Verify scan updated data/pipeline.md', [
+      req('verify-pipeline-write', 'Verify scan updated data/pipeline.md', [
         /verify-pipeline-write\.mjs\b/,
         /npm(?:\.cmd)?\s+run\s+scan:verify\b/,
       ], { requires: ['scan'], isGate: true }),
@@ -43,63 +43,68 @@ const CONTRACTS = {
       req('reset:data', 'Clear generated search state', [
         /npm(?:\.cmd)?\s+run\s+reset:data\b/,
         /reset-search-state\.mjs\b/,
-      ], { requires: ['browser-status'] }),
+      ], { requires: ['browser-status'], isGate: true }),
       req('verify-pipeline', 'Post-reset pipeline health check', [
         /verify-pipeline\.mjs\b/,
         /npm(?:\.cmd)?\s+run\s+verify\b/,
-      ], { requires: ['reset:data'] }),
+      ], { requires: ['reset:data'], isGate: true }),
       req('scan', 'Portal scan for new listings', [
         /scan-listings\.mjs\b/,
         /npm(?:\.cmd)?\s+run\s+scan\b/,
-      ], { requires: ['verify-pipeline'] }),
-      req('pipeline-write-verified', 'Verify scan updated data/pipeline.md', [
+      ], { requires: ['verify-pipeline'], isGate: true }),
+      req('verify-pipeline-write', 'Verify scan updated data/pipeline.md', [
         /verify-pipeline-write\.mjs\b/,
         /npm(?:\.cmd)?\s+run\s+scan:verify\b/,
       ], { requires: ['scan'] }),
       req('evaluate-pending', 'Batch evaluate the pending pipeline', [
         /evaluate-pending\.mjs\b/,
         /npm(?:\.cmd)?\s+run\s+evaluate:pending\b/,
-      ], { requires: ['pipeline-write-verified'] }),
+      ], { requires: ['verify-pipeline-write'], isGate: true }),
       req('merge-tracker', 'Merge staged tracker TSVs', [
         /merge-tracker\.mjs\b/,
         /npm(?:\.cmd)?\s+run\s+merge\b/,
-      ], { requires: ['evaluate-pending'] }),
+      ], { requires: ['evaluate-pending'], isGate: true }),
       req('research-audit', 'Post-batch research coverage audit', [
         /research-coverage-audit\.mjs\b/,
         /npm(?:\.cmd)?\s+run\s+audit:research\b/,
-      ], { requires: ['merge-tracker'] }),
-      req('review-tabs-top10', 'Open top-10 review tab group', [
+      ], { requires: ['merge-tracker'], isGate: true }),
+      req('review-tabs', 'Open top-10 review tab group', [
         /review-tabs\.mjs[^\n]*shortlist-top10/,
         /npm(?:\.cmd)?\s+run\s+browser:review[^\n]*shortlist-top10/,
       ], {
-        requires: ['reset:data', 'verify-pipeline', 'scan', 'pipeline-write-verified', 'evaluate-pending', 'merge-tracker', 'research-audit'],
+        requires: ['reset:data', 'verify-pipeline', 'scan', 'verify-pipeline-write', 'evaluate-pending', 'merge-tracker', 'research-audit'],
+        isGate: true,
       }),
       req('research-source-plan', 'Deep phase: shortlist source plan (fan-out 6a)', [
         /research-source-plan\.mjs[^\n]*--shortlist/,
         /npm(?:\.cmd)?\s+run\s+plan:research[^\n]*--shortlist/,
-      ], { requires: ['review-tabs-top10'] }),
+      ], { requires: ['review-tabs'], isGate: true }),
       req('sentiment-extract', 'Deep phase: shortlist sentiment capture (fan-out 6c)', [
         /sentiment-browser-extract\.mjs[^\n]*--shortlist/,
         /npm(?:\.cmd)?\s+run\s+extract:sentiment[^\n]*--shortlist/,
-      ], { requires: ['review-tabs-top10'] }),
+      ], { requires: ['review-tabs'], isGate: true }),
       req('construction-check', 'Deep phase: shortlist NCDOT construction check (fan-out 6d)', [
         /construction-check\.mjs[^\n]*--shortlist/,
         /npm(?:\.cmd)?\s+run\s+check:construction[^\n]*--shortlist/,
-      ], { requires: ['review-tabs-top10'] }),
+      ], { requires: ['review-tabs'], isGate: true }),
       req('deep-research-packet', 'Deep phase: research packets per shortlisted home', [
         /deep-research-packet\.mjs[^\n]*--shortlist/,
         /npm(?:\.cmd)?\s+run\s+prepare:deep[^\n]*--shortlist/,
-      ], { requires: ['research-source-plan', 'sentiment-extract', 'construction-check'] }),
+      ], { requires: ['research-source-plan', 'sentiment-extract', 'construction-check'], isGate: true }),
+      req('promote-finalists', 'Deep phase: auto-promote top-3 into Refined Top 3 section', [
+        /promote-finalists\.mjs\b/,
+        /npm(?:\.cmd)?\s+run\s+promote:finalists\b/,
+      ], { requires: ['deep-research-packet'], isGate: true }),
       req('finalist-gate', 'Deep phase: finalist gate before promoting top 3', [
         /shortlist-finalist-gate\.mjs\b/,
         /npm(?:\.cmd)?\s+run\s+gate:finalists\b/,
-      ], { requires: ['deep-research-packet'] }),
+      ], { requires: ['promote-finalists'], isGate: true }),
       req('review-tabs-top3', 'Deep phase: replace tabs with top-3 finalists', [
         /review-tabs\.mjs[^\n]*shortlist-top3/,
         /npm(?:\.cmd)?\s+run\s+browser:review[^\n]*shortlist-top3/,
       ], {
         isGate: true,
-        requires: ['research-source-plan', 'sentiment-extract', 'construction-check', 'deep-research-packet', 'finalist-gate'],
+        requires: ['research-source-plan', 'sentiment-extract', 'construction-check', 'deep-research-packet', 'promote-finalists', 'finalist-gate'],
       }),
       req('briefing-pdf', 'Deep phase: render top-3 briefing PDF', [
         /briefing-pdf\.mjs\b/,
@@ -121,12 +126,12 @@ const CONTRACTS = {
       req('merge-tracker', 'Merge staged tracker TSVs', [
         /merge-tracker\.mjs\b/,
         /npm(?:\.cmd)?\s+run\s+merge\b/,
-      ], { requires: ['evaluate-pending'] }),
+      ], { requires: ['evaluate-pending'], isGate: true }),
       req('research-audit', 'Post-batch research coverage audit', [
         /research-coverage-audit\.mjs\b/,
         /npm(?:\.cmd)?\s+run\s+audit:research\b/,
-      ], { requires: ['merge-tracker'] }),
-      req('review-tabs-top10', 'Open top-10 review tab group', [
+      ], { requires: ['merge-tracker'], isGate: true }),
+      req('review-tabs', 'Open top-10 review tab group', [
         /review-tabs\.mjs[^\n]*shortlist-top10/,
         /npm(?:\.cmd)?\s+run\s+browser:review[^\n]*shortlist-top10/,
       ], {
@@ -146,29 +151,33 @@ const CONTRACTS = {
       req('research-source-plan', 'Shortlist source plan (parallel fan-out 6a)', [
         /research-source-plan\.mjs[^\n]*--shortlist/,
         /npm(?:\.cmd)?\s+run\s+plan:research[^\n]*--shortlist/,
-      ], { requires: ['research-audit'] }),
+      ], { requires: ['research-audit'], isGate: true }),
       req('sentiment-extract', 'Shortlist sentiment capture (fan-out 6b)', [
         /sentiment-browser-extract\.mjs[^\n]*--shortlist/,
         /npm(?:\.cmd)?\s+run\s+extract:sentiment[^\n]*--shortlist/,
-      ], { requires: ['research-audit'] }),
+      ], { requires: ['research-audit'], isGate: true }),
       req('construction-check', 'Shortlist NCDOT construction check (fan-out 6c)', [
         /construction-check\.mjs[^\n]*--shortlist/,
         /npm(?:\.cmd)?\s+run\s+check:construction[^\n]*--shortlist/,
-      ], { requires: ['research-audit'] }),
+      ], { requires: ['research-audit'], isGate: true }),
       req('deep-research-packet', 'Deep research packets per shortlisted home', [
         /deep-research-packet\.mjs[^\n]*--shortlist/,
         /npm(?:\.cmd)?\s+run\s+prepare:deep[^\n]*--shortlist/,
-      ], { requires: ['research-source-plan', 'sentiment-extract', 'construction-check'] }),
+      ], { requires: ['research-source-plan', 'sentiment-extract', 'construction-check'], isGate: true }),
+      req('promote-finalists', 'Auto-promote top-3 into Refined Top 3 section', [
+        /promote-finalists\.mjs\b/,
+        /npm(?:\.cmd)?\s+run\s+promote:finalists\b/,
+      ], { requires: ['deep-research-packet'], isGate: true }),
       req('finalist-gate', 'Shortlist finalist gate before promoting top 3', [
         /shortlist-finalist-gate\.mjs\b/,
         /npm(?:\.cmd)?\s+run\s+gate:finalists\b/,
-      ], { requires: ['deep-research-packet'] }),
+      ], { requires: ['promote-finalists'], isGate: true }),
       req('review-tabs-top3', 'Replace tabs with top-3 finalists', [
         /review-tabs\.mjs[^\n]*shortlist-top3/,
         /npm(?:\.cmd)?\s+run\s+browser:review[^\n]*shortlist-top3/,
       ], {
         isGate: true,
-        requires: ['research-audit', 'research-source-plan', 'sentiment-extract', 'construction-check', 'deep-research-packet', 'finalist-gate'],
+        requires: ['research-audit', 'research-source-plan', 'sentiment-extract', 'construction-check', 'deep-research-packet', 'promote-finalists', 'finalist-gate'],
       }),
       req('briefing-pdf', 'Render top-3 briefing PDF', [
         /briefing-pdf\.mjs\b/,

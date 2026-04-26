@@ -51,6 +51,8 @@ function parseArgs(argv) {
     if (arg === '--help' || arg === '-h') { config.help = true; continue; }
     if (arg === '--profile') { config.profileName = argv[index + 1] ?? DEFAULT_PROFILE; index += 1; continue; }
     if (arg === '--no-open') { config.open = false; continue; }
+    // Silently accept (and ignore) flags that callers commonly pass but this script doesn't need
+    if (arg === '--shortlist' || arg === '--top3') { continue; }
     if (arg.startsWith('--')) throw new Error(`Unknown option: ${arg}`);
   }
   return config;

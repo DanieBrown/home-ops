@@ -74,46 +74,109 @@ Rules:
 - Do not enter credentials. If a platform requires manual sign-in, surface that to the user and pause exactly once.
 - If init fails or status still reports closed, abort the hunt (see Prerequisite rules above) before touching generated state.
 
-### 1. Reset Phase
+### 1–3. Sequential Phase (Reset → Scan → Evaluate)
 
-- Execute the existing reset workflow first.
-- Prefer the checked-in script:
-  - Windows PowerShell: `npm.cmd run reset:data`
-  - Other shells: `npm run reset:data`
-- Run `node scripts/pipeline/verify-pipeline.mjs` after the reset, following the reset-mode instructions.
+**CRITICAL: DO NOT run individual scripts for this phase. Run one single command:**
 
-### 2. Scan Phase
+```
+npm.cmd run hunt:sequential
+```
 
-- Run the scan workflow next using the same hosted browser session.
-- Reuse the exact scan-mode rules for platform filters, session checks, per-source caps, and anti-bot stops.
-- If Zillow or another selected portal blocks on login or human verification, report the blocker, skip that platform for the rest of the scan, and continue the hunt with whatever pipeline entries the unblocked platforms produced.
+Use a **600000ms timeout** (10 minutes). This is the only correct way to run phases 1–3. The runner uses `spawnSync` so each step fully completes before the next starts — calling individual scripts directly will cause the scan to be killed by the tool timeout.
 
-### 3. Evaluate Phase
+To skip Zillow (use when Zillow bot detection is active, or if Zillow was auto-skipped by the session flag):
+```
+npm.cmd run hunt:sequential -- --redfin --relator --homes
+```
 
-- Run the evaluate workflow with no explicit target against the refreshed pipeline.
-- Reuse the existing batch-evaluate rules, including canonical-property dedupe, one report-writing worker per property, staged tracker additions, and serialized browser-backed verification.
-- Let evaluate handle the top-10 review tab behavior at the end of the batch.
-- If every selected platform blocked and the pipeline stayed empty, evaluate may complete as a no-op. In that case, skip the deep phase, write `.home-ops/contract-abort.json` with `{"reason":"hunt: pipeline empty after scan, deep skipped"}`, and report that clearly. The Stop hook will let the turn end without flagging the missing deep scripts.
+To restrict to specific platforms (flag set from hunt arguments):
+```
+npm.cmd run hunt:sequential -- --zillow --redfin
+```
 
-### 4. Deep Phase (shortlist batch branch)
+**The runner handles these steps internally — do not call them separately:**
+- reset:data → verify-pipeline → scan → scan:verify → evaluate:pending → merge → audit:research
 
-- Run the shortlist batch branch from `modes/deep.md` against the top-10 cohort that the evaluate phase wrote into `data/shortlist.md`.
-- Follow `modes/deep.md` Run-to-Completion Contract: announce each numbered step, fan out steps 6a-6e in parallel, and continue through the rerank, finalist gate, tab replacement, and briefing PDF without pausing for user approval.
-- All deep contract scripts must run in this phase. The hunt contract hook (see `scripts/hooks/contract-shared.mjs`) requires every script the deep mode requires:
-  - `node scripts/research/research-source-plan.mjs --shortlist --type all`
-  - `node scripts/research/sentiment-browser-extract.mjs --shortlist --profile chrome-host --concurrency 4`
-  - `node scripts/research/construction-check.mjs --shortlist`
-  - `node scripts/research/deep-research-packet.mjs --shortlist` (or `npm.cmd run prepare:deep -- --shortlist`)
-  - `node scripts/research/shortlist-finalist-gate.mjs` (or `npm.cmd run gate:finalists`)
-  - `node scripts/browser/review-tabs.mjs shortlist-top3 --replace` (or `npm.cmd run browser:review -- shortlist-top3 --replace`)
-  - `node scripts/reports/briefing-pdf.mjs` (or `npm.cmd run brief:top3`)
-- The pre-rerank `research-coverage-audit.mjs` invocation that the hunt evaluate phase already ran satisfies the deep mode's audit prerequisite. Do not re-run it just to satisfy the contract.
-- If `data/shortlist.md` is empty after evaluate (no qualifying homes survived), abort the deep phase by writing `.home-ops/contract-abort.json` with `{"reason":"hunt: shortlist empty after evaluate, deep skipped"}` and report it.
-- If the hosted Chrome session dies mid-deep and cannot be reopened, follow the deep mode's hard-failure stop point: surface it, write the abort file, and end the turn.
+Run this command with a timeout of at least 600000ms (10 minutes) because the scan and batch evaluate phases can take several minutes each.
+
+The runner exits 0 when all phases succeed, or 1 when any phase fails with a clear message identifying which step failed. Do not proceed to `browser:review` or the deep phase if the runner exits non-zero.
+
+**When the runner exits non-zero**, determine which phase failed from the runner output and act accordingly — do NOT ask the user what they want to do:
+
+| Failed phase | Auto-recovery action | If still failing |
+|---|---|---|
+| `reset:data` or `verify-pipeline` | None needed — retry `npm.cmd run hunt:sequential` once | Abort with reason `hunt: reset failed` |
+| `scan` (CDP timeout / connection lost / browser crash) | Run `npm.cmd run browser:status`. If session is dead, run `npm.cmd run browser:setup` and wait for it to succeed. Then retry `npm.cmd run hunt:sequential` once. | Abort with reason `hunt: scan failed, browser session unrecoverable` |
+| `scan` (no listings found / portal blocked, NOT a browser crash) | Abort immediately — this is a no-op outcome, not an error | Write `{"reason":"hunt: scan returned no listings"}` |
+| `scan:verify` | Re-run `npm.cmd run scan:verify` once | Abort with reason `hunt: scan:verify failed` |
+| `evaluate:pending` | Re-run `npm.cmd run hunt:sequential` once from the top (safe because reset is idempotent) | Abort with reason `hunt: evaluate failed` |
+| `merge` or `audit:research` | Re-run the failed step directly once | Abort with reason `hunt: post-evaluate step failed` |
+
+Abort means: write `.home-ops/contract-abort.json` with the specific `{"reason":"..."}`, report the failure and what the user must do manually to resume (e.g., "restart the hosted browser, then re-run `/home-ops hunt`"), and end the turn without asking for further direction.
+
+If the runner fails because the scan found no new qualifying listings, evaluate will complete as a no-op. Check whether the pipeline is empty after the runner returns. If empty, skip the deep phase, write `.home-ops/contract-abort.json` with `{"reason":"hunt: pipeline empty after scan, deep skipped"}`, and report that clearly.
+
+### 4. Open Top-10 Review Tabs
+
+Before running the deep phase, open the top-10 shortlist in the hosted browser:
+
+- Windows PowerShell: `npm.cmd run browser:review -- shortlist-top10 --replace`
+- Other shells: `npm run browser:review -- shortlist-top10 --replace`
+
+If `data/shortlist.md` is empty after evaluate (no qualifying homes survived), abort the deep phase by writing `.home-ops/contract-abort.json` with `{"reason":"hunt: shortlist empty after evaluate, deep skipped"}` and report it clearly.
+
+### 5. Deep Phase (shortlist batch branch)
+
+The deep phase has three sub-steps. Do not skip any of them.
+
+#### 5a. Data collection prep
+
+**CRITICAL: DO NOT run individual prep scripts. Run one single command:**
+
+```
+npm.cmd run hunt:deep
+```
+
+Use a **600000ms timeout** (10 minutes).
+
+**The runner handles these steps internally — do not call them separately:**
+- research-source-plan → sentiment-browser-extract → construction-check → deep-research-packet
+
+The runner exits 0 when all four prep steps succeed and the packets are written to `output/deep-packets/`. If it exits non-zero, fix the failing step before continuing.
+
+#### 5b. Per-home subagent fan-out
+
+After the prep runner exits 0, read `output/deep-packets/` to enumerate the packet files. Then follow **modes/deep.md steps 9–13** to fan out per-home AI subagents:
+
+- Launch one subagent per shortlisted home (up to 10 total) in a **single message** so the runtime fans them out in parallel. Never serialize the launches.
+- Each worker receives exactly one deep packet plus the matching evaluation report path, researches all deep-dive axes (neighborhood, schools, development, commute, risk, resale), and returns a structured result.
+- As workers return, stream their findings into the combined batch brief.
+- After all workers have returned, the main agent writes the combined brief to `reports/deep-shortlist-{YYYY-MM-DD}.md` and updates `data/shortlist.md` with the deep batch status and a reranked top 3.
+
+Workers must follow the Worker Tool Contract in `modes/deep.md` — actual tool calls required, no hallucination from the packet alone.
+
+#### 5c. Finalization
+
+After all subagents have returned and the combined brief is written, run:
+
+```
+npm.cmd run hunt:deep-final
+```
+
+Use a **300000ms timeout** (5 minutes).
+
+**The runner handles these steps internally — do not call them separately:**
+- promote-finalists → shortlist-finalist-gate → review-tabs top3 → briefing-pdf
+
+The runner exits 0 when all finalization steps succeed. If the finalist gate fails due to research gaps, fix the gaps and re-run `npm.cmd run hunt:deep-final`. Do not proceed to the output summary if the runner exits non-zero.
+
+If the hosted Chrome session dies mid-deep and cannot be reopened, surface it, write `.home-ops/contract-abort.json` with `{"reason":"hunt: chrome session lost mid-deep"}`, and end the turn.
 
 ## Important Rules
 
-- Do not parallelize `reset`, `scan`, `evaluate`, and `deep` against each other -- they run sequentially. The deep phase's internal step-6 fan-out is allowed and expected.
+- **ALWAYS use the runners.** Call `npm.cmd run hunt:sequential` (phases 1–3), `npm.cmd run hunt:deep` (deep prep 5a), and `npm.cmd run hunt:deep-final` (finalization 5c) with appropriate timeouts. Never call individual scripts directly (`npm run scan`, `node scripts/pipeline/scan-listings.mjs`, etc.) — they will be killed by the tool timeout before completing and cause cascade failures.
+- If you find yourself about to run `reset:data`, `verify`, `scan`, `scan:verify`, `evaluate:pending`, `merge`, `audit:research`, or any individual deep-phase script: STOP. Call the appropriate runner instead.
+- Do not parallelize the runners or call any phase script while a runner is still executing. The per-home subagent fan-out (step 5b) happens **between** `hunt:deep` and `hunt:deep-final`, not during either runner.
 - The hunt command is intentionally destructive to generated working state because it starts with `reset`.
 - If the user wants to preserve existing reports, tracker rows, or pipeline contents, direct them to the separate commands instead of changing hunt behavior.
 - If scan finds no new qualifying listings, still report that outcome clearly before the evaluate phase completes with no-op or empty results.

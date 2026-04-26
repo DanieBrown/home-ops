@@ -52,8 +52,8 @@ async function main() {
 
   process.stdout.write(
     JSON.stringify({
-      permissionDecision: 'deny',
-      permissionDecisionReason: lines.join('\n'),
+      decision: 'deny',
+      reason: lines.join('\n'),
     }),
   );
   process.exit(0);
