@@ -112,7 +112,7 @@ for (const phase of PHASES) {
   const result = spawnSync(phase.cmd, phase.args, {
     stdio: 'inherit',
     cwd: ROOT,
-    shell: false,
+    shell: isWin,
     windowsHide: false,
   });
 

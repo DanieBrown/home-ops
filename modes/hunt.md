@@ -55,14 +55,11 @@ apply those flags only to the `scan` phase.
 
 If the command arguments include `--quick`, pass it through to every step-6 command in the deep phase (per `modes/deep.md` quick-mode rules). Do not let `--quick` skip any of the deep contract scripts -- it only narrows their work.
 
-If the command arguments include `--ask-deep`, pause after step 4 (top-10 review tabs open) and ask the user once: "The top-10 homes are now open in the browser. Would you like to run the deep analysis phase?" If the user confirms, continue to step 5. If the user declines or does not respond with a clear yes, write the output summary for phases 0–4 only and end the turn.
-
 Rules:
 - `reset` still clears the generated working state.
 - `reset` should preserve `data/shortlist.md` when `config/profile.yml` sets `workflow.shortlist.preserve_on_reset: true`.
 - `evaluate` still runs with no explicit listing target against the pipeline created by the scan phase.
-- Without `--ask-deep`: `deep` always runs after `evaluate`. There is no implicit opt-out -- if the buyer wants the lighter intake without the deep rerank, run `/home-ops scan` and `/home-ops evaluate` separately instead.
-- With `--ask-deep`: deep is optional and skipped if the user declines at the gate in step 4.5.
+- `deep` is always gated by a user confirmation at step 4.5 before it runs.
 
 ## Execution Order
 
@@ -130,16 +127,14 @@ The `--replace` flag closes every existing tab in the hosted session before open
 
 If `data/shortlist.md` is empty after evaluate (no qualifying homes survived), abort the deep phase by writing `.home-ops/contract-abort.json` with `{"reason":"hunt: shortlist empty after evaluate, deep skipped"}` and report it clearly.
 
-### 4.5. Deep Phase Gate (only when `--ask-deep` is set)
+### 4.5. Deep Phase Gate
 
-If `--ask-deep` was passed in the command arguments, pause here and ask the user once:
+Pause here and ask the user once:
 
 > "The top-10 homes are now open in the browser. Would you like to run the deep analysis phase?"
 
 - If the user says **yes**: continue to step 5 immediately.
 - If the user says **no** or does not reply with a clear yes: write the output summary covering phases 0–4 only (see Output Summary section) and end the turn. Do not write a contract-abort file — this is a normal early exit, not a failure.
-
-If `--ask-deep` was **not** passed, skip this step entirely and proceed directly to step 5.
 
 ### 5. Deep Phase (shortlist batch branch)
 
