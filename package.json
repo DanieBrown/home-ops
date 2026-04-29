@@ -58,7 +58,12 @@
     "research:audit": "node scripts/research/research-coverage-audit.mjs",
     "research:source-plan": "node scripts/research/research-source-plan.mjs",
     "sentiment:extract": "node scripts/research/sentiment-browser-extract.mjs",
-    "construction:check": "node scripts/research/construction-check.mjs"
+    "construction:check": "node scripts/research/construction-check.mjs",
+    "geocode": "node scripts/research/geocode.mjs",
+    "permits:check": "node scripts/research/county-permits-check.mjs",
+    "permits:discover": "node scripts/research/county-services-discover.mjs",
+    "schools:metadata": "node scripts/research/school-metadata-fetch.mjs",
+    "sentiment:public": "node scripts/research/sentiment-public-extract.mjs"
   },
   "keywords": [
     "ai",

@@ -1,0 +1,27 @@
+# Known county ArcGIS REST catalog base URLs.
+# Used by scripts/research/county-services-discover.mjs to auto-discover
+# planning / permits / zoning feature services for a given county.
+#
+# To add a new county:
+#   1. Find the county's ArcGIS REST base URL (usually at
+#      https://gis.<county>.gov/arcgis/rest/services or
+#      https://maps.<county>.gov/arcgis/rest/services).
+#   2. Add an entry here with a lowercase key matching what
+#      config/profile.yml search.areas[].county uses (lowercase, no spaces).
+#   3. Run: node scripts/research/county-services-discover.mjs --all
+#      This will probe the catalog and write config/county-sources.json.
+#
+# county-permits-check.mjs loads config/county-sources.json (written by the
+# discover script) at runtime. If county-sources.json is missing it falls
+# back to the built-in Wake County defaults.
+
+counties:
+  wake:
+    label: "Wake County, NC"
+    state: "NC"
+    arcgisBase: "https://maps.wake.gov/arcgis/rest/services"
+    # Folder hints narrow the catalog search -- discovery will also check
+    # all root-level services even without these.
+    folderHints:
+      - "Planning"
+      - "Infrastructure"

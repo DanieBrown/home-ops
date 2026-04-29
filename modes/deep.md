@@ -26,56 +26,96 @@ It also handles a shortlist batch branch:
 - "Run deep on the compare shortlist"
 - "Batch deep dive the current shortlist"
 
+## Architecture: Three Axis Agents
+
+This mode uses **three axis agents plus the main agent**, regardless of shortlist size. There is no per-home subagent fan-out anymore. The deterministic capture scripts in Phase A do all live browsing; the axis agents in Phase B only interpret pre-captured JSON sidecars.
+
+Total agent count per run = 4 (3 axis + 1 main), down from up to 11 in the old per-home design.
+
 ## Run-to-Completion Contract
 
-Once the deep command has started, run every numbered step in the branch below to completion in one turn. Do not pause for user approval between steps, do not ask the user "should I continue?", and do not treat writing the combined brief as the finish line -- steps 12 through 16 (shortlist update, rerank, finalist gate, PDF render, tab replacement) are part of the same command and must run in the same turn.
+Once the deep command starts, run every numbered step below to completion in one turn. Do not pause for user approval between steps.
 
 The only legitimate stop points are:
 
-1. **Missing prerequisite the user must supply.** Example: `data/shortlist.md` has no populated top-10 rows and no compare or evaluate run has established a cohort. Ask once, then proceed when the user answers.
-2. **Destructive override.** Example: the finalist gate fails and the user must explicitly authorize a bypass before the refined top-3 is promoted. Surface the gate result, ask once, and continue based on the answer.
-3. **Hard external failure that blocks all downstream steps.** Example: the hosted browser session is closed and cannot be reopened, and every subsequent step depends on it. Say so, close out the run, and stop.
+1. **Missing prerequisite the user must supply.** Example: `data/shortlist.md` has no populated top-10 rows and no compare or evaluate run has established a cohort. Ask once, then proceed.
+2. **Destructive override.** Example: the finalist gate fails and the user must explicitly authorize a bypass before the refined top-3 is promoted. Surface the gate result, ask once, continue based on the answer.
+3. **Hard external failure that blocks all downstream steps.** Example: the hosted browser session is closed and cannot be reopened.
 
-Every other condition -- partial results, one missing sentiment file, a single worker returning thin evidence, NCDOT timing out -- must be recorded in the brief and the run must continue. "Say that explicitly and continue" in the steps below means surface the gap in the brief and keep running, not pause for approval.
+Every other condition (partial results, one missing sentiment file, NCDOT timing out) must be recorded in the brief and the run must continue.
 
-When each numbered step starts, announce it in one short sentence ("Step 6: launching plan + sentiment + construction in parallel") so the user sees progress without being asked to confirm it.
+When each numbered step starts, announce it in one short sentence so the user sees progress.
 
 ## Shortlist Batch Branch
 
-When the user asks for a batch deep dive on the shortlist, or when the latest `evaluate` or `compare` workflow clearly established a current top-10 cohort:
+When the user asks for a batch deep dive on the shortlist, or when the latest `evaluate` or `compare` run clearly established a current top-10 cohort:
 
-1. Read `data/shortlist.md` and use the populated rows in the current top-10 table as the target set.
-2. Accept cohorts created by either `evaluate` or `compare`. If the current top-10 table is empty, ask the user what set deep should review instead of guessing.
-3. Load the existing evaluation reports for those same shortlisted homes.
-4. If any shortlisted home has not been fully evaluated yet, run the evaluate workflow first before doing the deep batch.
-5. Run `scripts/research/research-coverage-audit.mjs` against those shortlisted evaluation reports before reranking so the deep batch knows which homes still have weak neighborhood, school, or development evidence.
-6. **Parallel fan-out (steps 6a, 6b, 6c, 6d, 6e run concurrently).** These commands are independent and must be launched together, not serialized. On Windows PowerShell use `Start-Job` or separate `run_in_background` Bash invocations; wait for all five to finish before moving to step 7. Add `--quick` to every command in this step when the user asks for a fast progressive deep pass or when the shortlist has five or more homes.
-   - 6a: `node scripts/research/research-source-plan.mjs --shortlist --type all` (no browser, fast). Produces the concrete lookup plan for every shortlisted home.
-   - 6b: `node scripts/research/community-lookup.mjs --shortlist --profile chrome-host` resolves each shortlisted address to its named community via mapdevelopers.com and caches the result under `output/communities/{slug}.json`. This name is the primary key for the Nextdoor and Facebook URLs built in 6c. If a home has no named community, the cache file records `community: null` and the downstream sentiment pass skips Nextdoor for that home.
-   - 6c: `node scripts/research/sentiment-browser-extract.mjs --shortlist --profile chrome-host --concurrency 4` captures deterministic Facebook and Nextdoor evidence into `output/sentiment/`. Nextdoor queries `https://nextdoor.com/neighborhood/<community>--<city>--<state>/` using the community name captured in 6b; Facebook queries `https://www.facebook.com/search/top?q=<community> neighborhood <city>`. Membership-announcement posts (`X joined the group`, etc.) are filtered out before scoring. Add `--quick` to cap queries per source at three. If the hosted session is missing, closed, or not logged into those portals, say that explicitly and continue with public sources instead of pretending the sentiment pass was completed.
-   - 6d: `node scripts/research/construction-check.mjs --shortlist` fetches the NCDOT project index and writes `output/construction/{slug}.json` for every shortlisted home. Add `--quick` to skip the secondary STIP URL when the primary page is enough.
-   - 6e: `node scripts/research/sentiment-public-extract.mjs --shortlist` fetches the opted-in public sentiment sources from `portals.yml` (`sentiment_sources.reddit`, `sentiment_sources.google_maps`) via plain HTTP and merges snippets into the same `output/sentiment/{slug}.json` file so the `kpiRollup` covers both browser-gated and public sources. This pass is the sole source for the `traffic_commute` sentiment dimension, since Facebook and Nextdoor do not contribute to it. Skip this step only if the buyer opted out of every public sentiment source in `config/profile.yml`.
-7. Wait for all parallel jobs from step 6 to finish before continuing. If any failed, surface the error in the brief rather than silently proceeding.
-8. Run `node scripts/research/deep-research-packet.mjs --shortlist` or `npm.cmd run prepare:deep -- --shortlist` so every shortlisted home gets one deterministic packet under `output/deep-packets/`. Each packet must carry the baseline evaluation summary, research-audit blockers, configured sentiment, school, and development source plans, profile weights, any matching browser-captured Facebook or Nextdoor evidence, and the construction pressure record from step 6c. If a matching sentiment or construction file is missing, the packet must say that explicitly instead of implying capture.
-9. Launch one subagent per shortlisted home, up to ten homes total. Every Agent call must be issued in a single message so the runtime fans them out in parallel -- never serialize worker launches. Each worker receives exactly one deep packet plus the matching evaluation report path, researches all deep-dive axes for one home, and returns a structured result. Workers must follow the Worker Tool Contract below (actual tool calls required per axis -- `WebFetch`/`WebSearch` for public pages, Playwright MCP for Nextdoor/Facebook through the hosted session) and must report a `toolsUsed` ledger. When launching the workers, explicitly enumerate the Playwright MCP tool names (`mcp__playwright__browser_navigate`, `mcp__playwright__browser_snapshot`, `mcp__playwright__browser_evaluate`, `mcp__playwright__browser_click`, `mcp__playwright__browser_close`) in the subagent's allowed tool list so the worker can hit login-gated Nextdoor and Facebook through the hosted session. If the runtime does not let you pass MCP tools into subagents, prefer the pre-captured `output/sentiment/{slug}.json` evidence from step 6c inside the worker and tell the worker to emit `tool-unavailable` for Nextdoor/Facebook rather than falling back to `WebFetch` on those domains. Workers must not edit `data/listings.md`, `data/shortlist.md`, or `reports/` directly.
-10. Stream worker results back into the combined brief as they land so the user sees progress before every worker finishes. Do not wait for the slowest worker before starting the brief skeleton; append each home's section as its Agent call returns. Streaming is for visible progress only -- do not pause for user input between worker returns.
-11. The main agent reviews the worker output internally, resolves conflicts, and writes one combined batch brief to `reports/deep-shortlist-{YYYY-MM-DD}.md`. This review is not a user checkpoint. Writing the brief is not the end of the command; immediately proceed to step 12.
-12. Update `data/shortlist.md` with:
-	- deep batch status
-	- deep batch report path
-	- refined top 3 after deeper research
-13. End by rerunning the compare framework across that same top-10 cohort using the returned deep findings, the research-audit gaps, the deep packets, and any browser-backed sentiment extraction, then narrow it to the best three homes, not just the original evaluation summaries. Treat `constructionEvidence.level` from each packet as a resale-risk modifier: a `high` level should depress a home's rerank unless the matches are clearly benign. The final ranking belongs to the main agent, not the workers.
-14. Run `node scripts/research/shortlist-finalist-gate.mjs` or `npm.cmd run gate:finalists` before promoting the refined top 3. If the gate passes, continue to step 15 immediately. If the gate fails, this is a legitimate stop point: surface the exact blockers, ask once whether the user wants to bypass, and continue based on the answer. Do not ask "should I continue?" if the gate passes.
-15. Close the remaining non-finalist tabs across the full hosted Chrome session and leave only the refined top 3 in individual browser tabs so the user can review the finalists immediately. Prefer the direct listing URL from the underlying report. If a direct listing URL is unavailable, open the report file instead. Use `node scripts/browser/review-tabs.mjs shortlist-top3 --replace` or `npm.cmd run browser:review -- shortlist-top3 --replace` on Windows PowerShell. The review helper now enforces the same finalist gate unless `--skip-finalist-gate` is used explicitly. If the hosted Chrome session is closed, reopen it and restore the three finalist links into fresh tabs. This step must run before step 16 so the briefing PDF is not closed as a side effect of the tab replacement.
-16. Render the top-3 finalist briefing PDF and open it in the same hosted Chrome session using `node scripts/reports/briefing-pdf.mjs` or `npm.cmd run brief:top3` on Windows PowerShell. The PDF lands under `output/briefings/` as `top3-briefing-{YYYY-MM-DD}.pdf` and opens as a new tab via CDP `/json/new` alongside the three finalist listing tabs from step 15. The final state must be exactly four tabs in the hosted session: the three finalist listings plus the briefing PDF. If the hosted session is closed, the PDF still renders so the user can open it manually -- surface that fact in the final summary.
+1. Read `data/shortlist.md` and use the populated top-10 rows as the target set. Accept cohorts created by either `evaluate` or `compare`. If empty, ask the user what set deep should review.
+2. Load existing evaluation reports for those homes. If any home is not yet evaluated, run `evaluate` first.
+3. Run `scripts/research/research-coverage-audit.mjs` against the shortlisted reports so deep knows which homes still have weak neighborhood, school, or development evidence.
 
-If the shortlist contains fewer than ten populated viable homes, research only the populated rows and say that the current shortlist is smaller than ten. This is not a stop condition; continue the run on the populated subset.
+### Phase A — Deterministic Capture (no agents)
 
-The deep command is finished only after step 16 completes. At that point, post a final summary line listing: which report was written, whether the finalist gate passed, where the briefing PDF landed, and that four tabs (three finalists plus the briefing PDF) are open in the hosted session. Do not stop earlier.
+**Steps 4a–4f run concurrently.** These commands are independent and must be launched together; wait for all to finish before Phase B. Use `run_in_background` Bash calls or `Start-Job` on Windows PowerShell. Add `--quick` to every step in this phase when the user asks for a fast progressive pass or when the shortlist has five or more homes.
 
-## Research Axes
+- **4a:** `node scripts/research/research-source-plan.mjs --shortlist --type all` -- produces the lookup plan.
+- **4b:** `node scripts/research/community-lookup.mjs --shortlist --profile chrome-host` -- resolves each home to a named community via mapdevelopers.com. Cached under `output/communities/{slug}.json`. Required input for 4c.
+- **4c:** `node scripts/research/sentiment-browser-extract.mjs --shortlist --profile chrome-host --concurrency 4` -- captures Facebook + Nextdoor evidence into `output/sentiment/{slug}.json`. Honors `--quick`.
+- **4d:** `node scripts/research/sentiment-public-extract.mjs --shortlist` -- fetches Reddit / Google Maps snippets per `portals.yml` and merges them into the same sentiment files. Sole source for the `traffic_commute` dimension.
+- **4e:** `node scripts/research/construction-check.mjs --shortlist` -- NCDOT project pressure into `output/construction/{slug}.json`. Honors `--quick`.
+- **4f:** `node scripts/research/county-permits-check.mjs --shortlist` -- geocodes each home (cached at `output/geocode/`), runs a 5-mile spatial query against the configured county GIS feature services (Wake County by default), writes `output/permits/{slug}.json`. Skips with `status: "skipped-by-profile"` if `research_sources.development.county_planning` is false.
+- **4g:** `node scripts/research/school-metadata-fetch.mjs --shortlist` -- per-school GreatSchools metadata (rating, enrollment, ratio, ethnicity) into `output/school-metadata/{slug}.json`. Skips if no school sources are opted in.
 
-Organize the deep dive around these sections:
+5. Wait for all Phase A jobs to finish. If any failed, surface the error in the brief rather than silently proceeding.
+
+6. Run `node scripts/research/deep-research-packet.mjs --shortlist` so each shortlisted home gets one packet under `output/deep-packets/{slug}.json`. Each packet carries baseline evaluation, audit blockers, source plans, profile weights, captured sentiment, construction, permits, and school metadata sidecars.
+
+### Phase B — Three Axis Agents (interpretation only)
+
+Launch the three axis agents in **a single message with three Agent tool calls** so the runtime fans them out in parallel. None of the axis agents browse the web; they read pre-written JSON files and return structured findings.
+
+7. **Sentiment Agent.** Inputs: every `output/sentiment/{slug}.json`, the buyer profile weights, deal_breakers, commute destinations. Output per home:
+    - `sentimentScores` keyed by dimension (`crime_safety`, `traffic_commute`, `community`, `livability`) with each entry containing `score` (signed, weight-applied), `signalDirection`, `evidenceCount`, `proximityMix` (counts of strong vs. weak vs. general matches), and 2–3 raw `quotes` from the captured snippets.
+    - `redFlagsTriggered`: list of buyer deal-breaker phrases that matched any snippet, with the matching quote.
+    - `sourceCoverage` per source (`facebook`, `nextdoor`, `reddit`, `google_maps`) using `captured`, `blocked`, `no-community-match`, `skipped-by-profile`, or `missing`.
+    - `confidence` -- `high` / `medium` / `low` based on coverage and proximity mix.
+
+8. **Risk Agent** (construction + permits combined). Inputs: every `output/construction/{slug}.json` and `output/permits/{slug}.json`. Output per home:
+    - `riskLevel` -- `low` / `moderate` / `high`.
+    - `nearbyProjects`: array of the most relevant matches across both sources, each with a one-line description, source, status, and distance/proximity hint.
+    - `pressureBreakdown`: NCDOT contribution + county-permit contribution.
+    - `resaleRiskNote`: one paragraph explaining how the level should adjust the home's rerank.
+
+9. **Schools Agent.** Inputs: every `output/school-metadata/{slug}.json`. Output per home:
+    - `schools`: array per assigned school with `name`, `gradeLevel`, `greatSchoolsRating`, `enrollment`, `studentTeacherRatio`, `ethnicityDistribution`, and a `note` flagging mismatches with the listing-source rating from the report.
+    - `weightedSchoolScore`: a normalized 0–1 score derived from the assigned-school ratings vs. `hard_requirements.schools_min_rating`. This score is multiplied by `profile.sentiment.weights.schools` when the main agent reranks.
+    - `flags`: parent-of-the-year red flags such as enrollment trending up sharply, ratio above district mean, or rating below the buyer minimum.
+
+The axis agents must NOT make tool calls (no `WebFetch`, no Playwright). If the input JSON for a home is missing, the agent records the gap with `status: "missing-input"` for that home and continues.
+
+### Phase C — Main Agent Synthesis
+
+10. Stream the axis agent results back as they land so the user sees progress. Do not wait for the slowest agent before starting the brief skeleton.
+
+11. The main agent reviews the three axis outputs together with the deep packets and evaluation reports, resolves conflicts, and writes one combined batch brief to `reports/deep-shortlist-{YYYY-MM-DD}.md`. Writing the brief is not the end of the command; immediately proceed to step 12.
+
+12. Update `data/shortlist.md` with deep batch status, the report path, and the refined top 3.
+
+13. Rerank the top-10 cohort using the axis agent outputs, deep packets, and audit gaps. Treat `riskLevel: "high"` as a resale-risk modifier that depresses a home's rank unless the matches are clearly benign. The schools score is multiplied by the `schools` weight from `profile.sentiment.weights` and contributes to the rerank.
+
+14. Run `node scripts/research/shortlist-finalist-gate.mjs` before promoting the refined top 3. If the gate passes, continue. If it fails, surface the blockers, ask once whether the user wants to bypass, and continue based on the answer.
+
+15. Replace tabs with the refined top 3 using `node scripts/browser/review-tabs.mjs shortlist-top3 --replace` (Windows PowerShell: `npm.cmd run browser:review -- shortlist-top3 --replace`). Open the listing URLs from the underlying reports; fall back to the report file when the listing URL is missing.
+
+16. Render the briefing PDF and open it in the same hosted Chrome session via `node scripts/reports/briefing-pdf.mjs` (Windows PowerShell: `npm.cmd run brief:top3`). The PDF lands at `output/briefings/top3-briefing-{YYYY-MM-DD}.pdf`. Final state: exactly four tabs in the hosted session — three finalist listings + the briefing PDF.
+
+If the shortlist contains fewer than ten populated homes, research only the populated rows. Continue the run on the populated subset.
+
+The deep command is finished only after step 16. Post a final summary line listing the brief path, finalist gate result, briefing PDF path, and the four-tab final state.
+
+## Research Axes (for the brief content)
+
+Organize the combined brief around these sections:
 
 1. Immediate Area and Neighborhood Identity
 2. School Ecosystem
@@ -85,123 +125,46 @@ Organize the deep dive around these sections:
 6. Resale Outlook
 7. Buyer-Specific Verdict
 
-**Quick mode axes (when --quick was passed to the step 6 commands):** Each worker focuses on axes 1, 3, 5, and 7 only -- the highest-signal axes for a progressive decision. Axes 2, 4, and 6 can be filled in a second targeted pass if the shortlist narrows but more evidence is still needed. Quick mode is not an excuse to skip evidence; it is a way to get a fast first read that can be deepened later.
+**Quick mode axes (when --quick was passed in Phase A):** focus the brief on axes 1, 3, 5, and 7. Axes 2, 4, and 6 can be filled in a second targeted pass later.
 
-## What to Research
+## What to Research per Axis
 
 ### 1. Immediate Area and Neighborhood Identity
-- subdivision reputation if identifiable
-- street character and traffic feel
-- family-friendliness and community feel
-- recurring praise or complaints from locals
+Sentiment Agent's `sentimentScores.community`, `sentimentScores.livability`, and `redFlagsTriggered` drive this section. Quote 2–3 raw snippets per home.
 
 ### 2. School Ecosystem
-- assigned schools and ratings
-- parent sentiment patterns
-- school-crowding or redistricting concerns
-- extracurricular or support-program strength
+Schools Agent output. Include the metadata table and any flags about ratings drift, enrollment, or deal-breaker mismatches.
 
 ### 3. Development Pipeline and Future Change
-- nearby subdivisions or rezoning
-- commercial growth that could improve or hurt convenience
-- road projects and widening plans
-- any signs of overbuilding or infrastructure strain
+Risk Agent output. Combine NCDOT + county permits. Always cite specific case IDs and project descriptions when present in `output/permits/`.
 
 ### 4. Commute and Daily Convenience
-- access to Raleigh and RTP
-- grocery, parks, urgent care, and family amenities
-- bottlenecks or road chokepoints
+Sentiment Agent's `traffic_commute` dimension (sourced from Reddit / Google Maps / construction signals). Cross-reference with buyer commute destinations from `config/profile.yml`.
 
 ### 5. Risk Review
-- flood or drainage issues
-- road noise
-- adjacency to unattractive uses
-- HOA or municipal-service concerns
+Combine: Risk Agent's high-pressure projects, Sentiment Agent's red flags, and any audit blockers from the deep packet.
 
 ### 6. Resale Outlook
-- likely buyer appeal in 3 to 7 years
-- whether the home type and area should remain liquid
-- risks that could hurt future marketability
+Use the rerank logic. Explain how each axis pushed the home up or down vs. the original evaluation order.
 
 ### 7. Buyer-Specific Verdict
-- why this area does or does not fit Daniel's stated priorities
-- what would need to be validated in person before moving forward
-
-## Worker Tool Contract (Mandatory)
-
-Each shortlist worker is a subagent. The worker is not allowed to hand back prose that was produced from the deep packet alone -- the packet is a starting plan, not a research substitute. The worker MUST actually open sources with its browsing tools before it reports findings, and it MUST tell the main agent which tools it used for every axis.
-
-Required tool usage per axis, honoring the opt-ins recorded in `config/profile.yml` under `research_sources`:
-
-- **Neighborhood sentiment (axes 1, 4, 5).** Only run this axis if `research_sources.sentiment` has at least one source set to `true`. Facebook and Nextdoor sentiment may only populate `crime_safety`, `community`, and `livability`. `traffic_commute` must be sourced from Reddit, Google Maps, or the NCDOT construction check. For each opted-in source:
-  - `reddit` / `google_maps`: `WebFetch` against the exact entries in `sourcePlans.sentiment.entries[*].searchUrls` -- those are per-home URLs built from the subdivision, city, and road hints. Prefer those over inventing new queries. The 6d public extractor may have already populated snippets under `output/sentiment/{slug}.json`; if it did, confirm by inspecting `sentimentEvidence.weightedSignals` before repeating the fetch.
-  - `nextdoor`: **Must never use `WebFetch`.** Nextdoor enforces a login wall on every guest request, so a plain fetch returns the sign-in shell and the worker will hallucinate if it scores that page. The hosted Chrome session is the only authenticated surface. The expected order is:
-    1. Read `sentimentEvidence.weightedSignals` and any `nextdoor` snippets in the packet first. Step 6c's `sentiment-browser-extract.mjs` already ran the hosted-session capture and wrote the results to `output/sentiment/{slug}.json`. Treat that file as the primary Nextdoor evidence and quote from it. If it contains Nextdoor entries, emit `nextdoor: { status: "captured" }` in `sourceCoverage` and move on -- do not re-fetch.
-    2. Only when the packet contains no Nextdoor snippets AND the community lookup produced a URL, use the Playwright MCP tools through the hosted Chrome session to visit `packet.communityUrls.nextdoor` (the canonical `https://nextdoor.com/neighborhood/<community>--<city>--<state>/` page). Required MCP call sequence: `mcp__playwright__browser_navigate` with that URL, then `mcp__playwright__browser_snapshot` (or `mcp__playwright__browser_evaluate`) to read the feed. Record each call in `toolsUsed.sentiment`. Exclude posts whose visible content is only a membership announcement (e.g. `X joined the group`, `X is now a member`, `Welcome X to the neighborhood`) -- those are not sentiment evidence.
-    3. If the Playwright MCP tools are not available to the worker (for example the subagent was launched without MCP access), the worker must stop, emit `nextdoor: { status: "tool-unavailable" }` in `sourceCoverage`, and list no Nextdoor findings. The main agent should then rerun `node scripts/research/sentiment-browser-extract.mjs --shortlist --profile chrome-host` for the affected slug and reissue the worker.
-    4. If the community lookup returned no match, skip Nextdoor and record `nextdoor: { status: "no-community-match" }` in `sourceCoverage` instead of falling back to a city-level feed.
-  - `facebook`: Same rule as Nextdoor -- prefer pre-captured `output/sentiment/{slug}.json` evidence, and only fall through to Playwright MCP (`mcp__playwright__browser_navigate` against `packet.communityUrls.facebook`) when the packet is empty. Never `WebFetch` Facebook; it will serve the login wall. If the MCP tools are unavailable, emit `facebook: { status: "tool-unavailable" }`. If the page renders but cannot load past the wall in MCP, record `facebook: { status: "blocked" }`.
-  - If the sentiment group is fully empty in the profile, skip this axis and emit `sentiment: { status: "skipped-by-profile" }` in the worker result rather than inventing findings.
-- **Schools (axis 2) -- metadata capture only.** Schools are no longer a weighted sentiment dimension. Only run if `research_sources.schools` has at least one opted-in source. Produce `schoolMetadata` entries per assigned school:
-  - `greatschools`: `WebFetch` the templated GreatSchools URL (`https://www.greatschools.org/search/search.page?city=<city>&locationLabel=<address city state>&st[]=public&state=<state>`) and extract the rating, enrollment, student/teacher ratio, and ethnicity distribution for each assigned school.
-  - Cross-check the GreatSchools rating against the rating printed on the listing source page (Redfin / Zillow) in the evaluation report. If they disagree, include both and note the discrepancy.
-  - `niche`, `state_report_cards`, `schooldigger`: `WebFetch` the matching URL in the deep packet only to enrich or corroborate the metadata fields. Do not synthesize a sentiment score from these pages.
-  - If schools group is empty, skip the axis and emit `schools: { status: "skipped-by-profile" }`.
-- **Development and infrastructure (axis 3).** Only run if `research_sources.development` has at least one opted-in source:
-  - `state_dot`: `WebFetch` the state DOT project page in the deep packet and the NCDOT companion record (for NC) captured in step 6c. Confirm by snippet which specific projects were reviewed.
-  - `local_construction` (when the buyer opted in): additionally hit the linked county or municipal planning page from the deep packet and summarize any active rezonings, subdivisions, or permits within a mile of the listing.
-  - If the development group is empty, skip the axis and emit `development: { status: "skipped-by-profile" }`.
-- **Commute and daily convenience (axis 4).** Always allowed. Use `WebSearch` and/or `WebFetch` for drive-time estimates and nearby amenity presence against the buyer's `commute.destinations`.
-
-Workers must NOT return findings for any axis where their own `toolsUsed` array for that axis is empty and the status is not `skipped-by-profile`. If a fetch fails, record the failure in `sourceCoverage` for that source and report the axis with `status: "tool-failure"` plus the error; do not fabricate evidence.
-
-Workers must NOT edit `data/listings.md`, `data/shortlist.md`, or `reports/` directly.
-
-## Output Requirements For Shortlist Batches
-
-Each worker result must include these fields, even when some sources are blocked or missing:
-
-1. `address`
-2. `toolsUsed` -- an object keyed by axis (`sentiment`, `schools`, `development`, `commute`, `verdict`) whose values are arrays of `{ tool, url, status }` entries recording each tool call the worker made. Missing entries mean the worker did not browse; the main agent will flag that as unsupported.
-3. `sourceCoverage` with explicit statuses for Facebook, Nextdoor, Reddit or public sentiment fallback, NCDOT, county planning, municipal planning, and school sources. Use `captured`, `blocked`, `no-match`, `reviewed`, `tool-failure`, `skipped-by-profile`, or `missing` instead of vague language.
-4. `sentimentMetrics` mapped to the configured `config/profile.yml` weights for `crime_safety`, `traffic_commute`, `community`, and `livability`, including the source used for each metric. Facebook and Nextdoor may only populate `crime_safety`, `community`, and `livability`. `traffic_commute` must be sourced from Reddit, Google Maps, or the NCDOT construction record. Omit this key entirely when sentiment is `skipped-by-profile`.
-5. `schoolMetadata` -- an array with one entry per assigned school (elementary, middle, high). Each entry must include `name`, `gradeLevel`, `greatSchoolsRating`, `stateRating` (or `null`), `enrollment`, `studentTeacherRatio`, `ethnicityDistribution` (object keyed by group with percent values), and `url`. Capture fields from GreatSchools plus the listing source (Redfin / Zillow) and leave missing values as `null` rather than inventing them. Omit this key entirely when schools is `skipped-by-profile`. After collecting schoolMetadata from all workers, the main agent must write each home's metadata to `output/school-metadata/<slug>.json` using the same slug pattern as the sentiment and construction sidecars. The briefing PDF reads that file to render the Schools & Metadata table; without it the PDF falls back to a regex-extracted ratings-only view.
-6. `developmentMetrics` that explicitly call out whether the opted-in state DOT and local construction sources were reviewed, what they showed, and how they affect traffic, crowding, or resale risk. Omit when development is `skipped-by-profile`.
-7. `deepScoreAdjustments` that explain how the deeper evidence changes the prior evaluation score or ranking position.
-8. `keyPositives`
-9. `keyNegatives`
-10. `unresolvedQuestions`
-11. `tentativeVerdict`
-
-## Main-Agent Verification Before Accepting A Worker's Output
-
-After each worker returns, the main agent MUST:
-
-1. Check that every non-skipped axis has at least one entry in `toolsUsed` for that axis. If an axis is marked `skipped-by-profile` but the profile's corresponding group is non-empty, treat the worker result as unreliable and rerun it.
-2. For every `status: "captured"` or `status: "reviewed"` entry in `sourceCoverage`, confirm the matching `toolsUsed` entry exists. If not, downgrade that coverage entry to `missing` in the combined brief and call it out.
-3. Surface the count of empty-axis workers in the combined brief's "Source coverage" section so the user can see at a glance which homes actually got browsed.
-
-When deep mode is operating on the current compare shortlist, the final brief should contain:
-
-1. Per-home deep findings for the shortlisted set
-2. Cross-home risk comparison
-3. Deep-adjusted top 3
-4. Best fit after deeper research
-5. Runner-up after deeper research
-6. Why the homes outside the refined top 3 fell back
-7. What changed from the original evaluate or compare top-10 order
+Per-home: does this fit the buyer's stated priorities, and what would need in-person validation before moving forward.
 
 ## Output Style
 
-- Prefer a direct research brief over a generic prompt.
-- If the user explicitly asks for a reusable prompt, provide one tailored to the address or area.
+- Prefer a direct research brief over a generic prompt. If the user explicitly asks for a reusable prompt, provide one tailored to the address or area.
 - Distinguish clearly between evidence, inference, and unresolved questions.
-- Use the research-audit output to distinguish evidence-backed findings from inherited evaluation gaps. Deep mode should not silently treat missing neighborhood, school, or development research as completed just because the shortlist exists.
-- Use `scripts/research/research-source-plan.mjs` as the default bridge from `portals.yml` into actual sentiment, school, and development lookups, with development checks first when time is limited.
-- When the hosted browser session is available, prefer `scripts/research/sentiment-browser-extract.mjs` for Facebook and Nextdoor evidence before falling back to public-source neighborhood sentiment.
-- Use `scripts/research/deep-research-packet.mjs` as the handoff contract for shortlist workers so the packet, not memory, carries the source plan, audit blockers, profile weights, and captured browser evidence.
-- If Facebook, Nextdoor, or NCDOT were not actually reviewed, say that directly and lower confidence instead of smoothing over the gap.
-- The final brief should include a per-home source-coverage ledger and weighted-adjustment rationale, not just narrative prose.
-- When the shortlist batch branch is active, use one subagent per home as the default pattern and make it clear that the main agent owns the final top-3 rerank.
-- When running the shortlist batch branch, persist the refined top 3 back into `data/shortlist.md` after writing the batch brief.
-- When the shortlist batch branch finishes, the hosted Chrome window should contain exactly four tabs: the three finalist home listings plus the rendered briefing PDF. All other tabs must be closed. Open the briefing PDF after the tab replacement so it is not evicted. The finalist set must pass the strict research gate unless the user explicitly overrides it.
+- Include a per-home source-coverage ledger at the top of each home's section showing what was captured, blocked, or missing.
+- If sentiment, construction, permits, or school metadata files are missing for a home, say that directly and lower confidence — do not paper over the gap.
+- Persist the refined top 3 back into `data/shortlist.md` after writing the batch brief.
+- When the shortlist batch branch finishes, the hosted Chrome window should contain exactly four tabs (three finalists + briefing PDF). All other tabs must be closed. Open the briefing PDF after the tab replacement so it is not evicted.
+
+## Single-Home Branch (no shortlist)
+
+When the user asks for a deep dive on one address or neighborhood (not the shortlist):
+
+1. Run the same Phase A capture commands but pass the report path or `--address`/`--city` instead of `--shortlist`.
+2. Skip the per-axis-agent fan-out — the main agent reads the captured JSON sidecars directly and writes a single deep brief to `reports/{slug}-deep-{YYYY-MM-DD}.md`.
+3. No tab replacement, no briefing PDF, no shortlist update.
+
+The three-axis-agent flow is reserved for batch shortlist runs because that's where the cost savings matter; for single-home requests the main agent handles synthesis directly.

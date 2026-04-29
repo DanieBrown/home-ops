@@ -26,6 +26,12 @@ import {
   parseReport,
   parseShortlist,
 } from './research-utils.mjs';
+import {
+  buildProfileRedFlagPatterns,
+  buildProximityHints,
+  classifyProximity,
+  scoreProfileRedFlags,
+} from './sentiment-scoring.mjs';
 import { slugify } from '../shared/text-utils.mjs';
 
 const OUTPUT_DIR = join(ROOT, 'output', 'sentiment');
@@ -131,13 +137,19 @@ function stripHtml(html) {
     .trim();
 }
 
-function classifySnippet(text) {
+function classifySnippet(text, redFlagPatterns = []) {
   const categories = Object.entries(THEME_PATTERNS)
     .filter(([, patterns]) => patterns.some((pattern) => pattern.test(text)))
     .map(([key]) => key);
   const positiveHits = POSITIVE_PATTERNS.reduce((n, p) => n + (p.test(text) ? 1 : 0), 0);
-  const negativeHits = NEGATIVE_PATTERNS.reduce((n, p) => n + (p.test(text) ? 1 : 0), 0);
-  return { categories, positiveHits, negativeHits };
+  const baseNegativeHits = NEGATIVE_PATTERNS.reduce((n, p) => n + (p.test(text) ? 1 : 0), 0);
+  const redFlag = scoreProfileRedFlags(text, redFlagPatterns);
+  return {
+    categories,
+    positiveHits,
+    negativeHits: baseNegativeHits + redFlag.hits,
+    redFlagsMatched: redFlag.matched,
+  };
 }
 
 function extractSnippets(bodyText, query, maxSnippets = 5) {
@@ -157,17 +169,22 @@ function extractSnippets(bodyText, query, maxSnippets = 5) {
   return snippets;
 }
 
-function summarizeThemes(snippets) {
+function summarizeThemes(snippets, redFlagPatterns = [], proximityHints = null) {
   const themes = new Map();
   for (const snippet of snippets) {
-    const { categories, positiveHits, negativeHits } = classifySnippet(snippet);
+    const proximity = proximityHints
+      ? classifyProximity(snippet, proximityHints)
+      : { level: 'strong', multiplier: 1.0, matchedHints: [] };
+    if (proximity.level === 'none') continue;
+    const { categories, positiveHits, negativeHits } = classifySnippet(snippet, redFlagPatterns);
+    const m = proximity.multiplier;
     for (const category of categories) {
       const current = themes.get(category) ?? {
         category, hits: 0, recentHits: 0, positiveHits: 0, negativeHits: 0, examples: [],
       };
-      current.hits += 1;
-      current.positiveHits += positiveHits;
-      current.negativeHits += negativeHits;
+      current.hits += 1 * m;
+      current.positiveHits += positiveHits * m;
+      current.negativeHits += negativeHits * m;
       if (current.examples.length < 2) current.examples.push(snippet.slice(0, 180));
       themes.set(category, current);
     }
@@ -175,7 +192,8 @@ function summarizeThemes(snippets) {
   return [...themes.values()].sort((a, b) => b.hits - a.hits);
 }
 
-async function runSource(sourceEntry) {
+async function runSource(sourceEntry, scoringContext) {
+  const { redFlagPatterns = [], proximityHints = null } = scoringContext || {};
   const queryResults = [];
   const urls = Array.isArray(sourceEntry.searchUrls) ? sourceEntry.searchUrls : [];
   const queries = sourceEntry.recommendedQueries ?? [];
@@ -198,14 +216,19 @@ async function runSource(sourceEntry) {
       queryResults.push({ status: 'empty', query, searchUrl: url, finalUrl: url });
       continue;
     }
-    const snippetObjects = snippets.map((text) => ({ text, ...classifySnippet(text), recent: false }));
+    const snippetObjects = snippets.map((text) => {
+      const proximity = proximityHints
+        ? classifyProximity(text, proximityHints)
+        : { level: 'strong', multiplier: 1.0, matchedHints: [] };
+      return { text, ...classifySnippet(text, redFlagPatterns), recent: false, proximity };
+    });
     queryResults.push({
       status: 'ok',
       query,
       searchUrl: url,
       finalUrl: url,
       snippets: snippetObjects,
-      themes: summarizeThemes(snippets),
+      themes: summarizeThemes(snippets, redFlagPatterns, proximityHints),
     });
   }
 
@@ -276,9 +299,17 @@ async function extractTarget(target, researchContext) {
   const publicEntries = sentimentPlan.entries.filter(
     (entry) => PUBLIC_KEYS.has(entry.key) && (entry.searchUrls?.length ?? 0) > 0,
   );
+  const redFlagPatterns = buildProfileRedFlagPatterns(researchContext.profile);
+  const proximityHints = buildProximityHints({
+    subdivisionHints: sentimentPlan.subdivisionHints,
+    roadHints: sentimentPlan.roadHints,
+    schoolNames: sentimentPlan.schoolNames,
+    city: target.city,
+  });
+  const scoringContext = { redFlagPatterns, proximityHints };
   const newSources = [];
   for (const entry of publicEntries) {
-    newSources.push(await runSource(entry));
+    newSources.push(await runSource(entry, scoringContext));
   }
 
   const outputPath = buildOutputPath(target);

@@ -257,6 +257,7 @@ const STEPS = [
         { key: 'traffic_commute', label: 'Traffic and daily commute friction' },
         { key: 'community', label: 'Neighbor quality and community feel' },
         { key: 'livability', label: 'Parks, groceries, everyday livability' },
+        { key: 'schools', label: 'Assigned schools (rating, enrollment, ratio)' },
       ],
       currentValues: normalizedToScale(state.profile?.sentiment?.weights),
     }),
@@ -1277,6 +1278,7 @@ const RESEARCH_SOURCE_GROUPS = [
     note: 'Drives construction-pressure checks for road projects, rezonings, and subdivisions near a listing.',
     sources: [
       { key: 'state_dot', label: 'State DOT project list' },
+      { key: 'county_planning', label: 'County GIS permits and subdivision cases (5-mile spatial query, auto-discovered from ArcGIS catalog during profile setup — currently configured for Wake County, NC)' },
     ],
   },
 ];

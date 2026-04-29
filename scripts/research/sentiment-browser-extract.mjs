@@ -13,6 +13,10 @@ import {
   parseShortlist,
 } from './research-utils.mjs';
 import {
+  buildProfileRedFlagPatterns,
+  scoreProfileRedFlags,
+} from './sentiment-scoring.mjs';
+import {
   CACHE_TTL,
   getCacheEntry,
   isCacheFresh,
@@ -516,7 +520,7 @@ function countPatternHits(text, patterns) {
   return patterns.reduce((count, pattern) => count + (pattern.test(text) ? 1 : 0), 0);
 }
 
-function classifySnippet(text, allowedCategories = null) {
+function classifySnippet(text, allowedCategories = null, redFlagPatterns = []) {
   const categories = Object.entries(THEME_PATTERNS)
     .filter(([key, patterns]) => {
       if (allowedCategories && !allowedCategories.has(key)) return false;
@@ -524,10 +528,13 @@ function classifySnippet(text, allowedCategories = null) {
     })
     .map(([key]) => key);
 
+  const baseNegative = countPatternHits(text, NEGATIVE_PATTERNS);
+  const redFlag = scoreProfileRedFlags(text, redFlagPatterns);
   return {
     categories,
     positiveHits: countPatternHits(text, POSITIVE_PATTERNS),
-    negativeHits: countPatternHits(text, NEGATIVE_PATTERNS),
+    negativeHits: baseNegative + redFlag.hits,
+    redFlagsMatched: redFlag.matched,
     recent: RECENT_PATTERNS.some((pattern) => pattern.test(text)),
   };
 }
@@ -560,6 +567,7 @@ function selectRelevantSnippets(pageData, query, options = {}) {
   const queryTokens = tokenizeQuery(query);
   const exactNeedle = normalizeText(query).toLowerCase();
   const allowedCategories = options.allowedCategories ?? null;
+  const redFlagPatterns = options.redFlagPatterns ?? [];
   const candidates = dedupeStrings([...pageData.blocks, ...extractBodyWindows(pageData.bodyText, queryTokens)])
     .filter((text) => !isMembershipAnnouncement(text));
 
@@ -567,7 +575,7 @@ function selectRelevantSnippets(pageData, query, options = {}) {
     .map((text) => {
       const normalized = text.toLowerCase();
       const matchedTokens = queryTokens.filter((token) => normalized.includes(token));
-      const classification = classifySnippet(text, allowedCategories);
+      const classification = classifySnippet(text, allowedCategories, redFlagPatterns);
       const score = (normalized.includes(exactNeedle) ? 8 : 0)
         + (matchedTokens.length * 2)
         + (classification.recent ? 2 : 0)
@@ -682,6 +690,7 @@ async function extractCommunityPage(context, source, communityUrl, query, option
   const attempts = [];
   const maxScrolls = options.quick ? QUICK_MAX_SCROLLS_PER_PAGE : MAX_SCROLLS_PER_PAGE;
   const allowedCategories = options.allowedCategories ?? null;
+  const redFlagPatterns = options.redFlagPatterns ?? [];
 
   const page = await context.newPage();
   try {
@@ -710,7 +719,7 @@ async function extractCommunityPage(context, source, communityUrl, query, option
       };
     }
 
-    const snippets = selectRelevantSnippets(pageData, query, { allowedCategories });
+    const snippets = selectRelevantSnippets(pageData, query, { allowedCategories, redFlagPatterns });
     if (snippets.length === 0) {
       return {
         status: 'empty',
@@ -824,6 +833,7 @@ async function extractTarget(context, target, researchContext, cacheState, optio
   const maxQueries = quick ? QUICK_MAX_QUERIES_PER_SOURCE : MAX_QUERIES_PER_SOURCE;
   const sentimentPlan = buildSentimentSourcePlan(target, researchContext);
   const cacheKey = buildSentimentCacheKey(target, sentimentPlan);
+  const redFlagPatterns = buildProfileRedFlagPatterns(researchContext.profile);
 
   const materializeSharedResult = async (sharedOutput, cachedFromKey = cacheKey) => {
     const outputPath = buildTargetOutputPath(target);
@@ -914,6 +924,7 @@ async function extractTarget(context, target, researchContext, cacheState, optio
       const result = await extractCommunityPage(context, source, communityUrl, queryLabel, {
         quick,
         allowedCategories: BROWSER_ALLOWED_CATEGORIES,
+        redFlagPatterns,
       });
 
       sourceResults.push({

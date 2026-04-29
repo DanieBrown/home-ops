@@ -34,7 +34,7 @@ const CONTRACTS = {
   },
   hunt: {
     mode: 'hunt',
-    description: '/home-ops hunt -- session check (auto-init if needed), reset, scan, evaluate pending, deep shortlist',
+    description: '/home-ops hunt -- session check (auto-init if needed), reset, scan, evaluate pending',
     required: [
       req('browser-status', 'Hosted browser session check (auto-runs init if closed)', [
         /npm(?:\.cmd)?\s+run\s+browser:status\b/,
@@ -74,51 +74,6 @@ const CONTRACTS = {
       ], {
         requires: ['reset:data', 'verify-pipeline', 'scan', 'verify-pipeline-write', 'evaluate-pending', 'merge-tracker', 'research-audit'],
         isGate: true,
-      }),
-      req('research-source-plan', 'Deep phase: shortlist source plan (fan-out 6a)', [
-        /research-source-plan\.mjs[^\n]*--shortlist/,
-        /npm(?:\.cmd)?\s+run\s+plan:research[^\n]*--shortlist/,
-      ], { requires: ['review-tabs'], isGate: true }),
-      req('community-lookup', 'Deep phase: shortlist community name resolution (fan-out 6b)', [
-        /community-lookup\.mjs[^\n]*--shortlist/,
-        /npm(?:\.cmd)?\s+run\s+lookup:community[^\n]*--shortlist/,
-      ], { requires: ['review-tabs'], isGate: true }),
-      req('sentiment-extract', 'Deep phase: shortlist browser sentiment capture — Facebook/Nextdoor (fan-out 6c)', [
-        /sentiment-browser-extract\.mjs[^\n]*--shortlist/,
-        /npm(?:\.cmd)?\s+run\s+extract:sentiment[^\n]*--shortlist/,
-      ], { requires: ['community-lookup'], isGate: true }),
-      req('construction-check', 'Deep phase: shortlist NCDOT construction check (fan-out 6d)', [
-        /construction-check\.mjs[^\n]*--shortlist/,
-        /npm(?:\.cmd)?\s+run\s+check:construction[^\n]*--shortlist/,
-      ], { requires: ['review-tabs'], isGate: true }),
-      req('sentiment-public-extract', 'Deep phase: shortlist public sentiment — Reddit/Google Maps/traffic_commute (fan-out 6e)', [
-        /sentiment-public-extract\.mjs[^\n]*--shortlist/,
-      ], { requires: ['review-tabs'], isGate: true }),
-      req('deep-research-packet', 'Deep phase: research packets per shortlisted home', [
-        /deep-research-packet\.mjs[^\n]*--shortlist/,
-        /npm(?:\.cmd)?\s+run\s+prepare:deep[^\n]*--shortlist/,
-      ], { requires: ['research-source-plan', 'community-lookup', 'sentiment-extract', 'construction-check', 'sentiment-public-extract'], isGate: true }),
-      req('promote-finalists', 'Deep phase: auto-promote top-3 into Refined Top 3 section', [
-        /promote-finalists\.mjs\b/,
-        /npm(?:\.cmd)?\s+run\s+promote:finalists\b/,
-      ], { requires: ['deep-research-packet'], isGate: true }),
-      req('finalist-gate', 'Deep phase: finalist gate before promoting top 3', [
-        /shortlist-finalist-gate\.mjs\b/,
-        /npm(?:\.cmd)?\s+run\s+gate:finalists\b/,
-      ], { requires: ['promote-finalists'], isGate: true }),
-      req('review-tabs-top3', 'Deep phase: replace tabs with top-3 finalists', [
-        /review-tabs\.mjs[^\n]*shortlist-top3/,
-        /npm(?:\.cmd)?\s+run\s+browser:review[^\n]*shortlist-top3/,
-      ], {
-        isGate: true,
-        requires: ['research-source-plan', 'community-lookup', 'sentiment-extract', 'construction-check', 'sentiment-public-extract', 'deep-research-packet', 'promote-finalists', 'finalist-gate'],
-      }),
-      req('briefing-pdf', 'Deep phase: render top-3 briefing PDF', [
-        /briefing-pdf\.mjs\b/,
-        /npm(?:\.cmd)?\s+run\s+brief:top3\b/,
-      ], {
-        isGate: true,
-        requires: ['review-tabs-top3'],
       }),
     ],
   },

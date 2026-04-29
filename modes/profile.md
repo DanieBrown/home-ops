@@ -54,7 +54,7 @@ The wizard no longer asks for features or deal-breakers as separate pick-lists, 
 - `down_payment_pct` / `closing_pct` are no longer collected. Do not overwrite the existing `financial` block in `config/profile.yml`; leave it as-is.
 - `research_sources` keys are flat `group.source` pairs. When a whole group has every source set to `false`, that group is intentionally opted out -- set every key in the corresponding `research_sources.<group>` object to `false` in `config/profile.yml`, and update `modes/_profile.md` to note which pipeline stages are now skipped. The one exception is the listing-portals group: an all-off portals group means "use every portal" -- `generate-portals.mjs` already handles this fallback, so still mirror the buyer's picks verbatim into `config/profile.yml`.
 - The schools group now exposes only `greatschools`. Write the buyer's pick into `research_sources.schools.greatschools` and set the legacy keys `niche`, `state_report_cards`, and `schooldigger` to `false` on ingestion.
-- The development group now exposes only `state_dot`. Write the buyer's pick into `research_sources.development.state_dot` and set the legacy keys `local_construction`, `county_planning`, `municipal_planning`, and `mpo` to `false` on ingestion.
+- The development group exposes `state_dot` and `county_planning`. Write the buyer's picks verbatim into the corresponding `research_sources.development` keys and set the remaining legacy keys (`local_construction`, `municipal_planning`, `mpo`) to `false` on ingestion.
 - `commute` is a list of destination names. Preserve each destination's existing `address` and `priority` in `config/profile.yml` if present; otherwise default `priority` to `occasional` and leave `address` equal to `<name>, <state>`.
 
 ### Wizard Narrative Mapping
@@ -141,6 +141,7 @@ After updating the files, run:
 
 - `node scripts/config/generate-portals.mjs` -- regenerates `portals.yml` from the updated `config/profile.yml` and `config/city-registry.yml`. Always run this when search areas change so Zillow, Redfin, and Realtor.com base URLs stay in sync with the profile.
 - `node scripts/config/profile-sync-check.mjs`
+- **County GIS discovery** (if `research_sources.development.county_planning` is `true`): run `node scripts/research/county-services-discover.mjs --all`. This queries the ArcGIS REST catalog for each county in the buyer's search areas that has an entry in `config/county-arcgis-registry.yml`, discovers planning/permits/zoning feature layers by field scoring, and writes `config/county-sources.json`. The permits check (`county-permits-check.mjs`) loads this file automatically on every run. If a county is not in the registry, note it in the output summary and tell the user to add its ArcGIS base URL to `config/county-arcgis-registry.yml`.
 
 If `scripts/config/generate-portals.mjs` emits a warning for an unmatched city, add the missing `redfin_city_id` and `primary_zip` to `config/city-registry.yml` and rerun the generator before continuing.
 
@@ -152,4 +153,5 @@ Return a concise summary with:
 - whether the weight scores were re-normalized
 - whether `scripts/config/generate-portals.mjs` ran cleanly, plus any unmatched-city warnings it surfaced
 - whether `scripts/config/profile-sync-check.mjs` passed
+- if county_planning is enabled: how many counties were discovered, which had services registered, and which were skipped (not in registry)
 - and an explicit next-step line telling the user to run `/home-ops init` next

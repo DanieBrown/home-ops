@@ -28,6 +28,7 @@ const DEFAULT_PROFILE = 'chrome-host';
 const OUTPUT_DIR = join(ROOT, 'output', 'briefings');
 const SENTIMENT_DIR = join(ROOT, 'output', 'sentiment');
 const CONSTRUCTION_DIR = join(ROOT, 'output', 'construction');
+const COMMUNITY_DIR = join(ROOT, 'output', 'communities');
 const DEEP_PACKET_DIR = join(ROOT, 'output', 'deep-packets');
 const SCHOOL_METADATA_DIR = join(ROOT, 'output', 'school-metadata');
 
@@ -581,6 +582,14 @@ function buildSchoolRatings(report) {
 function loadSchoolMetadata(report) {
   const payload = findCompanionJson(report, SCHOOL_METADATA_DIR);
   if (!payload) return null;
+  // Accept two shapes:
+  //   - legacy top-level array: [{name, ...}, ...]
+  //   - new object: { address, city, schools: [...] }
+  // Slug-keyed file path already proves the file belongs to this report,
+  // so the address check is only enforced on the object shape.
+  if (Array.isArray(payload)) {
+    return { schools: payload };
+  }
   if (!companionMatchesReport(payload, report)) return null;
   return payload;
 }
@@ -602,52 +611,74 @@ function formatSchoolField(value) {
   return escapeHtml(String(value));
 }
 
-function buildSchoolsCard(report, profile) {
+function formatNicheGrade(nicheGrade) {
+  if (!nicheGrade?.letter) return '--';
+  const letter = escapeHtml(nicheGrade.letter);
+  const colorMap = {
+    'A+': '#15803d', A: '#16a34a', 'A-': '#22c55e',
+    'B+': '#2563eb', B: '#3b82f6', 'B-': '#60a5fa',
+    'C+': '#d97706', C: '#f59e0b', 'C-': '#fbbf24',
+    'D+': '#dc2626', D: '#ef4444', 'D-': '#f87171',
+    F: '#7f1d1d',
+  };
+  const color = colorMap[nicheGrade.letter] ?? '#6b7280';
+  return `<span style="font-weight:700;color:${color}">${letter}</span>`;
+}
+
+function formatSubGrades(subGrades) {
+  if (!subGrades) return '--';
+  const labels = { academics: 'Acad', teachers: 'Tchr', diversity: 'Div', collegePrep: 'CP', clubs: 'Clubs', sports: 'Sprt', healthSafety: 'Safety' };
+  const parts = Object.entries(subGrades)
+    .filter(([, v]) => v !== null && v !== undefined)
+    .map(([k, v]) => `${labels[k] ?? k}: ${v}`);
+  return parts.length ? escapeHtml(parts.join(' · ')) : '--';
+}
+
+function buildSchoolsCard(report) {
   const metadata = loadSchoolMetadata(report);
-  const min = profile?.search?.hard_requirements?.schools_min_rating;
 
   if (metadata && Array.isArray(metadata.schools) && metadata.schools.length > 0) {
     const rows = metadata.schools.map((school) => {
-      const rating = Number.parseFloat(school.greatSchoolsRating);
-      const pass = Number.isFinite(rating) && Number.isFinite(min) ? rating >= min : null;
-      const ratingClass = pass === null ? 'school-neutral' : pass ? 'school-pass' : 'school-fail';
       const nameCell = school.url
         ? `<a href="${escapeHtml(school.url)}">${escapeHtml(school.name ?? '--')}</a>`
         : formatSchoolField(school.name);
+      const profMath = school.percentProficient?.math != null ? `${school.percentProficient.math}%` : '--';
+      const profReading = school.percentProficient?.reading != null ? `${school.percentProficient.reading}%` : '--';
+      const frl = school.freeReducedLunchPct != null ? `${school.freeReducedLunchPct}%` : '--';
       return `
         <tr>
           <td>${nameCell}</td>
           <td>${formatSchoolField(school.gradeLevel)}</td>
-          <td class="num"><span class="school-rating ${ratingClass}">${formatSchoolField(school.greatSchoolsRating)}</span></td>
-          <td class="num">${formatSchoolField(school.stateRating)}</td>
+          <td class="num">${formatNicheGrade(school.nicheGrade)}</td>
+          <td class="num" style="font-size:0.72em">${formatSubGrades(school.subGrades)}</td>
           <td class="num">${formatSchoolField(school.enrollment)}</td>
           <td class="num">${formatSchoolField(school.studentTeacherRatio)}</td>
+          <td class="num">${frl}</td>
+          <td class="num">${profMath} / ${profReading}</td>
           <td>${formatEthnicityDistribution(school.ethnicityDistribution)}</td>
         </tr>`;
     }).join('');
 
-    const footnote = Number.isFinite(min)
-      ? `<p class="muted">GreatSchools ratings below your ${escapeHtml(String(min))}/10 minimum are highlighted.</p>`
-      : '';
-
     return `
       <div class="card wide schools">
-        <h3>Schools &amp; Metadata</h3>
+        <h3>Schools &amp; Metadata <span class="muted" style="font-size:0.8em;font-weight:400">via Niche.com</span></h3>
         <table class="school-metadata">
           <thead>
             <tr>
               <th>School</th>
               <th>Level</th>
-              <th class="num">GS Rating</th>
-              <th class="num">State Rating</th>
+              <th class="num">Grade</th>
+              <th class="num">Sub-grades</th>
               <th class="num">Enrollment</th>
               <th class="num">Stu/Tch</th>
+              <th class="num">FRL%</th>
+              <th class="num">Math/Read</th>
               <th>Ethnicity</th>
             </tr>
           </thead>
           <tbody>${rows}</tbody>
         </table>
-        ${footnote}
+        <p class="muted">FRL% = Free/Reduced Lunch; Math/Read = % proficient; Sub-grades condensed from Niche category scores.</p>
       </div>`;
   }
 
@@ -655,18 +686,12 @@ function buildSchoolsCard(report, profile) {
   // has not been populated (e.g. the deep workers did not land their captures).
   const ratings = buildSchoolRatings(report);
   if (ratings.length === 0) return '';
-  const rows = ratings.map((entry) => {
-    const pass = Number.isFinite(min) ? entry.rating >= min : null;
-    const badgeClass = pass === null ? 'school-neutral' : pass ? 'school-pass' : 'school-fail';
-    return `
+  const rows = ratings.map((entry) => `
       <li class="school-row">
         <span class="school-name">${escapeHtml(entry.name)}</span>
-        <span class="school-rating ${badgeClass}">${escapeHtml(String(entry.rating))}/10</span>
-      </li>`;
-  }).join('');
-  const footnote = Number.isFinite(min)
-    ? `<p class="muted">Ratings below your ${escapeHtml(String(min))}/10 minimum are highlighted. Run the deep-mode school-metadata capture to populate the full table.</p>`
-    : '<p class="muted">Run the deep-mode school-metadata capture to populate the full table (enrollment, demographics).</p>';
+        <span class="school-rating school-neutral">${escapeHtml(String(entry.rating))}/10</span>
+      </li>`).join('');
+  const footnote = '<p class="muted">Run the deep-mode school-metadata capture to populate the full table (Niche grades, enrollment, demographics).</p>';
   return `
     <div class="card wide schools">
       <h3>Schools &amp; Ratings</h3>
@@ -750,7 +775,7 @@ function buildFinalistSection(finalist, profile) {
         <div class="rank-badge">#${escapeHtml(String(finalist.rank))}</div>
         <div class="finalist-title">
           <h2>${addressHeading}</h2>
-          <p class="locality">${escapeHtml(report.city)}, ${escapeHtml(report.state)}</p>
+          <p class="locality">${escapeHtml(report.city)}, ${escapeHtml(report.state)}${finalist.community ? ` <span class="community-tag">&middot; ${escapeHtml(finalist.community)} community</span>` : ''}</p>
           <div class="badges">
             <span class="score-badge">Score ${escapeHtml(scoreDisplay)}</span>
             <span class="rec-badge rec-${escapeHtml(recClass)}">${escapeHtml(recommendation)}</span>
@@ -770,7 +795,7 @@ function buildFinalistSection(finalist, profile) {
           <ul>${(concerns.length ? concerns : ['(none captured)']).map((s) => `<li>${escapeHtml(s)}</li>`).join('')}</ul>
         </div>
         ${constructionBlock}
-        ${buildSchoolsCard(report, profile)}
+        ${buildSchoolsCard(report)}
         ${sentimentBlock}
         ${buildCommuteCard(report, profile)}
         ${gapBlock}
@@ -864,6 +889,7 @@ function buildHtml(finalists, profile) {
   }
   .finalist-title h2 a { color: #0f172a; }
   .locality { color: #6b7280; font-size: 10pt; margin-bottom: 10px; }
+  .community-tag { color: #4f46e5; font-weight: 500; }
   .badges { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
   .score-badge {
     padding: 3px 10px; border-radius: 999px; font-size: 9pt;
@@ -1047,12 +1073,18 @@ function loadFinalists() {
     const constructionCompanion = loadCompanionForReport(report, CONSTRUCTION_DIR, 'Construction');
     const sentimentCompanion = loadCompanionForReport(report, SENTIMENT_DIR, 'Sentiment');
     const packetCompanion = loadCompanionForReport(report, DEEP_PACKET_DIR, 'Deep packet');
+    const communityPayload = findCompanionJson(report, COMMUNITY_DIR);
+    const community = communityPayload && communityPayload.community
+      && communityPayload.status !== 'no-community-match'
+      ? String(communityPayload.community).trim()
+      : null;
     return {
       rank: row.rank || index + 1,
       report,
       construction: constructionCompanion.data,
       sentiment: sentimentCompanion.data,
       packet: packetCompanion.data,
+      community,
       constructionMismatch: constructionCompanion.mismatchMessage,
       sentimentMismatch: sentimentCompanion.mismatchMessage,
       packetMismatch: packetCompanion.mismatchMessage,

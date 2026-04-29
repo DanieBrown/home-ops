@@ -22,14 +22,16 @@ Use this mode when the user wants one command to clear generated state, discover
 
 ## Goal
 
+
 Run the bulk intake flow in this exact order:
 
 1. `reset`
 2. `scan`
 3. `evaluate`
-4. `deep` (shortlist batch branch)
 
-The user asked for a simpler top-level command, not a replacement for the separate commands. Keep `reset`, `scan`, `evaluate`, and `deep` available as independent workflows for flexible use.
+**The deep phase is no longer triggered automatically by hunt.**
+
+The user asked for a simpler top-level command, not a replacement for the separate commands. Keep `reset`, `scan`, `evaluate`, and `deep` available as independent workflows for flexible use. The `deep` command must now be run separately, only when the user explicitly requests it after hunt completes.
 
 ## Prerequisite
 
@@ -53,13 +55,15 @@ If the command arguments include scan platform flags such as:
 
 apply those flags only to the `scan` phase.
 
-If the command arguments include `--quick`, pass it through to every step-6 command in the deep phase (per `modes/deep.md` quick-mode rules). Do not let `--quick` skip any of the deep contract scripts -- it only narrows their work.
+
+If the command arguments include `--quick`, pass it through to every step-6 command in the deep phase (per `modes/deep.md` quick-mode rules). Do not let `--quick` skip any of the deep contract scripts -- it only narrows their work. **Note:** Since the deep phase is now user-triggered, this only applies when running the `deep` command directly.
 
 Rules:
 - `reset` still clears the generated working state.
 - `reset` should preserve `data/shortlist.md` when `config/profile.yml` sets `workflow.shortlist.preserve_on_reset: true`.
 - `evaluate` still runs with no explicit listing target against the pipeline created by the scan phase.
-- `deep` is always gated by a user confirmation at step 4.5 before it runs.
+
+`deep` is no longer part of the hunt sequence and must be run separately by the user after hunt completes.
 
 ## Execution Order
 
@@ -116,6 +120,7 @@ Abort means: write `.home-ops/contract-abort.json` with the specific `{"reason":
 
 If the runner fails because the scan found no new qualifying listings, evaluate will complete as a no-op. Check whether the pipeline is empty after the runner returns. If empty, skip the deep phase, write `.home-ops/contract-abort.json` with `{"reason":"hunt: pipeline empty after scan, deep skipped"}`, and report that clearly.
 
+
 ### 4. Open Top-10 Review Tabs
 
 After evaluate completes, replace all open browser tabs with the top-10 shortlist so the user sees only the current candidates:
@@ -125,63 +130,13 @@ After evaluate completes, replace all open browser tabs with the top-10 shortlis
 
 The `--replace` flag closes every existing tab in the hosted session before opening the top-10 listings. The user should see exactly the top-10 homes and nothing else at this point.
 
-If `data/shortlist.md` is empty after evaluate (no qualifying homes survived), abort the deep phase by writing `.home-ops/contract-abort.json` with `{"reason":"hunt: shortlist empty after evaluate, deep skipped"}` and report it clearly.
+If `data/shortlist.md` is empty after evaluate (no qualifying homes survived), report that outcome clearly and end the hunt sequence. The deep phase is not triggered automatically.
 
-### 4.5. Deep Phase Gate
+---
 
-Pause here and ask the user once:
+**To run the deep shortlist research phase, the user must now run the `deep` command separately after hunt completes.**
 
-> "The top-10 homes are now open in the browser. Would you like to run the deep analysis phase?"
-
-- If the user says **yes**: continue to step 5 immediately.
-- If the user says **no** or does not reply with a clear yes: write the output summary covering phases 0–4 only (see Output Summary section) and end the turn. Do not write a contract-abort file — this is a normal early exit, not a failure.
-
-### 5. Deep Phase (shortlist batch branch)
-
-The deep phase has three sub-steps. Do not skip any of them.
-
-#### 5a. Data collection prep
-
-**CRITICAL: DO NOT run individual prep scripts. Run one single command:**
-
-```
-npm.cmd run hunt:deep
-```
-
-Use a **600000ms timeout** (10 minutes).
-
-**The runner handles these steps internally — do not call them separately:**
-- research-source-plan → community-lookup → sentiment-browser-extract → construction-check → sentiment-public-extract → deep-research-packet
-
-The runner exits 0 when all six prep steps succeed and the packets are written to `output/deep-packets/`. If it exits non-zero, fix the failing step before continuing.
-
-#### 5b. Per-home subagent fan-out
-
-After the prep runner exits 0, read `output/deep-packets/` to enumerate the packet files. Then follow **modes/deep.md steps 9–13** to fan out per-home AI subagents:
-
-- Launch one subagent per shortlisted home (up to 10 total) in a **single message** so the runtime fans them out in parallel. Never serialize the launches.
-- Each worker receives exactly one deep packet plus the matching evaluation report path, researches all deep-dive axes (neighborhood, schools, development, commute, risk, resale), and returns a structured result.
-- As workers return, stream their findings into the combined batch brief.
-- After all workers have returned, the main agent writes the combined brief to `reports/deep-shortlist-{YYYY-MM-DD}.md` and updates `data/shortlist.md` with the deep batch status and a reranked top 3.
-
-Workers must follow the Worker Tool Contract in `modes/deep.md` — actual tool calls required, no hallucination from the packet alone.
-
-#### 5c. Finalization
-
-After all subagents have returned and the combined brief is written, run:
-
-```
-npm.cmd run hunt:deep-final
-```
-
-Use a **300000ms timeout** (5 minutes).
-
-**The runner handles these steps internally — do not call them separately:**
-- promote-finalists → shortlist-finalist-gate → review-tabs top3 → briefing-pdf
-
-The runner exits 0 when all finalization steps succeed. If the finalist gate fails due to research gaps, fix the gaps and re-run `npm.cmd run hunt:deep-final`. Do not proceed to the output summary if the runner exits non-zero.
-
-If the hosted Chrome session dies mid-deep and cannot be reopened, surface it, write `.home-ops/contract-abort.json` with `{"reason":"hunt: chrome session lost mid-deep"}`, and end the turn.
+---
 
 ## Important Rules
 
@@ -203,8 +158,9 @@ Return a concise summary with:
 - canonical properties evaluated
 - reports written
 - tracker updates merged
-- deep packets generated and per-home subagents launched
-- finalist gate result (pass / fail / bypassed)
-- finalist top-3 plus briefing PDF path
-- final hosted-Chrome tab state (expected: three finalist listings + the briefing PDF)
+- top-10 review tabs opened
 - any blockers or remaining backlog
+
+End the summary with this exact suggestion line so the user knows the next step:
+
+> Run `/home-ops deep` to research the shortlist (sentiment, construction, permits, schools) and produce the finalist briefing.
