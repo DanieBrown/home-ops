@@ -35,6 +35,8 @@ If `{{mode}}` contains multiple tokens, use the first token as the sub-command a
 | `tracker ...args` | `tracker` |
 | `deep` | `deep` |
 | `deep ...args` | `deep` |
+| `skim` | `skim` |
+| `skim ...args` | `skim` |
 
 If `{{mode}}` is not a known sub-command and looks like a Zillow, Redfin, Realtor.com, or other listing URL, treat it as `evaluate`.
 
@@ -62,6 +64,8 @@ Available commands:
   /home-ops reset           -> Clear generated reports, tracker rows, pipeline items, and scan history while keeping profiles
   /home-ops tracker         -> Listings tracker overview and status updates
   /home-ops deep            -> Deep dive on a property, neighborhood, or school area
+  /home-ops skim            -> Open pre-filtered search tabs in the hosted browser for all configured portals
+  /home-ops skim --zillow --redfin --relator -> Skim only those platforms
 
 Pipeline inbox: data/pipeline.md
 Tracker: data/listings.md
@@ -86,6 +90,7 @@ Then read the mode file:
 - `modes/reset.md`
 - `modes/tracker.md`
 - `modes/deep.md`
+- `modes/skim.md`
 
 Also read the relevant data files before acting:
 - `buyer-profile.md`

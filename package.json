@@ -63,7 +63,8 @@
     "permits:check": "node scripts/research/county-permits-check.mjs",
     "permits:discover": "node scripts/research/county-services-discover.mjs",
     "schools:metadata": "node scripts/research/school-metadata-fetch.mjs",
-    "sentiment:public": "node scripts/research/sentiment-public-extract.mjs"
+    "sentiment:public": "node scripts/research/sentiment-public-extract.mjs",
+    "skim": "node scripts/browser/skim-portals.mjs"
   },
   "keywords": [
     "ai",

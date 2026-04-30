@@ -48,6 +48,7 @@ Rule:
 | `/home-ops-evaluate` | Evaluate one listing or batch-evaluate pending pipeline homes |
 | `/home-ops-compare` | Compare multiple homes |
 | `/home-ops-scan` | Scan configured portal searches |
+| `/home-ops-skim` | Open pre-filtered search tabs in the hosted browser for all configured portals |
 | `/home-ops-reset` | Clear generated reports, tracker rows, pipeline items, and scan history |
 | `/home-ops-tracker` | Show or update listing status |
 | `/home-ops-deep` | Deep dive on a property or area |
@@ -133,6 +134,7 @@ Once the basics are in place, the user can:
 - paste a listing URL to evaluate it
 - run `/home-ops evaluate` to process the pending pipeline in batch mode
 - run `/home-ops scan`
+- run `/home-ops skim` to open pre-filtered search tabs in the hosted browser for a quick visual browse of all configured portals (auto-launches a session if none is active)
 - run `/home-ops reset` to clear generated search state without changing profiles
 - run `/home-ops tracker`
 - ask for a deeper neighborhood or school dive
@@ -153,6 +155,7 @@ When the user asks to change priorities, weights, or scan coverage:
 | pastes a listing URL or asks to process pending listings | `evaluate` |
 | asks to compare homes | `compare` |
 | wants fresh listings | `scan` |
+| wants to visually browse portals with filters pre-loaded | `skim` |
 | wants to clear generated search state but keep profiles | `reset` |
 | asks for tracker status | `tracker` |
 | wants deeper area research | `deep` |
