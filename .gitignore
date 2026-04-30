@@ -43,3 +43,6 @@ career-dashboard
 dashboard/home-ops-dashboard
 dashboard/home-ops-dashboard.exe
 package-lock.json
+
+# Git worktrees
+.worktrees/
