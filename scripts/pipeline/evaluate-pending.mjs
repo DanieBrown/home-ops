@@ -4,7 +4,6 @@ import { spawnSync } from 'child_process';
 import { existsSync, readdirSync } from 'fs';
 import { mkdir, readFile, writeFile } from 'fs/promises';
 import { basename, dirname, join } from 'path';
-import { fileURLToPath } from 'url';
 import {
   connectToSavedBrowserSession,
   readSessionState,
@@ -29,14 +28,18 @@ import {
   ttlForVerification,
 } from '../system/cache-utils.mjs';
 import { slugify as slugifyBase } from '../shared/text-utils.mjs';
+import {
+  ROOT,
+  PIPELINE_FILE,
+  LISTINGS_FILE,
+  REPORTS_DIR,
+  SHORTLIST_PATH,
+  BATCH_DIR,
+  OUTPUT_DIR,
+} from '../shared/paths.mjs';
+import { parseArgs, printHelp } from '../shared/cli.mjs';
 
-const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
-const PIPELINE_PATH = join(ROOT, 'data', 'pipeline.md');
-const LISTINGS_PATH = join(ROOT, 'data', 'listings.md');
-const REPORTS_DIR = join(ROOT, 'reports');
-const SHORTLIST_PATH = join(ROOT, 'data', 'shortlist.md');
-const ADDITIONS_DIR = join(ROOT, 'batch', 'tracker-additions');
-const PACKETS_DIR = join(ROOT, 'output', 'evaluate-packets');
+const PACKETS_DIR = join(OUTPUT_DIR, 'evaluate-packets');
 
 const DEFAULT_PROFILE = 'chrome-host';
 const DEFAULT_LIMIT = 0;
@@ -229,82 +232,27 @@ function platformLabel(platformKey) {
   return PLATFORM_LABELS[platformKey] ?? PLATFORM_LABELS.other;
 }
 
-function parseArgs(argv) {
-  const config = {
-    profileName: DEFAULT_PROFILE,
-    limit: DEFAULT_LIMIT,
-    packetsOnly: false,
-    skipMerge: false,
-    skipReviewTabs: false,
-    skipAudit: false,
-    noCache: false,
-    refreshCache: false,
-    help: false,
-  };
+const EVAL_SCHEMA = {
+  '--profile':          { type: 'value',     key: 'profileName' },
+  '--limit':            { type: 'int-value', key: 'limit' },
+  '--packets-only':     { type: 'flag',      key: 'packetsOnly' },
+  '--skip-merge':       { type: 'flag',      key: 'skipMerge' },
+  '--skip-review-tabs': { type: 'flag',      key: 'skipReviewTabs' },
+  '--skip-audit':       { type: 'flag',      key: 'skipAudit' },
+  '--no-cache':         { type: 'flag',      key: 'noCache' },
+  '--refresh-cache':    { type: 'flag',      key: 'refreshCache' },
+};
 
-  for (let index = 0; index < argv.length; index += 1) {
-    const arg = argv[index];
-
-    if (arg === '--help' || arg === '-h') {
-      config.help = true;
-      continue;
-    }
-
-    if (arg === '--profile') {
-      config.profileName = argv[index + 1] ?? '';
-      index += 1;
-      continue;
-    }
-
-    if (arg === '--limit') {
-      const value = Number.parseInt(argv[index + 1] ?? '', 10);
-      if (Number.isNaN(value) || value < 0) {
-        throw new Error('Expected a non-negative integer after --limit.');
-      }
-      config.limit = value;
-      index += 1;
-      continue;
-    }
-
-    if (arg === '--packets-only') {
-      config.packetsOnly = true;
-      continue;
-    }
-
-    if (arg === '--skip-merge') {
-      config.skipMerge = true;
-      continue;
-    }
-
-    if (arg === '--skip-review-tabs') {
-      config.skipReviewTabs = true;
-      continue;
-    }
-
-    if (arg === '--skip-audit') {
-      config.skipAudit = true;
-      continue;
-    }
-
-    if (arg === '--no-cache') {
-      config.noCache = true;
-      continue;
-    }
-
-    if (arg === '--refresh-cache') {
-      config.refreshCache = true;
-      continue;
-    }
-
-    throw new Error(`Unknown option: ${arg}`);
-  }
-
-  if (!config.profileName) {
-    throw new Error('Expected a profile name after --profile.');
-  }
-
-  return config;
-}
+const EVAL_DEFAULTS = {
+  profileName: DEFAULT_PROFILE,
+  limit: DEFAULT_LIMIT,
+  packetsOnly: false,
+  skipMerge: false,
+  skipReviewTabs: false,
+  skipAudit: false,
+  noCache: false,
+  refreshCache: false,
+};
 
 function safeParseNumber(value) {
   if (value == null) {
@@ -1024,11 +972,11 @@ function buildEntryFromBareLine(trimmed, index) {
 }
 
 async function readPipelineDocument() {
-  if (!existsSync(PIPELINE_PATH)) {
+  if (!existsSync(PIPELINE_FILE)) {
     throw new Error('data/pipeline.md is missing.');
   }
 
-  const content = await readFile(PIPELINE_PATH, 'utf8');
+  const content = await readFile(PIPELINE_FILE, 'utf8');
   if (!content.includes('## Pending') || !content.includes('## Processed')) {
     throw new Error('data/pipeline.md does not contain the expected Pending and Processed sections.');
   }
@@ -1166,8 +1114,8 @@ function parseListingsTracker(content) {
 
 async function loadExistingContext() {
   const trackerMap = new Map();
-  if (existsSync(LISTINGS_PATH)) {
-    const trackerContent = await readFile(LISTINGS_PATH, 'utf8');
+  if (existsSync(LISTINGS_FILE)) {
+    const trackerContent = await readFile(LISTINGS_FILE, 'utf8');
     for (const row of parseListingsTracker(trackerContent)) {
       const key = buildAddressKey(row.address, row.city);
       if (key) {
@@ -2305,7 +2253,7 @@ async function runNodeScript(scriptName, args, required = false) {
 async function main() {
   let config;
   try {
-    config = parseArgs(process.argv.slice(2));
+    config = parseArgs(process.argv.slice(2), EVAL_SCHEMA, { defaults: EVAL_DEFAULTS });
   } catch (error) {
     console.error(error.message);
     console.error('');
@@ -2545,8 +2493,8 @@ async function main() {
 
   let stagedTsvPath = '';
   if (trackerRows.length > 0) {
-    await mkdir(ADDITIONS_DIR, { recursive: true });
-    stagedTsvPath = join(ADDITIONS_DIR, `evaluate-pending-${runId}.tsv`);
+    await mkdir(BATCH_DIR, { recursive: true });
+    stagedTsvPath = join(BATCH_DIR, `evaluate-pending-${runId}.tsv`);
     await writeFile(stagedTsvPath, `${trackerRows.join('\n')}\n`, 'utf8');
     if (!config.skipMerge) {
       await runNodeScript('scripts/pipeline/merge-tracker.mjs', ['--verify'], true);
@@ -2572,7 +2520,7 @@ async function main() {
     pipeline.lines[pipeline.processedIndex],
     ...updatedProcessedLines,
   ].join('\n').replace(/\n{3,}/g, '\n\n');
-  await writeFile(PIPELINE_PATH, `${rebuiltPipeline.trimEnd()}\n`, 'utf8');
+  await writeFile(PIPELINE_FILE, `${rebuiltPipeline.trimEnd()}\n`, 'utf8');
 
   const shortlist = renderShortlist(canonicalHomes.filter((home) => home.result), reportDate, runId);
   if (shortlist.top10.length > 0) {
