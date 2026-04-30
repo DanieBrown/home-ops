@@ -1,24 +1,26 @@
 #!/usr/bin/env node
 
 import { existsSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'fs';
-import { dirname, join } from 'path';
-import { fileURLToPath } from 'url';
+import { join } from 'path';
 import YAML from 'yaml';
 
-const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
-const REPORTS_DIR = join(ROOT, 'reports');
-const TRACKER_ADDITIONS_DIR = join(ROOT, 'batch', 'tracker-additions');
-const TRACKER_MERGED_DIR = join(TRACKER_ADDITIONS_DIR, 'merged');
-const LISTINGS_PATH = join(ROOT, 'data', 'listings.md');
-const PIPELINE_PATH = join(ROOT, 'data', 'pipeline.md');
-const SHORTLIST_PATH = join(ROOT, 'data', 'shortlist.md');
-const SCAN_HISTORY_PATH = join(ROOT, 'data', 'scan-history.tsv');
-const PROFILE_PATH = join(ROOT, 'config', 'profile.yml');
-const HOME_OPS_DIR = join(ROOT, '.home-ops');
+import {
+  ROOT,
+  REPORTS_DIR,
+  BATCH_DIR as TRACKER_ADDITIONS_DIR,
+  MERGED_BATCH_DIR as TRACKER_MERGED_DIR,
+  LISTINGS_FILE as LISTINGS_PATH,
+  PIPELINE_FILE as PIPELINE_PATH,
+  SHORTLIST_PATH,
+  SCAN_HISTORY_PATH,
+  PROFILE_PATH,
+  HOME_OPS_DIR,
+  OUTPUT_DIR,
+} from '../shared/paths.mjs';
+
 const SCAN_RUNNING_PATH = join(HOME_OPS_DIR, 'scan-running.json');
 const SCAN_COMPLETE_PATH = join(HOME_OPS_DIR, 'scan-complete.json');
 const ZILLOW_BLOCKED_PATH = join(HOME_OPS_DIR, 'zillow-session-blocked.json');
-const OUTPUT_DIR = join(ROOT, 'output');
 // Research cache subdirs of output/ that, if left in place, cause repeat runs
 // to re-surface and re-score the same homes. browser-sessions is excluded so
 // the hosted Chrome login state survives reset.

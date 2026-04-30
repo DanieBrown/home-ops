@@ -9,8 +9,6 @@
  */
 
 import { copyFileSync, existsSync, readFileSync, writeFileSync } from 'fs';
-import { dirname, join } from 'path';
-import { fileURLToPath } from 'url';
 
 import { normalizeAddress, normalizeCity } from '../shared/text-utils.mjs';
 import {
@@ -21,9 +19,7 @@ import {
   parseScore,
   serializeListing,
 } from '../shared/listings.mjs';
-
-const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
-const LISTINGS_FILE = join(ROOT, 'data', 'listings.md');
+import { LISTINGS_FILE } from '../shared/paths.mjs';
 const DRY_RUN = process.argv.includes('--dry-run');
 
 if (!existsSync(LISTINGS_FILE)) {

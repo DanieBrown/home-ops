@@ -10,12 +10,13 @@
  */
 
 import { existsSync, readFileSync, statSync } from 'fs';
-import { dirname, join } from 'path';
-import { fileURLToPath } from 'url';
+import { join } from 'path';
 
-const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
-const PIPELINE_PATH = join(ROOT, 'data', 'pipeline.md');
-const HOME_OPS_DIR = join(ROOT, '.home-ops');
+import {
+  PIPELINE_FILE as PIPELINE_PATH,
+  HOME_OPS_DIR,
+} from '../shared/paths.mjs';
+
 const SCAN_RUNNING_PATH = join(HOME_OPS_DIR, 'scan-running.json');
 const SCAN_COMPLETE_PATH = join(HOME_OPS_DIR, 'scan-complete.json');
 const STALE_WINDOW_MINUTES = 60;

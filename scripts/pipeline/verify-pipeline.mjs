@@ -13,18 +13,18 @@
  */
 
 import { existsSync, readFileSync, readdirSync } from 'fs';
-import { dirname, join } from 'path';
-import { fileURLToPath } from 'url';
+import { join } from 'path';
 
 import { normalizeAddress, normalizeCity } from '../shared/text-utils.mjs';
 import { parseListingRow } from '../shared/listings.mjs';
 import { DEFAULT_STATUSES, readCanonicalStatuses } from '../shared/states.mjs';
-
-const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
-const LISTINGS_FILE = join(ROOT, 'data', 'listings.md');
-const PIPELINE_FILE = join(ROOT, 'data', 'pipeline.md');
-const ADDITIONS_DIR = join(ROOT, 'batch', 'tracker-additions');
-const STATES_FILE = join(ROOT, 'templates', 'states.yml');
+import {
+  ROOT,
+  LISTINGS_FILE,
+  PIPELINE_FILE,
+  STATES_FILE,
+  BATCH_DIR as ADDITIONS_DIR,
+} from '../shared/paths.mjs';
 
 let errors = 0;
 let warnings = 0;
