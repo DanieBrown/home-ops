@@ -8,76 +8,29 @@
  */
 
 import { copyFileSync, existsSync, readFileSync, writeFileSync } from 'fs';
-import { dirname, join } from 'path';
-import { fileURLToPath } from 'url';
 
-import { buildCanonicalLookup, readCanonicalStatuses } from '../shared/states.mjs';
+import { buildCanonicalLookup, readCanonicalStatuses, normalizeStatus as resolveStatus } from '../shared/states.mjs';
+import { LISTINGS_FILE, STATES_FILE } from '../shared/paths.mjs';
 
-const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
-const LISTINGS_FILE = join(ROOT, 'data', 'listings.md');
-const STATES_FILE = join(ROOT, 'templates', 'states.yml');
 const DRY_RUN = process.argv.includes('--dry-run');
 
 const canonicalStatuses = readCanonicalStatuses(STATES_FILE);
 const canonicalLookup = buildCanonicalLookup(canonicalStatuses);
 
 function normalizeStatus(raw) {
-  const stripped = raw.replace(/\*\*/g, '').trim();
-  const clean = stripped.replace(/\s+\d{4}-\d{2}-\d{2}.*$/, '').trim();
-  const lower = clean.toLowerCase();
+  const clean = String(raw ?? '')
+    .replace(/\*\*/g, '')
+    .replace(/\s+\d{4}-\d{2}-\d{2}.*$/, '')
+    .trim();
 
   if (!clean || clean === '-' || clean === '—') {
     return { status: 'SKIP' };
   }
 
-  if (canonicalLookup.has(lower)) {
-    return { status: canonicalLookup.get(lower) };
-  }
+  const resolved = resolveStatus(raw, canonicalLookup);
+  if (resolved) return { status: resolved };
 
-  const aliases = {
-    discovered: 'New',
-    scraped: 'New',
-    favorite: 'Interested',
-    shortlist: 'Interested',
-    shortlisted: 'Interested',
-    watchlist: 'Interested',
-    showing: 'Tour Scheduled',
-    scheduled: 'Tour Scheduled',
-    viewing: 'Tour Scheduled',
-    toured: 'Toured',
-    visited: 'Toured',
-    seen: 'Toured',
-    offered: 'Offer Submitted',
-    bid: 'Offer Submitted',
-    'offer sent': 'Offer Submitted',
-    pending: 'Under Contract',
-    contract: 'Under Contract',
-    'under contract': 'Under Contract',
-    purchased: 'Closed',
-    bought: 'Closed',
-    closed: 'Closed',
-    declined: 'Passed',
-    rejected: 'Passed',
-    'not interested': 'Passed',
-    not_interested: 'Passed',
-    sold: 'Sold',
-    expired: 'Sold',
-    delisted: 'Sold',
-    unavailable: 'Sold',
-    withdrawn: 'Sold',
-    'off market': 'Sold',
-    off_market: 'Sold',
-    filtered: 'SKIP',
-    'no fit': 'SKIP',
-    no_fit: 'SKIP',
-    skip: 'SKIP',
-  };
-
-  if (aliases[lower]) {
-    return { status: aliases[lower] };
-  }
-
-  if (/duplicado|duplicate|repost/i.test(lower)) {
+  if (/duplicado|duplicate|repost/i.test(clean.toLowerCase())) {
     return { status: 'SKIP', moveToNotes: raw.trim() };
   }
 
