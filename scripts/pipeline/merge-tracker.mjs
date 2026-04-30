@@ -16,8 +16,7 @@
 
 import { execSync } from 'child_process';
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, writeFileSync } from 'fs';
-import { dirname, join } from 'path';
-import { fileURLToPath } from 'url';
+import { join } from 'path';
 
 import { normalizeAddress, normalizeCity } from '../shared/text-utils.mjs';
 import {
@@ -28,13 +27,9 @@ import {
   parseScore,
   serializeListing,
 } from '../shared/listings.mjs';
-import { buildCanonicalLookup, readCanonicalStatuses } from '../shared/states.mjs';
+import { buildCanonicalLookup, readCanonicalStatuses, normalizeStatus as resolveStatus } from '../shared/states.mjs';
+import { ROOT, LISTINGS_FILE, BATCH_DIR, MERGED_BATCH_DIR, STATES_FILE } from '../shared/paths.mjs';
 
-const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
-const LISTINGS_FILE = join(ROOT, 'data', 'listings.md');
-const ADDITIONS_DIR = join(ROOT, 'batch', 'tracker-additions');
-const MERGED_DIR = join(ADDITIONS_DIR, 'merged');
-const STATES_FILE = join(ROOT, 'templates', 'states.yml');
 const DRY_RUN = process.argv.includes('--dry-run');
 const VERIFY = process.argv.includes('--verify');
 
@@ -50,51 +45,8 @@ function looksLikeScore(value) {
 }
 
 function canonicalizeStatus(value) {
-  const clean = value.replace(/\*\*/g, '').replace(/\s+\d{4}-\d{2}-\d{2}.*$/, '').trim();
-  if (!clean) {
-    return 'Evaluated';
-  }
-
-  const lower = clean.toLowerCase();
-  if (CANONICAL_LOOKUP.has(lower)) {
-    return CANONICAL_LOOKUP.get(lower);
-  }
-
-  const aliases = {
-    discovered: 'New',
-    scraped: 'New',
-    shortlisted: 'Interested',
-    favorite: 'Interested',
-    showing: 'Tour Scheduled',
-    scheduled: 'Tour Scheduled',
-    viewing: 'Tour Scheduled',
-    toured: 'Toured',
-    visited: 'Toured',
-    seen: 'Toured',
-    offered: 'Offer Submitted',
-    bid: 'Offer Submitted',
-    pending: 'Under Contract',
-    contract: 'Under Contract',
-    purchased: 'Closed',
-    bought: 'Closed',
-    declined: 'Passed',
-    not_interested: 'Passed',
-    'not interested': 'Passed',
-    off_market: 'Sold',
-    'off market': 'Sold',
-    delisted: 'Sold',
-    unavailable: 'Sold',
-    expired: 'Sold',
-    filtered: 'SKIP',
-    'no fit': 'SKIP',
-    no_fit: 'SKIP',
-    skip: 'SKIP',
-  };
-
-  if (aliases[lower]) {
-    return aliases[lower];
-  }
-
+  const resolved = resolveStatus(value, CANONICAL_LOOKUP);
+  if (resolved) return resolved;
   console.warn(`⚠️  Non-canonical status "${value}" -> defaulting to "Evaluated"`);
   return 'Evaluated';
 }
@@ -212,7 +164,7 @@ if (!existsSync(LISTINGS_FILE)) {
   process.exit(0);
 }
 
-if (!existsSync(ADDITIONS_DIR)) {
+if (!existsSync(BATCH_DIR)) {
   console.log('No tracker-additions directory found.');
   process.exit(0);
 }
@@ -230,7 +182,7 @@ for (let index = 0; index < listingLines.length; index += 1) {
   maxNumber = Math.max(maxNumber, entry.num);
 }
 
-const additionFiles = readdirSync(ADDITIONS_DIR)
+const additionFiles = readdirSync(BATCH_DIR)
   .filter((file) => file.endsWith('.tsv'))
   .sort((left, right) => {
     const leftNum = Number.parseInt(left, 10) || 0;
@@ -250,7 +202,7 @@ let updated = 0;
 let skipped = 0;
 
 for (const file of additionFiles) {
-  const additions = parseAdditionFile(readFileSync(join(ADDITIONS_DIR, file), 'utf-8'), file);
+  const additions = parseAdditionFile(readFileSync(join(BATCH_DIR, file), 'utf-8'), file);
   if (additions.length === 0) {
     skipped += 1;
     continue;
@@ -312,9 +264,9 @@ if (added > 0 || updated > 0) {
 
 if (!DRY_RUN) {
   writeFileSync(LISTINGS_FILE, listingLines.join('\n'));
-  mkdirSync(MERGED_DIR, { recursive: true });
+  mkdirSync(MERGED_BATCH_DIR, { recursive: true });
   for (const file of additionFiles) {
-    renameSync(join(ADDITIONS_DIR, file), join(MERGED_DIR, file));
+    renameSync(join(BATCH_DIR, file), join(MERGED_BATCH_DIR, file));
   }
   console.log(`\n✅ Moved ${additionFiles.length} TSVs to merged/`);
 }
