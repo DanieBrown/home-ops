@@ -25,6 +25,10 @@ Clear or reset these generated artifacts:
 - unchecked and processed items in `data/pipeline.md`
 - `data/listings.md`
 - `data/shortlist.md` only when `config/profile.yml` does not set `workflow.shortlist.preserve_on_reset: true`
+- research caches under `output/` that would otherwise bias subsequent runs:
+  `briefings/`, `cache/`, `communities/`, `construction/`, `deep-packets/`,
+  `evaluate-packets/`, `geocode/`, `permits/`, `school-metadata/`, `sentiment/`
+  (`output/browser-sessions/` is preserved)
 
 Resetting `data/listings.md` is required when reports are deleted, otherwise the tracker would keep broken report links.
 If shortlist preservation is enabled in the profile, keep `data/shortlist.md` untouched during reset and say so in the summary.

@@ -18,6 +18,22 @@ const HOME_OPS_DIR = join(ROOT, '.home-ops');
 const SCAN_RUNNING_PATH = join(HOME_OPS_DIR, 'scan-running.json');
 const SCAN_COMPLETE_PATH = join(HOME_OPS_DIR, 'scan-complete.json');
 const ZILLOW_BLOCKED_PATH = join(HOME_OPS_DIR, 'zillow-session-blocked.json');
+const OUTPUT_DIR = join(ROOT, 'output');
+// Research cache subdirs of output/ that, if left in place, cause repeat runs
+// to re-surface and re-score the same homes. browser-sessions is excluded so
+// the hosted Chrome login state survives reset.
+const OUTPUT_CACHE_SUBDIRS = [
+  'briefings',
+  'cache',
+  'communities',
+  'construction',
+  'deep-packets',
+  'evaluate-packets',
+  'geocode',
+  'permits',
+  'school-metadata',
+  'sentiment',
+];
 
 const HISTORY_HEADER = 'url\tfirst_seen\tplatform\tarea\taddress\tstatus\n';
 const LISTINGS_TEMPLATE = [
@@ -104,6 +120,11 @@ Clears:
   - data/pipeline.md (back to an empty template)
   - data/shortlist.md (back to an empty shortlist template unless workflow.shortlist.preserve_on_reset is true)
   - data/scan-history.tsv (back to header only)
+
+Also clears (research caches that bias re-runs):
+  - output/briefings/, output/cache/, output/communities/, output/construction/
+  - output/deep-packets/, output/evaluate-packets/, output/geocode/
+  - output/permits/, output/school-metadata/, output/sentiment/
 
 Preserves:
   - buyer-profile.md
@@ -210,8 +231,13 @@ function main() {
   const reportFiles = allReportFiles.filter((f) => !preservedReportPaths.has(f));
   const preservedReportCount = allReportFiles.length - reportFiles.length;
 
+  const outputCacheFiles = OUTPUT_CACHE_SUBDIRS.flatMap((sub) =>
+    listResettableFiles(join(OUTPUT_DIR, sub), () => true),
+  );
+
   console.log(`Reports to remove: ${reportFiles.length}${preservedReportCount > 0 ? ` (${preservedReportCount} preserved with shortlist)` : ''}`);
   console.log(`Tracker TSVs to remove: ${trackerAdditionFiles.length + trackerMergedFiles.length}`);
+  console.log(`Research cache files to remove (output/): ${outputCacheFiles.length}`);
   console.log('Files to reset:');
   console.log('- data/listings.md');
   console.log('- data/pipeline.md');
@@ -225,7 +251,7 @@ function main() {
     return;
   }
 
-  for (const filePath of [...reportFiles, ...trackerAdditionFiles, ...trackerMergedFiles]) {
+  for (const filePath of [...reportFiles, ...trackerAdditionFiles, ...trackerMergedFiles, ...outputCacheFiles]) {
     rmSync(filePath, { force: true, recursive: true });
   }
 

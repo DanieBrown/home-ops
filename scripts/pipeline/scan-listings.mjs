@@ -805,6 +805,18 @@ function filterCandidate(candidate, requirements) {
     return 'listing age outside window';
   }
 
+  // Homes.com cards routinely omit days-on-market in card text, which lets stale
+  // listings slip past the post-filter even when max_listing_age_days is set.
+  // When age is unknown on homes.com, drop the candidate so the user's age cap
+  // is honored rather than silently bypassed.
+  if (
+    candidate.platform === 'homes'
+    && candidate.ageDays === null
+    && requirements.maxListingAgeDays < Number.MAX_SAFE_INTEGER
+  ) {
+    return 'listing age unknown on homes.com card';
+  }
+
   if (candidate.propertyType && candidate.propertyType !== 'house') {
     return `property type ${candidate.propertyType}`;
   }
@@ -1152,6 +1164,9 @@ function syncHomesSearchUrl(rawUrl, requirements) {
 
     if (requirements.maxListingAgeDays < Number.MAX_SAFE_INTEGER) {
       params.set('dom-max', `${requirements.maxListingAgeDays}d`);
+      // Homes.com's dom-max param is best-effort; sorting by newest pushes
+      // stale listings off the first page so the post-filter has less to drop.
+      params.set('ssort', 'newest');
     }
 
     const segments = parsed.pathname.split('/').filter(Boolean);

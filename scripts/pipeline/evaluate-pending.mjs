@@ -748,7 +748,7 @@ function parseListingFacts(snapshot, entry) {
   const hoa = parseHoa(hoaSearchText);
   const daysOnMarket = parseDaysOnMarket(cardFacts);
   const schoolRatings = parseSchoolRatings(cardFacts);
-  const description = chooseFirst(structured.description, extractMeta(snapshot, 'description'), extractMeta(snapshot, 'og:description'), '').trim();
+  const description = (chooseFirst(structured.description, extractMeta(snapshot, 'description'), extractMeta(snapshot, 'og:description')) ?? '').trim();
   const subdivisionMatch = cardFacts.match(/(?:subdivision|community|neighborhood)[:\s]+([A-Z][A-Za-z0-9'& -]+)/i);
 
   return {
@@ -2121,15 +2121,39 @@ function buildShortlistEntry(home, rank) {
 }
 
 function renderShortlist(homes, reportDate, runId) {
-  const viableHomes = homes
+  const sortByScore = (left, right) => {
+    if (right.result.score !== left.result.score) {
+      return right.result.score - left.result.score;
+    }
+    return (left.areaMatch?.rank ?? 99) - (right.areaMatch?.rank ?? 99);
+  };
+
+  const evaluatedHomes = homes
     .filter((home) => home.reportPath && home.result.status === 'Evaluated')
-    .sort((left, right) => {
-      if (right.result.score !== left.result.score) {
-        return right.result.score - left.result.score;
-      }
-      return (left.areaMatch?.rank ?? 99) - (right.areaMatch?.rank ?? 99);
-    })
-    .slice(0, 10);
+    .sort(sortByScore);
+
+  // Round-robin across portals so each enabled platform gets equal weight in
+  // the top-10 cohort. Without this, a single portal that returns more or
+  // higher-scoring listings (typically Zillow) crowds out realtor.com and
+  // homes.com entirely. Within each platform, listings stay score-sorted.
+  const byPlatform = new Map();
+  for (const home of evaluatedHomes) {
+    const key = home.bestAttempt?.platformKey ?? 'other';
+    if (!byPlatform.has(key)) {
+      byPlatform.set(key, []);
+    }
+    byPlatform.get(key).push(home);
+  }
+
+  const platformQueues = [...byPlatform.values()];
+  const viableHomes = [];
+  while (viableHomes.length < 10 && platformQueues.some((q) => q.length > 0)) {
+    for (const queue of platformQueues) {
+      if (viableHomes.length >= 10) break;
+      const next = queue.shift();
+      if (next) viableHomes.push(next);
+    }
+  }
 
   const top10 = viableHomes.map((home, index) => buildShortlistEntry(home, index + 1));
   const lines = [];
