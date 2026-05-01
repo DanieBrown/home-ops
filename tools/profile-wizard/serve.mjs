@@ -231,15 +231,23 @@ async function handleSuggestTile(req, res) {
     const raw = await readBody(req, 32 * 1024);
     const { selected = [], pool = [], type = 'feature' } = JSON.parse(raw || '{}');
 
-    if (!Array.isArray(pool) || pool.length === 0) {
+    if (!Array.isArray(selected) || !Array.isArray(pool) || pool.length === 0) {
+      sendJson(res, 200, { suggestion: null });
+      return;
+    }
+
+    const safePool = pool.filter((item) => typeof item === 'string' && item.trim()).slice(0, 30);
+    const safeSelected = selected.filter((item) => typeof item === 'string').slice(0, 50);
+
+    if (safePool.length === 0) {
       sendJson(res, 200, { suggestion: null });
       return;
     }
 
     const client = new Anthropic();
     const typeLabel = type === 'deal_breaker' ? 'deal-breaker' : 'feature';
-    const poolList = pool.slice(0, 30).join(', ');
-    const selectedStr = selected.length > 0 ? selected.join(', ') : 'none yet';
+    const poolList = safePool.join(', ');
+    const selectedStr = safeSelected.length > 0 ? safeSelected.join(', ') : 'none yet';
 
     const message = await client.messages.create({
       model: 'claude-haiku-4-5-20251001',
@@ -254,7 +262,7 @@ async function handleSuggestTile(req, res) {
 
     const raw_suggestion = message.content?.[0]?.text?.trim() ?? '';
     // Validate: the suggestion must appear in the pool (case-insensitive)
-    const match = pool.find((p) => p.toLowerCase() === raw_suggestion.toLowerCase());
+    const match = safePool.find((p) => p.toLowerCase() === raw_suggestion.toLowerCase());
     sendJson(res, 200, { suggestion: match ?? null });
   } catch (error) {
     console.warn(`suggest-tile failed: ${error.message}`);
