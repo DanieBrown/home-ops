@@ -1381,6 +1381,11 @@ let _featureTiles = null;
 let _dealBreakerTiles = null;
 
 function renderNarrative() {
+  // Detach any stale TileManager instances from the previous render so
+  // in-flight async pick() callbacks don't write to detached DOM nodes.
+  if (_featureTiles) { _featureTiles._inFlightSlots.clear(); _featureTiles._textareaEl = null; }
+  if (_dealBreakerTiles) { _dealBreakerTiles._inFlightSlots.clear(); _dealBreakerTiles._textareaEl = null; }
+
   const target = document.getElementById('tile');
   const wants = seedNarrativeWants();
   const avoids = seedNarrativeAvoids();
@@ -1432,6 +1437,11 @@ function renderNarrative() {
   const preFeatures = extractLabelsFromText(wants, FEATURE_CHIPS);
   const preDealBreakers = extractLabelsFromText(avoids, DEAL_BREAKER_CHIPS);
 
+  if (typeof window.TileManager !== 'function') {
+    console.error('renderNarrative: TileManager not loaded — tiles.js must load before app.js');
+    return;
+  }
+
   _featureTiles = new window.TileManager({
     pool: FEATURE_CHIPS,
     gridEl: document.getElementById('grid-features'),
@@ -1463,24 +1473,6 @@ function extractLabelsFromText(text, chipList) {
   if (!text) return [];
   const lower = text.toLowerCase();
   return chipList.filter((label) => lower.includes(label.toLowerCase()));
-}
-
-function appendChipToTextarea(textarea, value) {
-  if (!textarea || !value) return;
-  const current = textarea.value ?? '';
-  if (current.toLowerCase().includes(value.toLowerCase())) {
-    textarea.focus();
-    return;
-  }
-  const trimmed = current.trim();
-  const needsSeparator = trimmed.length > 0 && !/[.,;]\s*$/.test(trimmed);
-  textarea.value = trimmed.length === 0
-    ? `${value}.`
-    : needsSeparator
-      ? `${trimmed}, ${value}.`
-      : `${trimmed} ${value}.`;
-  textarea.focus();
-  textarea.setSelectionRange(textarea.value.length, textarea.value.length);
 }
 
 function readNarrative() {

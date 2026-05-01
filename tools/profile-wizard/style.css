@@ -168,7 +168,6 @@ html, body {
 .identity-grid label input { margin-top: 0; }
 .identity-grid label.full { grid-column: span 2; }
 
-.chip-row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 .chip {
   background: rgba(14, 165, 233, 0.15); color: var(--accent);
   padding: 4px 10px; border-radius: 999px; font-size: 12px;
