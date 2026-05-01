@@ -5,8 +5,8 @@ import { mkdir, writeFile } from 'fs/promises';
 import { join } from 'path';
 import { chromium } from 'playwright';
 import { readSessionState } from '../browser/browser-session.mjs';
+import { ROOT } from '../shared/paths.mjs';
 import {
-  ROOT,
   buildSentimentSourcePlan,
   loadResearchConfig,
   parseReport,

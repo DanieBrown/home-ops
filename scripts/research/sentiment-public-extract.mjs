@@ -19,8 +19,8 @@
 import { existsSync, readFileSync } from 'fs';
 import { mkdir, writeFile } from 'fs/promises';
 import { join } from 'path';
+import { ROOT } from '../shared/paths.mjs';
 import {
-  ROOT,
   buildSentimentSourcePlan,
   loadResearchConfig,
   parseReport,

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
+import { ROOT } from '../shared/paths.mjs';
 import {
-  ROOT,
   auditParsedReport,
   getCriticalAuditFindings,
   parseReport,

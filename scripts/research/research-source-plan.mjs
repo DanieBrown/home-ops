@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 
 import { basename } from 'path';
+import { ROOT } from '../shared/paths.mjs';
 import {
-  ROOT,
   auditParsedReport,
   buildDevelopmentSourcePlan,
   buildSentimentSourcePlan,

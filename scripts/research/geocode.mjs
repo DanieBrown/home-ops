@@ -15,7 +15,8 @@ import { existsSync, readFileSync } from 'fs';
 import { mkdir, writeFile } from 'fs/promises';
 import { join } from 'path';
 import { fileURLToPath } from 'url';
-import { ROOT, parseReport, parseShortlist } from './research-utils.mjs';
+import { ROOT } from '../shared/paths.mjs';
+import { parseReport, parseShortlist } from './research-utils.mjs';
 import { slugify } from '../shared/text-utils.mjs';
 
 const OUTPUT_DIR = join(ROOT, 'output', 'geocode');

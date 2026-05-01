@@ -10,9 +10,8 @@
  */
 
 import { readFileSync, writeFileSync } from 'fs';
+import { ROOT, SHORTLIST_PATH } from '../shared/paths.mjs';
 import {
-  ROOT,
-  SHORTLIST_PATH,
   auditParsedReport,
   getCriticalAuditFindings,
   parseReport,

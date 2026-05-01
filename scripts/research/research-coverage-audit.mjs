@@ -2,9 +2,8 @@
 
 import { existsSync, readdirSync } from 'fs';
 import { basename, join, resolve } from 'path';
+import { ROOT, REPORTS_DIR } from '../shared/paths.mjs';
 import {
-  ROOT,
-  REPORTS_DIR,
   auditEvaluationReport,
 } from './research-utils.mjs';
 

@@ -22,10 +22,9 @@ import { writeFile } from 'fs/promises';
 import { join } from 'path';
 import { fileURLToPath } from 'url';
 import YAML from 'yaml';
-import { ROOT } from './research-utils.mjs';
+import { ROOT, PROFILE_PATH } from '../shared/paths.mjs';
 
 const REGISTRY_PATH = join(ROOT, 'config', 'county-arcgis-registry.yml');
-const PROFILE_PATH = join(ROOT, 'config', 'profile.yml');
 const OUTPUT_PATH = join(ROOT, 'config', 'county-sources.json');
 const DEFAULT_TIMEOUT_MS = 15000;
 

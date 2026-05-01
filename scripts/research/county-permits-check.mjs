@@ -24,8 +24,8 @@ import { existsSync, readFileSync } from 'fs';
 import { mkdir, writeFile } from 'fs/promises';
 import { join } from 'path';
 import { fileURLToPath } from 'url';
+import { ROOT } from '../shared/paths.mjs';
 import {
-  ROOT,
   loadResearchConfig,
   parseReport,
   parseShortlist,
