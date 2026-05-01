@@ -6,11 +6,8 @@
 
 import { execSync } from 'child_process';
 import { existsSync, readFileSync, readdirSync } from 'fs';
-import { dirname, extname, join, relative } from 'path';
-import { fileURLToPath } from 'url';
-
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const ROOT = join(__dirname, '..', '..');
+import { extname, join, relative } from 'path';
+import { ROOT } from '../shared/paths.mjs';
 const QUICK = process.argv.includes('--quick');
 
 let passed = 0;

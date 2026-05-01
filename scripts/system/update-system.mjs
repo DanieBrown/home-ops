@@ -6,11 +6,8 @@
 
 import { execSync } from 'child_process';
 import { readFileSync, writeFileSync, existsSync, unlinkSync } from 'fs';
-import { join, dirname } from 'path';
-import { fileURLToPath } from 'url';
-
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const ROOT = join(__dirname, '..', '..');
+import { join } from 'path';
+import { ROOT } from '../shared/paths.mjs';
 
 // System layer paths — ONLY these files get updated
 const SYSTEM_PATHS = [

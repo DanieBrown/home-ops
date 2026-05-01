@@ -6,11 +6,8 @@
  */
 
 import { existsSync, mkdirSync, readFileSync } from 'fs';
-import { dirname, join } from 'path';
-import { fileURLToPath } from 'url';
-
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const projectRoot = join(__dirname, '..', '..');
+import { join } from 'path';
+import { ROOT } from '../shared/paths.mjs';
 
 const isTTY = process.stdout.isTTY;
 const green = (value) => (isTTY ? `\x1b[32m${value}\x1b[0m` : value);
@@ -43,7 +40,7 @@ function checkNodeVersion() {
 }
 
 function checkDependencies() {
-  if (existsSync(join(projectRoot, 'node_modules'))) {
+  if (existsSync(join(ROOT, 'node_modules'))) {
     return passResult('Dependencies installed');
   }
 
@@ -65,7 +62,7 @@ async function checkPlaywright() {
 }
 
 function checkFile(relativePath, label, fix) {
-  if (existsSync(join(projectRoot, relativePath))) {
+  if (existsSync(join(ROOT, relativePath))) {
     return passResult(label);
   }
 
@@ -73,7 +70,7 @@ function checkFile(relativePath, label, fix) {
 }
 
 function ensureDir(relativePath) {
-  const fullPath = join(projectRoot, relativePath);
+  const fullPath = join(ROOT, relativePath);
   if (existsSync(fullPath)) {
     return passResult(`${relativePath} ready`);
   }
@@ -160,8 +157,8 @@ async function checkProfileAndPortalCoverage(dependenciesInstalled) {
     )];
   }
 
-  const profilePath = join(projectRoot, 'config', 'profile.yml');
-  const portalsPath = join(projectRoot, 'portals.yml');
+  const profilePath = join(ROOT, 'config', 'profile.yml');
+  const portalsPath = join(ROOT, 'portals.yml');
   if (!existsSync(profilePath) || !existsSync(portalsPath)) {
     return [];
   }

@@ -10,10 +10,10 @@
 
 import { existsSync } from 'fs';
 import { mkdir, readFile, writeFile } from 'fs/promises';
-import { dirname, join } from 'path';
+import { join } from 'path';
 import { fileURLToPath } from 'url';
+import { ROOT } from '../shared/paths.mjs';
 
-const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const CACHE_DIR = join(ROOT, 'output', 'cache');
 const SCHEMA_VERSION = 1;
 

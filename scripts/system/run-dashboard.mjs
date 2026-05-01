@@ -2,11 +2,9 @@ import { spawn, spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import process from "node:process";
-import { fileURLToPath } from "node:url";
+import { ROOT } from "../shared/paths.mjs";
 
-const __filename = fileURLToPath(import.meta.url);
-const repoRoot = path.join(path.dirname(__filename), "..", "..");
-const dashboardDir = path.join(repoRoot, "dashboard");
+const dashboardDir = path.join(ROOT, "dashboard");
 const isWindows = process.platform === "win32";
 const exeSuffix = isWindows ? ".exe" : "";
 const buildFlag = "--build";

@@ -8,6 +8,7 @@ import { setTimeout as delay } from 'timers/promises';
 import { fileURLToPath } from 'url';
 import { chromium } from 'playwright';
 import YAML from 'yaml';
+import { ROOT } from '../shared/paths.mjs';
 
 const DEFAULT_PROFILE = 'chrome';
 const DEFAULT_HOSTED_PROFILE = 'chrome-host';
@@ -109,7 +110,7 @@ Notes:
   - The saved profile can be reused by other Playwright scripts in this repo.`;
 
 function getProjectRoot() {
-  return join(dirname(fileURLToPath(import.meta.url)), '..', '..');
+  return ROOT;
 }
 
 export function resolveBrowserProfileDir(projectRoot, profileName = DEFAULT_PROFILE) {

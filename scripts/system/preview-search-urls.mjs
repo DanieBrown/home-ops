@@ -1,15 +1,10 @@
 #!/usr/bin/env node
 
 import { existsSync, readFileSync } from 'fs';
-import { dirname, join } from 'path';
-import { fileURLToPath } from 'url';
 import { chromium } from 'playwright';
 import YAML from 'yaml';
 import { readSessionState } from '../browser/browser-session.mjs';
-
-const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
-const PORTALS_PATH = join(ROOT, 'portals.yml');
-const PROFILE_PATH = join(ROOT, 'config', 'profile.yml');
+import { ROOT, PORTALS_PATH, PROFILE_PATH } from '../shared/paths.mjs';
 
 const PLATFORM_ORDER = ['zillow', 'redfin', 'realtor', 'homes'];
 const DEFAULT_PROFILE_NAME = 'chrome-host';

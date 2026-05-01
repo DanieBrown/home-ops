@@ -9,8 +9,7 @@
 
 import { mkdir, rm, readFile as fsReadFile, writeFile as fsWriteFile } from 'fs/promises';
 import { existsSync } from 'fs';
-import { dirname, join } from 'path';
-import { fileURLToPath } from 'url';
+import { join } from 'path';
 import {
   CACHE_TTL,
   getCacheEntry,
@@ -21,8 +20,7 @@ import {
   saveCache,
   ttlForVerification,
 } from './cache-utils.mjs';
-
-const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
+import { ROOT } from '../shared/paths.mjs';
 const CACHE_DIR = join(ROOT, 'output', 'cache');
 const TEST_CACHE_NAME = '__test_cache_loop__';
 const TEST_CACHE_FILE = join(CACHE_DIR, `${TEST_CACHE_NAME}.json`);

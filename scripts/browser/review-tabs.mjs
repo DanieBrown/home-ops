@@ -2,9 +2,10 @@
 
 import { createHash } from 'crypto';
 import { readFile } from 'fs/promises';
-import { dirname, join } from 'path';
-import { fileURLToPath, pathToFileURL } from 'url';
+import { join } from 'path';
+import { pathToFileURL } from 'url';
 import { chromium } from 'playwright';
+import { ROOT } from '../shared/paths.mjs';
 import {
   appendSessionLog,
   launchHostedBrowserSession,
@@ -43,7 +44,7 @@ Options:
 `;
 
 function getProjectRoot() {
-  return join(dirname(fileURLToPath(import.meta.url)), '..', '..');
+  return ROOT;
 }
 
 function parseArgs(argv) {

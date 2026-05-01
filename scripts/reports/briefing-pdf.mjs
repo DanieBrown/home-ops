@@ -17,8 +17,8 @@ import { fileURLToPath, pathToFileURL } from 'url';
 import { chromium } from 'playwright';
 import YAML from 'yaml';
 import { readSessionState } from '../browser/browser-session.mjs';
+import { ROOT } from '../shared/paths.mjs';
 import {
-  ROOT,
   parseReport,
   parseShortlist,
 } from '../research/research-utils.mjs';

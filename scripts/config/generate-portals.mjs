@@ -12,16 +12,13 @@
  */
 
 import { existsSync, readFileSync, writeFileSync } from 'fs';
-import { dirname, join } from 'path';
-import { fileURLToPath } from 'url';
+import { join } from 'path';
 import YAML from 'yaml';
 
 import { slugify as slugifyLower } from '../shared/text-utils.mjs';
+import { ROOT, PROFILE_PATH, PORTALS_PATH } from '../shared/paths.mjs';
 
-const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
-const PROFILE_PATH = join(ROOT, 'config', 'profile.yml');
 const REGISTRY_PATH = join(ROOT, 'config', 'city-registry.yml');
-const PORTALS_PATH = join(ROOT, 'portals.yml');
 
 const STATE_RESEARCH_DEFAULTS = {
   NC: {

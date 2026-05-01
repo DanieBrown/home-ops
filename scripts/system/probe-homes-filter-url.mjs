@@ -1,11 +1,8 @@
 #!/usr/bin/env node
 
-import { dirname, join } from 'path';
-import { fileURLToPath } from 'url';
 import { chromium } from 'playwright';
 import { readSessionState } from '../browser/browser-session.mjs';
-
-const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
+import { ROOT } from '../shared/paths.mjs';
 const PROFILE_NAME = 'chrome-host';
 
 const TEST_URLS = [

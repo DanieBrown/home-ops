@@ -11,16 +11,13 @@
  */
 
 import { existsSync, readFileSync } from 'fs';
-import { dirname, join } from 'path';
-import { fileURLToPath } from 'url';
-
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const projectRoot = join(__dirname, '..', '..');
+import { join } from 'path';
+import { ROOT } from '../shared/paths.mjs';
 
 const warnings = [];
 const errors = [];
 
-const buyerProfilePath = join(projectRoot, 'buyer-profile.md');
+const buyerProfilePath = join(ROOT, 'buyer-profile.md');
 if (!existsSync(buyerProfilePath)) {
   errors.push('buyer-profile.md not found in project root. Create it with the buyer criteria and context.');
 } else {
@@ -30,7 +27,7 @@ if (!existsSync(buyerProfilePath)) {
   }
 }
 
-const profilePath = join(projectRoot, 'config', 'profile.yml');
+const profilePath = join(ROOT, 'config', 'profile.yml');
 if (!existsSync(profilePath)) {
   errors.push('config/profile.yml not found. Copy from config/profile.example.yml and fill in the buyer details.');
 } else {
@@ -53,7 +50,7 @@ if (!existsSync(profilePath)) {
   }
 }
 
-const sharedModePath = join(projectRoot, 'modes', '_shared.md');
+const sharedModePath = join(ROOT, 'modes', '_shared.md');
 if (existsSync(sharedModePath)) {
   const sharedMode = readFileSync(sharedModePath, 'utf-8');
   const criteriaPattern = /\$\d{3},?\d{3}|\b[345]\+\s*beds?\b|\b\d{4}\+\s*sq\s*ft\b/gi;
@@ -75,7 +72,7 @@ if (existsSync(sharedModePath)) {
   }
 }
 
-const portalsPath = join(projectRoot, 'portals.yml');
+const portalsPath = join(ROOT, 'portals.yml');
 if (!existsSync(portalsPath)) {
   warnings.push('portals.yml not found. Scan mode will not work until platform search URLs are configured.');
 }
