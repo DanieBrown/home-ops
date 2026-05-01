@@ -25,7 +25,7 @@ class TileManager {
     this._trayEl = trayEl;
     this._textareaEl = textareaEl;
     this._type = type;
-    this._loadingSlot = null; // index of slot waiting for AI suggestion
+    this._inFlightSlots = new Set(); // slots currently awaiting AI suggestion
   }
 
   /** Shuffle an array in-place (Fisher-Yates). */
@@ -48,13 +48,12 @@ class TileManager {
     this._grid = this._remainingPool.splice(0, 8);
     this._renderTray();
     this._renderGrid();
-    this._syncTextarea();
   }
 
   /** Called when the user clicks a tile at grid index i. */
   async pick(index) {
     if (index < 0 || index >= this._grid.length) return;
-    if (this._loadingSlot === index) return; // already waiting
+    if (this._inFlightSlots.has(index)) return;
 
     const label = this._grid[index];
     const chipEl = this._gridEl.children[index];
@@ -69,19 +68,23 @@ class TileManager {
     this._renderTray();
 
     // 3. Mark slot as loading while we wait for the AI suggestion
-    this._loadingSlot = index;
+    this._inFlightSlots.add(index);
 
     // 4. After fly animation, clear the slot and show loading placeholder
+    const flySlot = index;
     setTimeout(() => {
-      this._grid[index] = null; // sentinel: slot is loading
-      this._renderGrid();
+      // Only blank the slot if it is still awaiting a suggestion (not already filled)
+      if (this._inFlightSlots.has(flySlot)) {
+        this._grid[flySlot] = null;
+        this._renderGrid();
+      }
     }, 220);
 
     // 5. Fetch AI suggestion (falls back to random pool item)
     const suggestion = await this._fetchSuggestion();
 
     // 6. Fill the slot
-    this._loadingSlot = null;
+    this._inFlightSlots.delete(index);
     if (suggestion) {
       this._grid[index] = suggestion;
       // Remove suggestion from remainingPool if it's there
