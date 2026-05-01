@@ -1,8 +1,7 @@
 #!/usr/bin/env node
 
 import { appendFileSync, existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'fs';
-import { dirname, join } from 'path';
-import { fileURLToPath } from 'url';
+import { join } from 'path';
 import { chromium } from 'playwright';
 import YAML from 'yaml';
 import { readSessionState } from '../browser/browser-session.mjs';
@@ -12,16 +11,19 @@ import {
   normalizeStreetSuffixes,
 } from '../shared/text-utils.mjs';
 import { parseListingRow as parseListingRowFull } from '../shared/listings.mjs';
+import {
+  ROOT,
+  HOME_OPS_DIR,
+  LISTINGS_FILE,
+  PIPELINE_FILE,
+  PORTALS_PATH,
+  PROFILE_PATH,
+  SCAN_HISTORY_PATH,
+} from '../shared/paths.mjs';
+import { parseArgs as _parseArgs, printHelp } from '../shared/cli.mjs';
 
-const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
-const HOME_OPS_DIR = join(ROOT, '.home-ops');
 const SCAN_RUNNING_PATH = join(HOME_OPS_DIR, 'scan-running.json');
 const SCAN_COMPLETE_PATH = join(HOME_OPS_DIR, 'scan-complete.json');
-const PORTALS_PATH = join(ROOT, 'portals.yml');
-const PROFILE_PATH = join(ROOT, 'config', 'profile.yml');
-const PIPELINE_PATH = join(ROOT, 'data', 'pipeline.md');
-const SCAN_HISTORY_PATH = join(ROOT, 'data', 'scan-history.tsv');
-const LISTINGS_PATH = join(ROOT, 'data', 'listings.md');
 const DEFAULT_PROFILE = 'chrome-host';
 const DEFAULT_MAX_PENDING_PER_SOURCE_AREA = 3;
 const HISTORY_HEADER = 'url\tfirst_seen\tplatform\tarea\taddress\tstatus\n';
@@ -45,15 +47,18 @@ const SEARCH_PAGE_BUDGET_MS = 45000;
 const PLATFORM_BUDGET_MS = 150000;
 const DEFAULT_ACTION_TIMEOUT_MS = 15000;
 
-const PLATFORM_FLAG_MAP = {
-  '--zillow': 'zillow',
-  '--redfin': 'redfin',
-  '--realtor': 'realtor',
-  '--realtor.com': 'realtor',
-  '--relator': 'realtor',
-  '--homes': 'homes',
-  '--homes.com': 'homes',
+const SCAN_SCHEMA = {
+  '--profile':     { type: 'value',    key: 'profileName' },
+  '--zillow':      { type: 'platform', include: 'zillow' },
+  '--redfin':      { type: 'platform', include: 'redfin' },
+  '--realtor':     { type: 'platform', include: 'realtor' },
+  '--realtor.com': { type: 'platform', include: 'realtor' },
+  '--relator':     { type: 'platform', include: 'realtor' },
+  '--homes':       { type: 'platform', include: 'homes' },
+  '--homes.com':   { type: 'platform', include: 'homes' },
+  '--no-zillow':   { type: 'platform', exclude: 'zillow' },
 };
+const SCAN_DEFAULTS = { profileName: DEFAULT_PROFILE };
 
 const DETAIL_URL_PATTERNS = {
   zillow: /\/homedetails\//i,
@@ -138,47 +143,6 @@ function canonicalPlatformKey(value) {
   return normalized;
 }
 
-function parseArgs(argv) {
-  const config = {
-    profileName: DEFAULT_PROFILE,
-    selectedPlatforms: new Set(),
-    excludedPlatforms: new Set(),
-    help: false,
-  };
-
-  for (let index = 0; index < argv.length; index += 1) {
-    const arg = argv[index];
-
-    if (arg === '--help' || arg === '-h') {
-      config.help = true;
-      continue;
-    }
-
-    if (arg === '--profile') {
-      config.profileName = argv[index + 1] ?? '';
-      index += 1;
-      continue;
-    }
-
-    if (arg === '--no-zillow') {
-      config.excludedPlatforms.add('zillow');
-      continue;
-    }
-
-    if (PLATFORM_FLAG_MAP[arg]) {
-      config.selectedPlatforms.add(PLATFORM_FLAG_MAP[arg]);
-      continue;
-    }
-
-    throw new Error(`Unknown option: ${arg}`);
-  }
-
-  if (!config.profileName) {
-    throw new Error('Expected a profile name after --profile.');
-  }
-
-  return config;
-}
 
 function readYamlFile(filePath) {
   if (!existsSync(filePath)) {
@@ -352,11 +316,11 @@ function parsePipelineChecklistLine(line) {
 }
 
 function getPipelineDocument() {
-  if (!existsSync(PIPELINE_PATH)) {
+  if (!existsSync(PIPELINE_FILE)) {
     return PIPELINE_TEMPLATE;
   }
 
-  const content = readFileSync(PIPELINE_PATH, 'utf8');
+  const content = readFileSync(PIPELINE_FILE, 'utf8');
   if (!content.includes('## Pending') || !content.includes('## Processed')) {
     return PIPELINE_TEMPLATE;
   }
@@ -428,7 +392,7 @@ function refreshPendingBuckets(targetBuckets, maxPendingPerBucket, bucketsToRefr
   const lines = getPipelineDocument().split(/\r?\n/);
   const { pendingIndex, processedIndex } = getPipelineSectionIndices(lines);
   if (pendingIndex === -1 || processedIndex === -1) {
-    writeFileSync(PIPELINE_PATH, PIPELINE_TEMPLATE, 'utf8');
+    writeFileSync(PIPELINE_FILE, PIPELINE_TEMPLATE, 'utf8');
     return {
       refreshedBuckets: new Map(),
       pendingCounts: new Map(),
@@ -530,7 +494,7 @@ function refreshPendingBuckets(targetBuckets, maxPendingPerBucket, bucketsToRefr
     ...keptPendingLines,
     ...lines.slice(processedIndex),
   ].join('\n');
-  writeFileSync(PIPELINE_PATH, updated, 'utf8');
+  writeFileSync(PIPELINE_FILE, updated, 'utf8');
 
   return {
     refreshedBuckets,
@@ -542,8 +506,8 @@ function refreshPendingBuckets(targetBuckets, maxPendingPerBucket, bucketsToRefr
 function loadSeenListingUrls() {
   const seen = new Set();
 
-  if (existsSync(PIPELINE_PATH)) {
-    const text = readFileSync(PIPELINE_PATH, 'utf8');
+  if (existsSync(PIPELINE_FILE)) {
+    const text = readFileSync(PIPELINE_FILE, 'utf8');
     for (const match of text.matchAll(/https?:\/\/[^\s|)]+/g)) {
       if (isLikelyListingUrl(match[0])) {
         seen.add(canonicalizeUrl(match[0]));
@@ -557,11 +521,11 @@ function loadSeenListingUrls() {
 function loadSeenAddressKeys() {
   const keys = new Set();
 
-  if (!existsSync(LISTINGS_PATH)) {
+  if (!existsSync(LISTINGS_FILE)) {
     return keys;
   }
 
-  const content = readFileSync(LISTINGS_PATH, 'utf8');
+  const content = readFileSync(LISTINGS_FILE, 'utf8');
   for (const line of content.split(/\r?\n/)) {
     const entry = parseListingRow(line);
     if (!entry) {
@@ -580,11 +544,11 @@ function loadSeenAddressKeys() {
 function loadPendingSourceAddressKeys() {
   const keysBySource = new Map();
 
-  if (!existsSync(PIPELINE_PATH)) {
+  if (!existsSync(PIPELINE_FILE)) {
     return keysBySource;
   }
 
-  const content = readFileSync(PIPELINE_PATH, 'utf8');
+  const content = readFileSync(PIPELINE_FILE, 'utf8');
   for (const line of content.split(/\r?\n/)) {
     const entry = parsePipelineChecklistLine(line);
     if (!entry) {
@@ -851,7 +815,7 @@ function appendPipelineEntries(lines) {
 
   if (pendingIndex === -1) {
     const updated = `${PIPELINE_TEMPLATE.trimEnd()}\n${lines.join('\n')}\n\n## Processed\n`;
-    writeFileSync(PIPELINE_PATH, updated, 'utf8');
+    writeFileSync(PIPELINE_FILE, updated, 'utf8');
     return;
   }
 
@@ -863,7 +827,7 @@ function appendPipelineEntries(lines) {
   const before = current.slice(0, insertAt).replace(/\s*$/, hasExistingChecklistEntries ? '\n' : '\n\n');
   const after = current.slice(insertAt).replace(/^\n*/, '\n');
   const updated = `${before}${lines.join('\n')}\n${after}`;
-  writeFileSync(PIPELINE_PATH, updated, 'utf8');
+  writeFileSync(PIPELINE_FILE, updated, 'utf8');
 }
 
 function appendScanHistory(rows) {
@@ -1618,7 +1582,7 @@ async function scanSearchPage(context, platform, platformName, area, url, loginP
 async function main() {
   let options;
   try {
-    options = parseArgs(process.argv.slice(2));
+    options = _parseArgs(process.argv.slice(2), SCAN_SCHEMA, { defaults: SCAN_DEFAULTS });
   } catch (error) {
     console.error(error.message);
     console.error('');
@@ -1626,10 +1590,7 @@ async function main() {
     process.exit(1);
   }
 
-  if (options.help) {
-    console.log(HELP_TEXT);
-    return;
-  }
+  if (options.help) { printHelp(HELP_TEXT); process.exit(0); }
 
   mkdirSync(HOME_OPS_DIR, { recursive: true });
   if (existsSync(SCAN_COMPLETE_PATH)) unlinkSync(SCAN_COMPLETE_PATH);
@@ -1815,11 +1776,11 @@ async function main() {
   appendScanHistory(historyRows);
 
   if (newPipelineLines.length > 0) {
-    console.log(`Pipeline file updated: ${PIPELINE_PATH} (+${newPipelineLines.length} entries)`);
+    console.log(`Pipeline file updated: ${PIPELINE_FILE} (+${newPipelineLines.length} entries)`);
   } else if (refreshResult.duplicatesRemoved > 0) {
-    console.log(`Pipeline file updated: ${PIPELINE_PATH} (duplicates removed, no new entries appended)`);
+    console.log(`Pipeline file updated: ${PIPELINE_FILE} (duplicates removed, no new entries appended)`);
   } else {
-    console.log(`Pipeline file not modified: no new entries passed filters (${PIPELINE_PATH})`);
+    console.log(`Pipeline file not modified: no new entries passed filters (${PIPELINE_FILE})`);
   }
 
   console.log(`Platforms scanned: ${selectedPlatforms.map((platform) => portals[platform].name).join(', ')}`);
