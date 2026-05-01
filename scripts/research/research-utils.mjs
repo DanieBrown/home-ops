@@ -1,13 +1,15 @@
 import { readFileSync } from 'fs';
-import { dirname, isAbsolute, join, relative } from 'path';
-import { fileURLToPath } from 'url';
+import { isAbsolute, join, relative } from 'path';
 import YAML from 'yaml';
+import {
+  ROOT,
+  REPORTS_DIR,
+  SHORTLIST_PATH,
+  PROFILE_PATH,
+  PORTALS_PATH,
+} from '../shared/paths.mjs';
 
-export const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
-export const REPORTS_DIR = join(ROOT, 'reports');
-export const SHORTLIST_PATH = join(ROOT, 'data', 'shortlist.md');
-export const PROFILE_PATH = join(ROOT, 'config', 'profile.yml');
-export const PORTALS_PATH = join(ROOT, 'portals.yml');
+export { ROOT, REPORTS_DIR, SHORTLIST_PATH, PROFILE_PATH, PORTALS_PATH };
 
 export const AUDIT_SECTION_DEFS = [
   {
