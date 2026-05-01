@@ -402,7 +402,7 @@ button.ghost:hover { color: var(--ink); border-color: #2b3a61; }
   to {
     opacity: 1;
     transform: translateY(0) scale(1);
-    border-radius: var(--radius, 16px);
+    border-radius: 18px;
   }
 }
 .step-enter {
