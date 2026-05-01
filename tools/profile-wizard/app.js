@@ -1377,33 +1377,42 @@ function seedNarrativeAvoids() {
   return prior.length ? `Avoid: ${prior.join(', ')}.` : '';
 }
 
+let _featureTiles = null;
+let _dealBreakerTiles = null;
+
 function renderNarrative() {
   const target = document.getElementById('tile');
   const wants = seedNarrativeWants();
   const avoids = seedNarrativeAvoids();
+
   target.innerHTML = `
     <h2>${escapeHtml(CURRENT_STEP.title)}</h2>
     <p class="tile-hint">${escapeHtml(CURRENT_STEP.hint)}</p>
 
-    <label style="display:flex; flex-direction:column; gap:6px; color: var(--ink-soft); font-size: 13px;">What you want in the home
-      <textarea class="text-input" id="n-wants" rows="5" placeholder="e.g. Open floor plan, fenced yard, updated kitchen, cul-de-sac lot...">${escapeHtml(wants)}</textarea>
-    </label>
-    <div class="chip-row" data-chip-target="n-wants" style="display:flex; flex-wrap:wrap; gap:6px; margin-top: 6px;">
-      ${FEATURE_CHIPS.map((v) => `<button type="button" class="chip" data-chip-value="${escapeAttr(v)}">+ ${escapeHtml(v)}</button>`).join('')}
-    </div>
-
-    <label style="display:flex; flex-direction:column; gap:6px; color: var(--ink-soft); font-size: 13px; margin-top: 16px;">What would make you skip a listing
-      <textarea class="text-input" id="n-avoids" rows="4" placeholder="e.g. Busy roads, floodplain, tiny yards, HOA with pool maintenance we don't want...">${escapeHtml(avoids)}</textarea>
-    </label>
-    <div class="chip-row" data-chip-target="n-avoids" style="display:flex; flex-wrap:wrap; gap:6px; margin-top: 6px;">
-      ${DEAL_BREAKER_CHIPS.map((v) => `<button type="button" class="chip" data-chip-value="${escapeAttr(v)}">+ ${escapeHtml(v)}</button>`).join('')}
-    </div>
-
-    <label style="display:flex; flex-direction:column; gap:6px; color: var(--ink-soft); font-size: 13px; margin-top: 16px;">Family and household context
-      <textarea class="text-input" id="n-family" rows="3" placeholder="Kids, pets, work-from-home, multi-generational...">${escapeHtml(state.answers.narrative?.family ?? '')}</textarea>
+    <label style="display:flex; flex-direction:column; gap:6px; color: var(--ink-soft); font-size: 13px;">
+      What you want in the home
+      <div class="tile-tray" id="tray-features"></div>
+      <div class="tile-grid" id="grid-features"></div>
+      <textarea class="text-input" id="n-wants" rows="4"
+        placeholder="e.g. Open floor plan, fenced yard, updated kitchen, cul-de-sac lot...">${escapeHtml(wants)}</textarea>
     </label>
 
-    <label style="display:flex; flex-direction:column; gap:6px; color: var(--ink-soft); font-size: 13px; margin-top: 12px;">How aggressive should we be in a tight market?
+    <label style="display:flex; flex-direction:column; gap:6px; color: var(--ink-soft); font-size: 13px; margin-top: 16px;">
+      What would make you skip a listing
+      <div class="tile-tray" id="tray-deal-breakers"></div>
+      <div class="tile-grid" id="grid-deal-breakers"></div>
+      <textarea class="text-input" id="n-avoids" rows="4"
+        placeholder="e.g. Busy roads, floodplain, tiny yards...">${escapeHtml(avoids)}</textarea>
+    </label>
+
+    <label style="display:flex; flex-direction:column; gap:6px; color: var(--ink-soft); font-size: 13px; margin-top: 16px;">
+      Family and household context
+      <textarea class="text-input" id="n-family" rows="3"
+        placeholder="Kids, pets, work-from-home, multi-generational...">${escapeHtml(state.answers.narrative?.family ?? '')}</textarea>
+    </label>
+
+    <label style="display:flex; flex-direction:column; gap:6px; color: var(--ink-soft); font-size: 13px; margin-top: 12px;">
+      How aggressive should we be in a tight market?
       <select class="text-input" id="n-aggr">
         ${['Wait for the perfect fit', 'Move on strong fits', 'Compete hard', 'Keep current'].map((v) => `
           <option value="${escapeAttr(v)}" ${state.answers.narrative?.aggressiveness === v ? 'selected' : ''}>${escapeHtml(v)}</option>
@@ -1411,23 +1420,35 @@ function renderNarrative() {
       </select>
     </label>
 
-    <label style="display:flex; flex-direction:column; gap:6px; color: var(--ink-soft); font-size: 13px; margin-top: 12px;">Anything else we should know
-      <textarea class="text-input" id="n-notes" rows="3" placeholder="Free-form notes for the buyer profile">${escapeHtml(state.answers.narrative?.notes ?? '')}</textarea>
+    <label style="display:flex; flex-direction:column; gap:6px; color: var(--ink-soft); font-size: 13px; margin-top: 12px;">
+      Anything else we should know
+      <textarea class="text-input" id="n-notes" rows="3"
+        placeholder="Free-form notes for the buyer profile">${escapeHtml(state.answers.narrative?.notes ?? '')}</textarea>
     </label>
   `;
 
-  target.querySelectorAll('.chip-row').forEach((row) => {
-    const targetId = row.dataset.chipTarget;
-    const textarea = document.getElementById(targetId);
-    row.querySelectorAll('.chip').forEach((chip) => {
-      chip.addEventListener('click', () => {
-        const value = chip.dataset.chipValue;
-        appendChipToTextarea(textarea, value);
-        readNarrative();
-        saveAnswersDebounced();
-      });
-    });
+  // Derive pre-selected labels from the seeded textarea text so
+  // TileManager doesn't show chips already present in the text.
+  const preFeatures = extractLabelsFromText(wants, FEATURE_CHIPS);
+  const preDealBreakers = extractLabelsFromText(avoids, DEAL_BREAKER_CHIPS);
+
+  _featureTiles = new window.TileManager({
+    pool: FEATURE_CHIPS,
+    gridEl: document.getElementById('grid-features'),
+    trayEl: document.getElementById('tray-features'),
+    textareaEl: document.getElementById('n-wants'),
+    type: 'feature',
   });
+  _featureTiles.init(preFeatures);
+
+  _dealBreakerTiles = new window.TileManager({
+    pool: DEAL_BREAKER_CHIPS,
+    gridEl: document.getElementById('grid-deal-breakers'),
+    trayEl: document.getElementById('tray-deal-breakers'),
+    textareaEl: document.getElementById('n-avoids'),
+    type: 'deal_breaker',
+  });
+  _dealBreakerTiles.init(preDealBreakers);
 
   ['n-wants', 'n-avoids', 'n-family', 'n-notes', 'n-aggr'].forEach((id) => {
     const node = document.getElementById(id);
@@ -1435,6 +1456,13 @@ function renderNarrative() {
     node.addEventListener('input', () => { readNarrative(); saveAnswersDebounced(); });
     node.addEventListener('change', () => { readNarrative(); saveAnswersDebounced(); });
   });
+}
+
+/** Extract chip labels that already appear in the seeded textarea text. */
+function extractLabelsFromText(text, chipList) {
+  if (!text) return [];
+  const lower = text.toLowerCase();
+  return chipList.filter((label) => lower.includes(label.toLowerCase()));
 }
 
 function appendChipToTextarea(textarea, value) {
