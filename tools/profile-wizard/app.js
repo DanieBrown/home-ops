@@ -1542,6 +1542,13 @@ function renderStep() {
   // an id, then restore focus + selection after the re-render.
   const focusSnapshot = captureFocusSnapshot();
   CURRENT_STEP.render();
+  // morph-rise animation on every step transition
+  const tileEl = document.getElementById('tile');
+  if (tileEl) {
+    tileEl.classList.remove('step-enter');
+    void tileEl.offsetWidth; // force reflow so re-adding the class re-triggers
+    tileEl.classList.add('step-enter');
+  }
   document.getElementById('step-label').textContent = `Step ${state.stepIndex + 1} -- ${CURRENT_STEP.title.replace(/\.$/, '')}`;
   document.getElementById('step-total').textContent = `of ${STEPS.length}`;
   document.getElementById('progress-fill').style.width = `${((state.stepIndex + 1) / STEPS.length) * 100}%`;
