@@ -124,6 +124,11 @@ function loadRequirements(parsed) {
   };
 }
 
+function snapToValid(days, sortedValid) {
+  const found = sortedValid.find(v => v >= days);
+  return found ?? sortedValid[sortedValid.length - 1];
+}
+
 function formatCompactThousands(value) {
   const numeric = Number(value);
   if (!Number.isFinite(numeric) || numeric <= 0) return null;
@@ -150,7 +155,8 @@ function syncZillowSearchUrl(rawUrl, req) {
     if (req.sqftMin > 0) f.sqft = { ...(f.sqft ?? {}), min: req.sqftMin };
     if (req.garageMin > 0) f.garSp = { ...(f.garSp ?? {}), min: req.garageMin };
     if (req.maxListingAgeDays < Number.MAX_SAFE_INTEGER) {
-      f.doz = { ...(f.doz ?? {}), value: String(req.maxListingAgeDays) };
+      const snapped = snapToValid(req.maxListingAgeDays, [1, 7, 14, 30, 90]);
+      f.doz = { ...(f.doz ?? {}), value: String(snapped) };
     }
     if (req.hoaMaxMonthly > 0) f.hoa = { ...(f.hoa ?? {}), max: req.hoaMaxMonthly };
     if (req.yearBuiltMin > 0) f.built = { ...(f.built ?? {}), min: req.yearBuiltMin };
@@ -173,13 +179,11 @@ function syncZillowSearchUrl(rawUrl, req) {
 }
 
 function redfinDaysOnMarketToken(days) {
-  if (days <= 1) return '1day';
+  // Redfin only supports three "less than" DOM options: 3 days, 7 days, 14 days.
+  if (days <= 3) return '3days';
   if (days <= 7) return '1wk';
   if (days <= 14) return '2wk';
-  if (days <= 30) return '1mo';
-  if (days <= 90) return '3mo';
-  if (days <= 180) return '6mo';
-  return null;
+  return null; // no valid "less than" token for > 14 days
 }
 
 function syncRedfinSearchUrl(rawUrl, req) {
@@ -228,7 +232,7 @@ function syncRealtorSearchUrl(rawUrl, req) {
     if (segments.length < 2) return rawUrl;
 
     const [searchRoot, areaSegment, ...rest] = segments;
-    const managed = ['beds-', 'baths-', 'price-', 'sqft-', 'garage-', 'age-', 'hoa-', 'built-after-', 'type-'];
+    const managed = ['beds-', 'baths-', 'price-', 'sqft-', 'garage-', 'age-', 'dom-', 'hoa-', 'built-after-', 'type-'];
     const synced = rest.filter((s) => !managed.some((p) => s.startsWith(p)));
 
     if (req.bedsMin > 0) synced.push(`beds-${Math.ceil(req.bedsMin)}`);
@@ -237,7 +241,10 @@ function syncRealtorSearchUrl(rawUrl, req) {
     if (req.priceMax < Number.MAX_SAFE_INTEGER) synced.push(`price-na-${req.priceMax}`);
     if (req.sqftMin > 0) synced.push(`sqft-${req.sqftMin}-na`);
     if (req.garageMin > 0) synced.push(`garage-${req.garageMin}`);
-    if (req.maxListingAgeDays < Number.MAX_SAFE_INTEGER) synced.push(`age-${req.maxListingAgeDays}`);
+    if (req.maxListingAgeDays < Number.MAX_SAFE_INTEGER) {
+      const snapped = snapToValid(req.maxListingAgeDays, [7, 14, 21, 30]);
+      synced.push(`dom-${snapped}`);
+    }
     if (req.hoaMaxMonthly > 0) synced.push(`hoa-${req.hoaMaxMonthly}`);
     if (req.yearBuiltMin > 0) synced.push(`built-after-${req.yearBuiltMin}`);
     if (req.homeTypePreference === 'resale_only') synced.push('type-single-family-home');
@@ -271,7 +278,8 @@ function syncHomesSearchUrl(rawUrl, req) {
     }
     if (req.garageMin > 0) params.set('parking', String(req.garageMin));
     if (req.maxListingAgeDays < Number.MAX_SAFE_INTEGER) {
-      params.set('dom-max', `${req.maxListingAgeDays}d`);
+      const snapped = snapToValid(req.maxListingAgeDays, [3, 7, 30]);
+      params.set('dom-max', `${snapped}d`);
       params.set('ssort', 'newest');
     }
 
