@@ -28,8 +28,7 @@
 //   --help          Show this help text.
 
 import { existsSync, readFileSync } from 'fs';
-import { dirname, join } from 'path';
-import { fileURLToPath } from 'url';
+import { join } from 'path';
 import { chromium } from 'playwright';
 import YAML from 'yaml';
 import {
@@ -37,29 +36,31 @@ import {
   writeSessionState,
   launchHostedBrowserSession,
 } from './browser-session.mjs';
+import { PORTALS_PATH, PROFILE_PATH } from '../shared/paths.mjs';
+import { parseArgs as _parseArgs, printHelp } from '../shared/cli.mjs';
 
-const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const DEFAULT_PROFILE = 'chrome-host';
 const DEFAULT_CDP_PORT = 9222;
 const NAVIGATION_TIMEOUT_MS = 15000;
 const SETTLE_TIMEOUT_MS = 1200;
-const PORTALS_PATH = join(ROOT, 'portals.yml');
-const PROFILE_PATH = join(ROOT, 'config', 'profile.yml');
 
-const PLATFORM_FLAG_MAP = {
-  '--zillow': { include: 'zillow' },
-  '--redfin': { include: 'redfin' },
-  '--relator': { include: 'realtor' },
-  '--realtor': { include: 'realtor' },
-  '--realtor.com': { include: 'realtor' },
-  '--homes': { include: 'homes' },
-  '--homes.com': { include: 'homes' },
-  '--no-zillow': { exclude: 'zillow' },
-  '--no-redfin': { exclude: 'redfin' },
-  '--no-relator': { exclude: 'realtor' },
-  '--no-realtor': { exclude: 'realtor' },
-  '--no-homes': { exclude: 'homes' },
+const SKIM_SCHEMA = {
+  '--profile':     { type: 'value',    key: 'profileName' },
+  '--status':      { type: 'flag',     key: 'statusOnly' },
+  '--zillow':      { type: 'platform', include: 'zillow' },
+  '--redfin':      { type: 'platform', include: 'redfin' },
+  '--relator':     { type: 'platform', include: 'realtor' },
+  '--realtor':     { type: 'platform', include: 'realtor' },
+  '--realtor.com': { type: 'platform', include: 'realtor' },
+  '--homes':       { type: 'platform', include: 'homes' },
+  '--homes.com':   { type: 'platform', include: 'homes' },
+  '--no-zillow':   { type: 'platform', exclude: 'zillow' },
+  '--no-redfin':   { type: 'platform', exclude: 'redfin' },
+  '--no-relator':  { type: 'platform', exclude: 'realtor' },
+  '--no-realtor':  { type: 'platform', exclude: 'realtor' },
+  '--no-homes':    { type: 'platform', exclude: 'homes' },
 };
+const SKIM_DEFAULTS = { profileName: DEFAULT_PROFILE, statusOnly: false };
 
 const HELP_TEXT = `Usage:
   node skim-portals.mjs
@@ -82,55 +83,6 @@ Options:
 // ---------------------------------------------------------------------------
 // Arg parsing
 // ---------------------------------------------------------------------------
-
-function parseArgs(argv) {
-  const config = {
-    profileName: DEFAULT_PROFILE,
-    selectedPlatforms: new Set(),
-    excludedPlatforms: new Set(),
-    statusOnly: false,
-    help: false,
-  };
-
-  for (let index = 0; index < argv.length; index += 1) {
-    const arg = argv[index];
-
-    if (arg === '--help' || arg === '-h') {
-      config.help = true;
-      continue;
-    }
-
-    if (arg === '--status') {
-      config.statusOnly = true;
-      continue;
-    }
-
-    if (arg === '--profile') {
-      config.profileName = argv[index + 1] ?? '';
-      index += 1;
-      continue;
-    }
-
-    const flagEntry = PLATFORM_FLAG_MAP[arg];
-    if (flagEntry) {
-      if (flagEntry.include) config.selectedPlatforms.add(flagEntry.include);
-      if (flagEntry.exclude) config.excludedPlatforms.add(flagEntry.exclude);
-      continue;
-    }
-
-    if (arg.startsWith('--')) {
-      throw new Error(`Unknown option: ${arg}`);
-    }
-
-    throw new Error(`Unexpected argument: ${arg}. Run with --help for usage.`);
-  }
-
-  if (!config.profileName) {
-    throw new Error('Expected a profile name after --profile.');
-  }
-
-  return config;
-}
 
 // ---------------------------------------------------------------------------
 // YAML helpers
@@ -437,7 +389,7 @@ async function printStatus(profileName) {
 async function main() {
   let config;
   try {
-    config = parseArgs(process.argv.slice(2));
+    config = _parseArgs(process.argv.slice(2), SKIM_SCHEMA, { defaults: SKIM_DEFAULTS });
   } catch (error) {
     console.error(error.message);
     console.error('');
