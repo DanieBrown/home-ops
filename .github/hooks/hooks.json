@@ -44,6 +44,13 @@
         "powershell": "node scripts/hooks/on-stop.mjs",
         "cwd": ".",
         "timeoutSec": 10
+      },
+      {
+        "type": "command",
+        "bash": "node scripts/system/check-shared-duplication.mjs --scan-all",
+        "powershell": "node scripts/system/check-shared-duplication.mjs --scan-all",
+        "cwd": ".",
+        "timeoutSec": 15
       }
     ],
     "responseEnded": [
@@ -53,6 +60,13 @@
         "powershell": "node scripts/hooks/on-stop.mjs",
         "cwd": ".",
         "timeoutSec": 10
+      },
+      {
+        "type": "command",
+        "bash": "node scripts/system/check-shared-duplication.mjs --scan-all",
+        "powershell": "node scripts/system/check-shared-duplication.mjs --scan-all",
+        "cwd": ".",
+        "timeoutSec": 15
       }
     ]
   }
