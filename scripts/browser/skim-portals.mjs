@@ -36,7 +36,7 @@ import {
   writeSessionState,
   launchHostedBrowserSession,
 } from './browser-session.mjs';
-import { PORTALS_PATH, PROFILE_PATH } from '../shared/paths.mjs';
+import { ROOT, PORTALS_PATH, PROFILE_PATH } from '../shared/paths.mjs';
 import { parseArgs as _parseArgs, printHelp } from '../shared/cli.mjs';
 
 const DEFAULT_PROFILE = 'chrome-host';
