@@ -7,7 +7,7 @@
  * filtered to the last 24 months. Writes one record per home to
  * output/permits/{slug}.json.
  *
- * Service config is loaded from config/county-sources.json (written by
+ * Service config is loaded from output/county-sources.json (written by
  * scripts/research/county-services-discover.mjs). If that file is absent, the
  * built-in Wake County defaults are used as a fallback.
  *
@@ -35,12 +35,12 @@ import { ensureGeocode } from './geocode.mjs';
 import { slugify } from '../shared/text-utils.mjs';
 
 const OUTPUT_DIR = join(ROOT, 'output', 'permits');
-const COUNTY_SOURCES_PATH = join(ROOT, 'config', 'county-sources.json');
+const COUNTY_SOURCES_PATH = join(ROOT, 'output', 'county-sources.json');
 const DEFAULT_TIMEOUT_MS = 25000;
 const DEFAULT_RADIUS_METERS = 8047; // 5 miles
 const LOOKBACK_DAYS = 24 * 30; // ~24 months
 
-// Built-in fallback for Wake County. Superseded by config/county-sources.json
+// Built-in fallback for Wake County. Superseded by output/county-sources.json
 // once county-services-discover.mjs has been run.
 const COUNTY_SOURCES_BUILTIN = {
   wake: {

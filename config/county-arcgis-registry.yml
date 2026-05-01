@@ -9,9 +9,9 @@
 #   2. Add an entry here with a lowercase key matching what
 #      config/profile.yml search.areas[].county uses (lowercase, no spaces).
 #   3. Run: node scripts/research/county-services-discover.mjs --all
-#      This will probe the catalog and write config/county-sources.json.
+#      This will probe the catalog and write output/county-sources.json.
 #
-# county-permits-check.mjs loads config/county-sources.json (written by the
+# county-permits-check.mjs loads output/county-sources.json (written by the
 # discover script) at runtime. If county-sources.json is missing it falls
 # back to the built-in Wake County defaults.
 

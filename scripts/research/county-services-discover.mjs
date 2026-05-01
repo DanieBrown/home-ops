@@ -6,7 +6,7 @@
  *
  * Reads county ArcGIS base URLs from config/county-arcgis-registry.yml,
  * queries the REST catalog, scores layers by field relevance, and writes
- * config/county-sources.json for use by county-permits-check.mjs.
+ * output/county-sources.json for use by county-permits-check.mjs.
  *
  * Safe to re-run -- results are deterministic for a given catalog snapshot.
  * Triggered by the profile command after county_planning is enabled.
@@ -25,7 +25,7 @@ import YAML from 'yaml';
 import { ROOT, PROFILE_PATH } from '../shared/paths.mjs';
 
 const REGISTRY_PATH = join(ROOT, 'config', 'county-arcgis-registry.yml');
-const OUTPUT_PATH = join(ROOT, 'config', 'county-sources.json');
+const OUTPUT_PATH = join(ROOT, 'output', 'county-sources.json');
 const DEFAULT_TIMEOUT_MS = 15000;
 
 // Keywords that suggest a service or folder is planning/permits-related.
@@ -66,7 +66,7 @@ const HELP_TEXT = `Usage:
   node county-services-discover.mjs --county chatham --base-url https://...
 
 Queries ArcGIS REST catalogs for planning/permits/zoning layers and writes
-config/county-sources.json consumed by county-permits-check.mjs.
+output/county-sources.json consumed by county-permits-check.mjs.
 
 Options:
   --all             Discover for all counties found in config/profile.yml search areas
@@ -338,7 +338,7 @@ async function run() {
   }
 
   await writeFile(OUTPUT_PATH, `${JSON.stringify(output, null, 2)}\n`, 'utf8');
-  console.log(`\nWrote config/county-sources.json (${Object.keys(output.counties).length} county entries)`);
+  console.log(`\nWrote output/county-sources.json (${Object.keys(output.counties).length} county entries)`);
 
   if (config.json) {
     console.log(JSON.stringify(output, null, 2));

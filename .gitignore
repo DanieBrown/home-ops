@@ -27,6 +27,7 @@ modes/_profile.md
 .update-lock
 
 # Generated
+config/county-sources.json
 .resolved-prompt-*
 node_modules/
 .home-ops/
