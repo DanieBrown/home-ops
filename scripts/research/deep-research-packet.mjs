@@ -3,8 +3,9 @@
 import { existsSync, readFileSync } from 'fs';
 import { mkdir, writeFile } from 'fs/promises';
 import { join } from 'path';
+import { ROOT } from '../shared/paths.mjs';
+import { parseArgs as _parseArgs, printHelp } from '../shared/cli.mjs';
 import {
-  ROOT,
   auditParsedReport,
   buildDevelopmentSourcePlan,
   buildSchoolSourcePlan,
@@ -44,45 +45,12 @@ Options:
   --json        Print JSON instead of human-readable text.
   --help        Show this help text.`;
 
-function parseArgs(argv) {
-  const config = {
-    shortlist: false,
-    top3: false,
-    json: false,
-    help: false,
-    files: [],
-  };
-
-  for (const arg of argv) {
-    if (arg === '--shortlist') {
-      config.shortlist = true;
-      continue;
-    }
-
-    if (arg === '--top3') {
-      config.top3 = true;
-      continue;
-    }
-
-    if (arg === '--json') {
-      config.json = true;
-      continue;
-    }
-
-    if (arg === '--help' || arg === '-h') {
-      config.help = true;
-      continue;
-    }
-
-    if (arg.startsWith('--')) {
-      throw new Error(`Unknown option: ${arg}`);
-    }
-
-    config.files.push(arg);
-  }
-
-  return config;
-}
+const DEEP_SCHEMA = {
+  '--shortlist': { type: 'flag', key: 'shortlist' },
+  '--top3':      { type: 'flag', key: 'top3' },
+  '--json':      { type: 'flag', key: 'json' },
+};
+const DEEP_DEFAULTS = { shortlist: false, top3: false, json: false };
 
 function normalizeText(value) {
   return String(value ?? '').replace(/\u00a0/g, ' ').replace(/\s+/g, ' ').trim();
@@ -501,7 +469,7 @@ function printSummary(results) {
 async function main() {
   let config;
   try {
-    config = parseArgs(process.argv.slice(2));
+    config = _parseArgs(process.argv.slice(2), DEEP_SCHEMA, { defaults: DEEP_DEFAULTS, allowPositional: true, positionalKey: 'files' });
   } catch (error) {
     console.error(error.message);
     console.error('');
