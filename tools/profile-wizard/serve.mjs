@@ -21,6 +21,7 @@ import { dirname, extname, join, resolve } from 'path';
 import { fileURLToPath } from 'url';
 import YAML from 'yaml';
 
+import Anthropic from '@anthropic-ai/sdk';
 import { parseNarrative } from './parse-narrative.mjs';
 import {
   loadStates,
@@ -225,6 +226,42 @@ async function handleGeoTowns(url, res) {
   }
 }
 
+async function handleSuggestTile(req, res) {
+  try {
+    const raw = await readBody(req, 32 * 1024);
+    const { selected = [], pool = [], type = 'feature' } = JSON.parse(raw || '{}');
+
+    if (!Array.isArray(pool) || pool.length === 0) {
+      sendJson(res, 200, { suggestion: null });
+      return;
+    }
+
+    const client = new Anthropic();
+    const typeLabel = type === 'deal_breaker' ? 'deal-breaker' : 'feature';
+    const poolList = pool.slice(0, 30).join(', ');
+    const selectedStr = selected.length > 0 ? selected.join(', ') : 'none yet';
+
+    const message = await client.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 32,
+      messages: [
+        {
+          role: 'user',
+          content: `Home search profile builder. The buyer has selected these ${typeLabel}s: ${selectedStr}. From this list pick the ONE that would best complement their choices: ${poolList}. Reply with only the exact label text from the list, nothing else.`,
+        },
+      ],
+    });
+
+    const raw_suggestion = message.content?.[0]?.text?.trim() ?? '';
+    // Validate: the suggestion must appear in the pool (case-insensitive)
+    const match = pool.find((p) => p.toLowerCase() === raw_suggestion.toLowerCase());
+    sendJson(res, 200, { suggestion: match ?? null });
+  } catch (error) {
+    console.warn(`suggest-tile failed: ${error.message}`);
+    sendJson(res, 200, { suggestion: null }); // graceful fallback — client picks randomly
+  }
+}
+
 function main() {
   const options = parseArgs(process.argv.slice(2));
 
@@ -253,6 +290,10 @@ function main() {
     }
     if (req.method === 'GET' && url.pathname === '/api/geo/towns') {
       await handleGeoTowns(url, res);
+      return;
+    }
+    if (req.method === 'POST' && url.pathname === '/api/suggest-tile') {
+      await handleSuggestTile(req, res);
       return;
     }
     if (req.method === 'GET') {
