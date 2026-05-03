@@ -40,6 +40,10 @@ Follow this flow exactly. The mechanism is a background server plus an explicit 
    - `command`: `node tools/profile-wizard/serve.mjs --once --port 4178`
    - `run_in_background`: `true`
    - No custom timeout -- the process stays alive until the user submits, at which point it exits on its own ~250ms after writing the submission file.
+2b. **Open the wizard in a browser automatically.** After launching the server, open a Playwright browser tab so the user doesn't have to copy-paste the URL. Call the Bash tool with:
+   - `command`: `node scripts/profile-wizard/open-browser.mjs --url http://127.0.0.1:4178/`
+   - `run_in_background`: `false` (this exits as soon as the tab opens, typically under 10 s)
+   If the script exits with code 1 (server not reachable within 10 s), tell the user to open http://127.0.0.1:4178/ manually.
 3. **Ask the user to confirm when they are done.** After the server is running, send a single short message asking the user to reply when they have clicked Submit (wording suggestion: "Wizard is live at http://127.0.0.1:4178/. Reply 'done' once you've submitted and I'll ingest the answers."). Stop and wait for the user's reply -- do not poll, do not re-prompt, do not proceed on assumption.
 4. **Ingest after the user confirms.** Once the user says they have submitted, read `.home-ops/profile-wizard-submission.json`. If the file does not exist, tell the user the wizard did not finish writing and ask them to re-submit in the same browser tab (answers are preserved in `.home-ops/profile-wizard-answers.json` so refreshes keep their work). Once the file exists, map the answers into `config/profile.yml`, `buyer-profile.md`, and `modes/_profile.md` using the file-update rules below, then delete or rename the submission file so the next run starts clean.
 5. Run the validation steps and output summary as usual.
