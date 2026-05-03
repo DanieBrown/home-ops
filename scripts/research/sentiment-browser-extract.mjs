@@ -32,7 +32,7 @@ const SENTIMENT_CACHE_NAME = 'sentiment';
 const DEFAULT_PROFILE = 'chrome-host';
 const OUTPUT_DIR = join(ROOT, 'output', 'sentiment');
 const COMMUNITY_DIR = join(ROOT, 'output', 'communities');
-const SUPPORTED_BROWSER_SOURCES = new Set(['facebook', 'nextdoor']);
+const SUPPORTED_BROWSER_SOURCES = new Set(['facebook', 'nextdoor', 'twitter']);
 const INVALID_COMMUNITY_PATTERNS = [
   /map my location along with the neighborhood you are in at the moment/i,
   /find my neighborhood/i,
@@ -354,6 +354,11 @@ function buildFacebookSearchUrl(community, city) {
   return query ? `https://www.facebook.com/search/top?q=${query}` : null;
 }
 
+function buildTwitterSearchUrl(community, city) {
+  const query = encodeURIComponent(`${community} ${city}`.trim());
+  return query ? `https://x.com/search?q=${query}&f=live&src=typed_query` : null;
+}
+
 function sanitizeCommunityName(value) {
   const community = normalizeText(value);
   if (!community) {
@@ -472,6 +477,9 @@ function buildBrowserSourceUrl(sourceKey, communityData) {
   if (sourceKey === 'facebook') {
     return buildFacebookSearchUrl(communityData.community, communityData.city);
   }
+  if (sourceKey === 'twitter') {
+    return buildTwitterSearchUrl(communityData.community, communityData.city);
+  }
   return null;
 }
 
@@ -496,7 +504,8 @@ function loadCommunityData(target) {
       communityUrls: community ? {
         nextdoor: buildNextdoorNeighborhoodUrl(community, parsed?.city || target.city, parsed?.state || target.state || 'NC'),
         facebook: buildFacebookSearchUrl(community, parsed?.city || target.city),
-      } : { nextdoor: null, facebook: null },
+        twitter: buildTwitterSearchUrl(community, parsed?.city || target.city),
+      } : { nextdoor: null, facebook: null, twitter: null },
     };
   } catch {
     return null;
@@ -694,9 +703,10 @@ async function extractCommunityPage(context, source, communityUrl, query, option
 
   const page = await context.newPage();
   try {
+    const waitSelector = options.waitSelector ?? 'article, [role="article"]';
     await page.goto(communityUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
     await page.waitForTimeout(2500);
-    await page.waitForSelector('article, [role="article"]', { timeout: 4000 }).catch(() => {});
+    await page.waitForSelector(waitSelector, { timeout: 4000 }).catch(() => {});
     if (maxScrolls > 0) {
       await autoScrollForMoreResults(page, maxScrolls);
     }
@@ -925,6 +935,7 @@ async function extractTarget(context, target, researchContext, cacheState, optio
         quick,
         allowedCategories: BROWSER_ALLOWED_CATEGORIES,
         redFlagPatterns,
+        ...(source.key === 'twitter' && { waitSelector: 'article[data-testid="tweet"]' }),
       });
 
       sourceResults.push({

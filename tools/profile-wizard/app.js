@@ -1278,6 +1278,7 @@ const RESEARCH_SOURCE_GROUPS = [
       { key: 'nextdoor', label: 'Nextdoor' },
       { key: 'facebook', label: 'Facebook neighborhood groups' },
       { key: 'google_maps', label: 'Google Maps reviews' },
+      { key: 'twitter', label: 'Twitter / X (requires login in hosted browser)' },
     ],
   },
   {

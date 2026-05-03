@@ -238,7 +238,7 @@ async function ensureHostedSession(profileName) {
 function buildCommunityUrls(community, city, state) {
   const sanitizedCommunity = sanitizeCommunityName(community);
   if (!sanitizedCommunity) {
-    return { nextdoor: null, facebook: null };
+    return { nextdoor: null, facebook: null, twitter: null };
   }
   const communitySlug = slugify(sanitizedCommunity);
   const nextdoorCommunitySlug = communitySlug.replace(/-/g, '');
@@ -249,7 +249,9 @@ function buildCommunityUrls(community, city, state) {
     : null;
   const facebookQuery = encodeURIComponent(`${sanitizedCommunity} neighborhood ${city}`.trim());
   const facebook = `https://www.facebook.com/search/top?q=${facebookQuery}`;
-  return { nextdoor, facebook };
+  const twitterQuery = encodeURIComponent(`${sanitizedCommunity} ${city}`.trim());
+  const twitter = `https://x.com/search?q=${twitterQuery}&f=live&src=typed_query`;
+  return { nextdoor, facebook, twitter };
 }
 
 function buildCacheKey(target) {
@@ -509,6 +511,7 @@ function printSummary(results) {
     console.log(line);
     if (result.communityUrls?.nextdoor) console.log(`  Nextdoor: ${result.communityUrls.nextdoor}`);
     if (result.communityUrls?.facebook) console.log(`  Facebook: ${result.communityUrls.facebook}`);
+    if (result.communityUrls?.twitter) console.log(`  Twitter:  ${result.communityUrls.twitter}`);
   }
   console.log('');
 }

@@ -93,6 +93,7 @@ research_sources:
     nextdoor: true
     facebook: true
     google_maps: true
+    twitter: false
   schools:
     greatschools: true
     niche: true

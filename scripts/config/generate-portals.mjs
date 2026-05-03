@@ -272,7 +272,7 @@ function buildPlatforms(areas, registryIndex, warnings, selection) {
   return platforms;
 }
 
-const DEFAULT_SENTIMENT_SELECTION = { reddit: true, nextdoor: true, facebook: true, google_maps: true };
+const DEFAULT_SENTIMENT_SELECTION = { reddit: true, nextdoor: true, facebook: true, google_maps: true, twitter: false };
 const DEFAULT_SCHOOL_SELECTION = { greatschools: true, niche: true, state_report_cards: true, schooldigger: false };
 const DEFAULT_DEVELOPMENT_SELECTION = { state_dot: true, county_planning: true, municipal_planning: true, mpo: false };
 
@@ -363,6 +363,16 @@ function buildResearchSources(areas, profile) {
       login_prompt:
         'I need Nextdoor login to view neighborhood discussion. Please log in and confirm.',
       note: 'Use recent neighborhood posts for traffic, construction, safety, noise, and community-maintenance signals.',
+    };
+  }
+  if (sentimentSelection.twitter) {
+    sentimentSources.twitter = {
+      base_url: 'https://x.com/',
+      login_required: true,
+      lookback_days: 7,
+      login_prompt:
+        'I need Twitter/X login to search for local neighborhood discussion. Please log in and confirm.',
+      note: 'Search neighborhood name + city for recent local observations, safety reports, and community events.',
     };
   }
 
