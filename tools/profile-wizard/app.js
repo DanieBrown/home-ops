@@ -842,6 +842,13 @@ function renderCommuteRow(dest, index) {
           value="${escapeAttr(dest.address ?? '')}"
           ${dest.state ? '' : 'disabled'} />
       </label>
+      <label class="commute-field">
+        <span>Max commute time <span class="sublabel" style="text-transform: none; font-weight: 400;">(minutes each way)</span></span>
+        <input type="number" class="text-input" data-field="max_minutes"
+          min="5" max="180" step="5"
+          placeholder="e.g. 30"
+          value="${escapeAttr(String(dest.max_minutes ?? ''))}" />
+      </label>
     </div>
   `;
 }
@@ -939,6 +946,15 @@ function wireCommuteInputs() {
     if (addressInput) {
       addressInput.addEventListener('input', () => {
         dest.address = addressInput.value;
+        saveAnswersDebounced();
+      });
+    }
+
+    const maxMinInput = row.querySelector('input[data-field="max_minutes"]');
+    if (maxMinInput) {
+      maxMinInput.addEventListener('input', () => {
+        const val = Number.parseInt(maxMinInput.value, 10);
+        dest.max_minutes = Number.isFinite(val) && val > 0 ? val : null;
         saveAnswersDebounced();
       });
     }
@@ -1527,7 +1543,8 @@ function buildSummary() {
         if (typeof d === 'string') return d;
         const head = d.label ? `${d.label}: ` : '';
         const tail = [d.address, d.county ? `${d.county} County` : '', d.state].filter(Boolean).join(', ');
-        return `${head}${tail}`.trim();
+        const maxStr = d.max_minutes ? ` (max ${d.max_minutes} min)` : '';
+        return `${head}${tail}${maxStr}`.trim();
       })
       .filter(Boolean);
     if (rendered.length) push('Commute destinations', rendered);
