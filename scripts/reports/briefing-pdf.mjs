@@ -34,24 +34,34 @@ const SCHOOL_METADATA_DIR = join(ROOT, 'output', 'school-metadata');
 
 const HELP_TEXT = `Usage:
   node briefing-pdf.mjs [--profile chrome-host] [--no-open]
+  node briefing-pdf.mjs --report reports/{slug}-deep-{date}.md [--profile chrome-host] [--no-open]
 
-Renders a one-file top-3 finalist briefing PDF under output/briefings/ using
-the current refined top 3 from data/shortlist.md, then opens it in a new tab
-inside the hosted Chrome session.
+Default (batch) mode: renders a top-3 finalist briefing PDF under
+output/briefings/top3-briefing-{date}.pdf using the current refined top 3
+from data/shortlist.md.
+
+--report <path> mode: renders a single-home briefing PDF under
+output/briefings/{slug}-deep-{date}.pdf using the deep brief at <path>. The
+slug is derived from the report's address. Used by deep-single-runner.mjs.
+
+Both modes open the PDF in a new tab inside the hosted Chrome session unless
+--no-open is supplied.
 
 Options:
   --profile <name>  Hosted browser profile to reuse. Defaults to chrome-host.
+  --report <path>   Render a single-home briefing for the given deep report.
   --no-open         Render the PDF but do not open it in hosted Chrome.
   --help            Show this help text.
 `;
 
 function parseArgs(argv) {
-  const config = { profileName: DEFAULT_PROFILE, open: true, help: false };
+  const config = { profileName: DEFAULT_PROFILE, open: true, help: false, reportPath: null };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
     if (arg === '--help' || arg === '-h') { config.help = true; continue; }
     if (arg === '--profile') { config.profileName = argv[index + 1] ?? DEFAULT_PROFILE; index += 1; continue; }
     if (arg === '--no-open') { config.open = false; continue; }
+    if (arg === '--report') { config.reportPath = argv[index + 1] ?? ''; index += 1; continue; }
     // Silently accept (and ignore) flags that callers commonly pass but this script doesn't need
     if (arg === '--shortlist' || arg === '--top3') { continue; }
     if (arg.startsWith('--')) throw new Error(`Unknown option: ${arg}`);
@@ -1062,34 +1072,36 @@ function buildHtml(finalists, profile) {
 </html>`;
 }
 
+function loadFinalist(reportPath, rank = 1) {
+  const report = parseReport(ROOT, reportPath);
+  const constructionCompanion = loadCompanionForReport(report, CONSTRUCTION_DIR, 'Construction');
+  const sentimentCompanion = loadCompanionForReport(report, SENTIMENT_DIR, 'Sentiment');
+  const packetCompanion = loadCompanionForReport(report, DEEP_PACKET_DIR, 'Deep packet');
+  const communityPayload = findCompanionJson(report, COMMUNITY_DIR);
+  const community = communityPayload && communityPayload.community
+    && communityPayload.status !== 'no-community-match'
+    ? String(communityPayload.community).trim()
+    : null;
+  return {
+    rank,
+    report,
+    construction: constructionCompanion.data,
+    sentiment: sentimentCompanion.data,
+    packet: packetCompanion.data,
+    community,
+    constructionMismatch: constructionCompanion.mismatchMessage,
+    sentimentMismatch: sentimentCompanion.mismatchMessage,
+    packetMismatch: packetCompanion.mismatchMessage,
+  };
+}
+
 function loadFinalists() {
   const shortlist = parseShortlist(ROOT);
   if (!shortlist.refinedTop3 || shortlist.refinedTop3.length === 0) {
     throw new Error('No refined top-3 homes found in data/shortlist.md. Run deep mode before generating the briefing.');
   }
 
-  return shortlist.refinedTop3.map((row, index) => {
-    const report = parseReport(ROOT, row.reportPath);
-    const constructionCompanion = loadCompanionForReport(report, CONSTRUCTION_DIR, 'Construction');
-    const sentimentCompanion = loadCompanionForReport(report, SENTIMENT_DIR, 'Sentiment');
-    const packetCompanion = loadCompanionForReport(report, DEEP_PACKET_DIR, 'Deep packet');
-    const communityPayload = findCompanionJson(report, COMMUNITY_DIR);
-    const community = communityPayload && communityPayload.community
-      && communityPayload.status !== 'no-community-match'
-      ? String(communityPayload.community).trim()
-      : null;
-    return {
-      rank: row.rank || index + 1,
-      report,
-      construction: constructionCompanion.data,
-      sentiment: sentimentCompanion.data,
-      packet: packetCompanion.data,
-      community,
-      constructionMismatch: constructionCompanion.mismatchMessage,
-      sentimentMismatch: sentimentCompanion.mismatchMessage,
-      packetMismatch: packetCompanion.mismatchMessage,
-    };
-  });
+  return shortlist.refinedTop3.map((row, index) => loadFinalist(row.reportPath, row.rank || index + 1));
 }
 
 async function renderPdf(html, outputPath) {
@@ -1156,12 +1168,23 @@ async function run() {
   }
   if (config.help) { console.log(HELP_TEXT); return; }
 
-  const finalists = loadFinalists();
   const profile = loadBuyerProfile();
-  const html = buildHtml(finalists, profile);
-  await mkdir(OUTPUT_DIR, { recursive: true });
   const dateStamp = new Date().toISOString().slice(0, 10);
-  const outputPath = join(OUTPUT_DIR, `top3-briefing-${dateStamp}.pdf`);
+  await mkdir(OUTPUT_DIR, { recursive: true });
+
+  let finalists;
+  let outputPath;
+  if (config.reportPath) {
+    finalists = [loadFinalist(config.reportPath, 1)];
+    const slug = slugify(`${finalists[0].report.address}-${finalists[0].report.city}-${finalists[0].report.state || 'NC'}`)
+      || 'home';
+    outputPath = join(OUTPUT_DIR, `${slug}-deep-${dateStamp}.pdf`);
+  } else {
+    finalists = loadFinalists();
+    outputPath = join(OUTPUT_DIR, `top3-briefing-${dateStamp}.pdf`);
+  }
+
+  const html = buildHtml(finalists, profile);
   await renderPdf(html, outputPath);
   const relPath = relative(ROOT, outputPath).replace(/\\/g, '/');
   console.log(`Wrote briefing PDF: ${relPath}`);

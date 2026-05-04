@@ -102,6 +102,80 @@ const CONTRACTS = {
       }),
     ],
   },
+  'deep-single': {
+    mode: 'deep-single',
+    description: '/home-ops deep <url> -- single-home branch',
+    required: [
+      req('extract-listing-details', 'Listing facts via Playwright (pre-eval)', [
+        /extract-listing-details\.mjs\b/,
+        /npm(?:\.cmd)?\s+run\s+extract:listing\b/,
+        /deep-single-runner\.mjs\b/,
+        /npm(?:\.cmd)?\s+run\s+deep:single\b/,
+      ]),
+      req('school-assignments-fetch', 'Assigned-school capture via GreatSchools (pre-eval)', [
+        /school-assignments-fetch\.mjs\b/,
+        /npm(?:\.cmd)?\s+run\s+schools:assignments\b/,
+        /deep-single-runner\.mjs\b/,
+        /npm(?:\.cmd)?\s+run\s+deep:single\b/,
+      ], { requires: ['extract-listing-details'] }),
+      req('research-source-plan-single', 'Single-home source plan from portals.yml', [
+        /research-source-plan\.mjs\b/,
+        /deep-single-final-runner\.mjs\b/,
+        /npm(?:\.cmd)?\s+run\s+deep:single-final\b/,
+      ], { requires: ['extract-listing-details'], isGate: true }),
+      req('community-lookup-single', 'Single-home community resolution (mapdevelopers)', [
+        /community-lookup\.mjs\b/,
+        /deep-single-final-runner\.mjs\b/,
+        /npm(?:\.cmd)?\s+run\s+deep:single-final\b/,
+      ], { requires: ['research-source-plan-single'] }),
+      req('sentiment-extract-single', 'Single-home browser sentiment — Facebook/Nextdoor', [
+        /sentiment-browser-extract\.mjs\b/,
+        /deep-single-final-runner\.mjs\b/,
+        /npm(?:\.cmd)?\s+run\s+deep:single-final\b/,
+      ], { requires: ['community-lookup-single'] }),
+      req('sentiment-public-extract-single', 'Single-home public sentiment — Reddit/Google Maps', [
+        /sentiment-public-extract\.mjs\b/,
+        /deep-single-final-runner\.mjs\b/,
+        /npm(?:\.cmd)?\s+run\s+deep:single-final\b/,
+      ], { requires: ['research-source-plan-single'] }),
+      req('construction-check-single', 'Single-home NCDOT construction check', [
+        /construction-check\.mjs\b/,
+        /deep-single-final-runner\.mjs\b/,
+        /npm(?:\.cmd)?\s+run\s+deep:single-final\b/,
+      ], { requires: ['research-source-plan-single'] }),
+      req('county-permits-check-single', 'Single-home county permits spatial query', [
+        /county-permits-check\.mjs\b/,
+        /deep-single-final-runner\.mjs\b/,
+        /npm(?:\.cmd)?\s+run\s+deep:single-final\b/,
+      ], { requires: ['research-source-plan-single'] }),
+      req('school-metadata-fetch-single', 'Single-home school metadata details', [
+        /school-metadata-fetch\.mjs\b/,
+        /deep-single-final-runner\.mjs\b/,
+        /npm(?:\.cmd)?\s+run\s+deep:single-final\b/,
+      ], { requires: ['research-source-plan-single'] }),
+      req('builder-check-single', 'Single-home builder reputation lookup', [
+        /builder-check\.mjs\b/,
+        /deep-single-final-runner\.mjs\b/,
+        /npm(?:\.cmd)?\s+run\s+deep:single-final\b/,
+      ], { requires: ['research-source-plan-single'] }),
+      req('deep-research-packet-single', 'Single-home deep research packet assembly', [
+        /deep-research-packet\.mjs\b/,
+        /deep-single-final-runner\.mjs\b/,
+        /npm(?:\.cmd)?\s+run\s+deep:single-final\b/,
+      ], {
+        requires: ['research-source-plan-single', 'community-lookup-single', 'sentiment-extract-single', 'sentiment-public-extract-single', 'construction-check-single', 'county-permits-check-single', 'school-metadata-fetch-single', 'builder-check-single'],
+        isGate: true,
+      }),
+      req('review-tabs-single', 'Replace browser tabs with listing URL', [
+        /review-tabs\.mjs[^\n]*urls\b/,
+        /npm(?:\.cmd)?\s+run\s+browser:review[^\n]*urls\b/,
+      ], { requires: ['deep-research-packet-single'], isGate: true }),
+      req('briefing-pdf-single', 'Render single-home briefing PDF', [
+        /briefing-pdf\.mjs[^\n]*--report\b/,
+        /npm(?:\.cmd)?\s+run\s+brief:single\b/,
+      ], { requires: ['review-tabs-single'], isGate: true }),
+    ],
+  },
   'deep-shortlist': {
     mode: 'deep-shortlist',
     description: '/home-ops deep -- shortlist batch branch',
@@ -173,6 +247,8 @@ export function detectMode(prompt) {
   if (deep.test(p)) {
     const batchHint = /\b(shortlist|top[-\s]?10|top[-\s]?3|batch)\b/i;
     if (batchHint.test(p)) return 'deep-shortlist';
+    const hasUrl = /https?:\/\/\S+/i.test(p);
+    if (hasUrl) return 'deep-single';
     return null;
   }
 
