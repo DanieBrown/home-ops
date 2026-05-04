@@ -115,6 +115,52 @@ Post a final summary: eval report path, brief path, briefing PDF path, and the 2
 
 ---
 
+## Multi-URL Deep Run (`/home-ops deep <url1>\n<url2>\n...`)
+
+When the user provides two or more URLs (separated by newlines or spaces), process each home through the full single-home pipeline, then fan out the axis agents across all homes together so interpretation is done in one pass.
+
+### Parsing URLs
+
+Extract all `https://...` tokens from the prompt. Deduplicate, preserve order.
+
+### Phase 0–2 per URL (sequential)
+
+For each URL **in order**, run the full three-phase capture before moving to the next. This serializes browser access so Playwright sessions don't overlap.
+
+**Repeat for each URL:**
+1. `node scripts/pipeline/deep-single-runner.mjs --url <url> --profile chrome-host`
+2. Read `output/listings/{slug}.json` + `output/school-metadata/{slug}.json`. Write the eval report (`reports/{N}-{slug}-{YYYY-MM-DD}.md`) and append a tracker row to `data/listings.md`.
+3. `node scripts/pipeline/deep-single-final-runner.mjs --report reports/{N}-{slug}-{YYYY-MM-DD}.md --profile chrome-host`
+
+Collect the eval report path and listing URL for each home as you go.
+
+### Axis Agents (batched across all homes)
+
+After all URLs have completed Phases 0–2, launch the three axis agents in **a single message** covering all homes at once. Pass every relevant sidecar path — `output/sentiment/{slug}.json`, `output/construction/{slug}.json`, etc. — for the full set of homes. See "Phase B — Three Axis Agents" for prompt specs.
+
+### Briefs, PDFs, and Tabs
+
+For each home (using the axis agent outputs):
+
+1. Write the deep brief: `reports/{slug}-deep-{YYYY-MM-DD}.md`
+2. Render the briefing PDF:
+   ```
+   node scripts/reports/briefing-pdf.mjs --report reports/{slug}-deep-{YYYY-MM-DD}.md
+   ```
+   PDF lands at `output/briefings/{slug}-deep-{YYYY-MM-DD}.pdf`.
+
+After all briefs and PDFs are written, replace the browser tabs:
+```
+node scripts/browser/review-tabs.mjs urls <url1> <url2> ... --replace
+```
+Then open each briefing PDF tab in the hosted session, one at a time, in the same order as the listing URLs (PDFs open **after** `--replace` so they survive).
+
+**Final tab state: exactly 2N tabs** — N listing URLs + N briefing PDFs, interleaved in order (listing₁, listing₂, …, PDF₁, PDF₂, …) or sequential pairs — your choice, but every home must have both tabs open.
+
+Post a final summary: all eval report paths, all brief paths, all briefing PDF paths, and the 2N-tab final state.
+
+---
+
 ## Batch Deep Run (`/home-ops deep` — shortlist or top-N cohort)
 
 ### Target Resolution
