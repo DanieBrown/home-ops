@@ -306,8 +306,11 @@ export function fromJsonLdResidence(item) {
   if (offers && typeof offers === 'object') {
     result.price = toNumber(offers.price ?? offers.priceSpecification?.price);
     result.listingStatus = normalizeListingStatus(offers.availability || offers.itemCondition);
+    const offeredBy = Array.isArray(offers.offeredBy) ? offers.offeredBy[0] : offers.offeredBy;
+    result.listingAgent = offeredBy?.name ? String(offeredBy.name).trim() : null;
   } else {
     result.price = toNumber(item.price);
+    result.listingAgent = null;
   }
 
   result.beds = toNumber(item.numberOfBedrooms ?? item.numberOfRooms);
@@ -324,6 +327,13 @@ export function fromJsonLdResidence(item) {
   result.yearBuilt = toNumber(item.yearBuilt ?? item.dateBuilt);
   result.propertyType = pickFirst(item.propertyType, item.category);
   result.description = pickFirst(item.description);
+  if (item.datePosted) {
+    const posted = new Date(item.datePosted);
+    if (!Number.isNaN(posted.getTime())) {
+      result.daysOnMarket = Math.floor((Date.now() - posted.getTime()) / (1000 * 60 * 60 * 24));
+    }
+  }
+  if (result.daysOnMarket === undefined) result.daysOnMarket = null;
   return result;
 }
 
