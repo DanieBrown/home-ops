@@ -502,6 +502,34 @@ async function extractRealtor(page) {
         }
         findings.builderName = pickFirst(listing.builder?.name);
         findings.communityName = pickFirst(listing.community?.name, listing.subdivision?.name);
+
+        // listingAgent from advertisers array
+        const advertisers = Array.isArray(listing.advertisers) ? listing.advertisers : [];
+        if (advertisers[0]?.name) {
+          findings.listingAgent = String(advertisers[0].name).trim();
+        }
+
+        // MLS from advertisers mls_set
+        const mlsSet = advertisers[0]?.mls_set;
+        if (Array.isArray(mlsSet) && mlsSet[0]) {
+          const mlsId = mlsSet[0].id ?? mlsSet[0].listing_id;
+          if (mlsId) findings.mls = String(mlsId).trim();
+        }
+
+        // Precise baths: use baths_full + halves when available
+        if (typeof desc.baths_full === 'number') {
+          findings.baths = desc.baths_full
+            + 0.5 * (desc.baths_half ?? 0)
+            + 0.5 * (desc.baths_3qtr ?? 0);
+        }
+
+        // daysOnMarket from list_date when days_on_market is absent
+        if ((findings.daysOnMarket === null || findings.daysOnMarket === undefined) && listing.list_date) {
+          const listed = new Date(listing.list_date);
+          if (!Number.isNaN(listed.getTime())) {
+            findings.daysOnMarket = Math.floor((Date.now() - listed.getTime()) / (1000 * 60 * 60 * 24));
+          }
+        }
       }
     } catch (error) {
       notes.push(`realtor: __NEXT_DATA__ parse error: ${error.message}`);
