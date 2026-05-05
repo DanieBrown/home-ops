@@ -97,14 +97,14 @@ homes.com renders property details as `<h3>Section Name</h3>` followed by a sibl
 
 ### 4. `extractRealtor(page)` — additive only
 
-No existing reads removed. Three additions to the existing `__NEXT_DATA__` block:
+No existing reads removed. Four additions to the existing `__NEXT_DATA__` block:
 
 | Field | Source path |
 |---|---|
 | `listingAgent` | `advertisers[0].name` |
 | `mls` | `advertisers[0].mls_set[0]?.id ?? advertisers[0].mls_set[0]?.listing_id` |
-| `baths` (precise) | `description.baths_full + 0.5 * (description.baths_half ?? 0) + 0.5 * (description.baths_3qtr ?? 0)` — used only when more precise than the existing `baths_consolidated` read |
-| `daysOnMarket` | Computed from `listing.list_date` ISO string when `days_on_market` is null |
+| `baths` (precise) | `description.baths_full + 0.5 * (description.baths_half ?? 0) + 0.5 * (description.baths_3qtr ?? 0)` — used when `description.baths_full` is a defined number; falls back to existing `baths_consolidated` read otherwise |
+| `daysOnMarket` | Computed from `listing.list_date` ISO string when `listing.days_on_market` is null |
 
 ---
 
