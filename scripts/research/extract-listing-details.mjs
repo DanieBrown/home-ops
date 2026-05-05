@@ -524,13 +524,17 @@ async function extractRealtor(page) {
           findings.listingAgent = null;
         }
 
-        // MLS from advertisers mls_set
-        const mlsSet = advertisers[0]?.mls_set;
-        if (Array.isArray(mlsSet) && mlsSet[0]) {
-          const mlsId = mlsSet[0].id ?? mlsSet[0].listing_id;
-          findings.mls = mlsId ? String(mlsId).trim() : null;
+        // MLS from source.listing_id (the canonical MLS number realtor.com stores per-listing)
+        const src = listing.source && typeof listing.source === 'object' ? listing.source : null;
+        if (src?.listing_id) {
+          findings.mls = String(src.listing_id).trim();
         } else {
           findings.mls = null;
+        }
+
+        // daysOnMarket: prefer source.days_on_mls (authoritative MLS field)
+        if ((findings.daysOnMarket === null || findings.daysOnMarket === undefined) && src?.days_on_mls != null) {
+          findings.daysOnMarket = toNumber(src.days_on_mls);
         }
 
         // Precise baths: use baths_full + halves when available
