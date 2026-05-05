@@ -507,13 +507,17 @@ async function extractRealtor(page) {
         const advertisers = Array.isArray(listing.advertisers) ? listing.advertisers : [];
         if (advertisers[0]?.name) {
           findings.listingAgent = String(advertisers[0].name).trim();
+        } else {
+          findings.listingAgent = null;
         }
 
         // MLS from advertisers mls_set
         const mlsSet = advertisers[0]?.mls_set;
         if (Array.isArray(mlsSet) && mlsSet[0]) {
           const mlsId = mlsSet[0].id ?? mlsSet[0].listing_id;
-          if (mlsId) findings.mls = String(mlsId).trim();
+          findings.mls = mlsId ? String(mlsId).trim() : null;
+        } else {
+          findings.mls = null;
         }
 
         // Precise baths: use baths_full + halves when available
