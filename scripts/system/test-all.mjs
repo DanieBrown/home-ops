@@ -142,6 +142,15 @@ for (const script of scripts) {
   }
 }
 
+{
+  const result = run('node scripts/tests/test-extract-parsers.mjs');
+  if (result.ok) {
+    pass('extract-listing-details parser unit tests');
+  } else {
+    fail(`extract-listing-details parser unit tests\n${result.output}`);
+  }
+}
+
 if (!QUICK) {
   console.log('\n3. Dashboard build');
 
