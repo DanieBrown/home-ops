@@ -524,16 +524,106 @@ async function extractRealtor(page) {
 }
 
 async function extractHomes(page) {
-  // Homes.com layout shares a lot with Realtor.com (same parent). Try
-  // JSON-LD first; selectors are TODO.
   const findings = {};
   const notes = [];
+
+  // Primary: JSON-LD (@graph unwrap handled by pickJsonLdResidence)
   const jsonLd = await readJsonLd(page);
   const residence = pickJsonLdResidence(jsonLd);
   const fromLd = fromJsonLdResidence(residence);
   Object.assign(findings, fromLd);
+
+  // Secondary: DOM section parser for fields JSON-LD doesn't carry
+  const domFindings = await page.evaluate(() => {
+    const result = {};
+
+    function sectionText(headerPattern) {
+      const headers = Array.from(document.querySelectorAll('h3, h4, [class*="section-title"], [class*="label"]'));
+      for (const h of headers) {
+        if (headerPattern.test(h.textContent.trim())) {
+          const sibling = h.nextElementSibling ?? h.parentElement?.nextElementSibling;
+          if (sibling) return sibling.textContent.trim();
+        }
+      }
+      return '';
+    }
+
+    // HOA Fees → hoaMonthly
+    const hoaText = sectionText(/HOA\s*Fee/i);
+    if (hoaText) {
+      const m = hoaText.match(/\$?([\d,]+)/);
+      if (m) result.hoaMonthly = Number(m[1].replace(/,/g, ''));
+    }
+
+    // Parking → garage count
+    const parkingText = sectionText(/Parking/i);
+    if (parkingText) {
+      const m = parkingText.match(/^(\d+)/);
+      if (m) result.garage = Number(m[1]);
+    }
+
+    // Lot Details → lotSqft
+    const lotText = sectionText(/Lot\s*Details?/i);
+    if (lotText) {
+      const m = lotText.match(/([\d,]+)\s*(?:sq\.?\s*ft|sqft)/i);
+      if (m) result.lotSqft = Number(m[1].replace(/,/g, ''));
+    }
+
+    // Community Details → communityName
+    const communityText = sectionText(/Community\s*Details?/i);
+    if (communityText) result.communityName = communityText.split('\n')[0].trim() || null;
+
+    // Builder → builderName
+    const builderText = sectionText(/^Builder$/i);
+    if (builderText) result.builderName = builderText.split('\n')[0].trim() || null;
+
+    // MLS → mls
+    const mlsText = sectionText(/^MLS/i);
+    if (mlsText) {
+      const m = mlsText.match(/([A-Z0-9]{6,})/i);
+      if (m) result.mls = m[1];
+    }
+
+    // Schools section → assignedSchools
+    const schoolHeaders = Array.from(document.querySelectorAll('h3, h4')).filter(
+      (h) => /schools?/i.test(h.textContent.trim())
+    );
+    if (schoolHeaders.length) {
+      const schoolSection = schoolHeaders[0].nextElementSibling
+        ?? schoolHeaders[0].parentElement?.nextElementSibling;
+      if (schoolSection) {
+        const items = Array.from(schoolSection.querySelectorAll('li'));
+        result.assignedSchools = items.map((el) => {
+          const text = el.textContent.trim();
+          let level = null;
+          if (/elementary|primary/i.test(text)) level = 'elementary';
+          else if (/middle|junior/i.test(text)) level = 'middle';
+          else if (/high|senior/i.test(text)) level = 'high';
+          return { name: text.split('\n')[0].trim(), level, source: 'homes' };
+        }).filter((s) => s.name.length > 0);
+      }
+    }
+
+    // Precise baths from summary detail block
+    const allText = document.body?.innerText ?? '';
+    const bathMatch = allText.match(/(\d+(?:\.\d+)?)\s*Ba(?:th)?s?\b/);
+    if (bathMatch) result.baths = Number(bathMatch[1]);
+
+    return result;
+  }).catch(() => ({}));
+
+  // Merge: DOM baths win over JSON-LD integer baths; JSON-LD wins for everything else
+  for (const [key, value] of Object.entries(domFindings)) {
+    if (value === null || value === undefined) continue;
+    if (key === 'baths') {
+      findings.baths = value;
+    } else if (findings[key] === null || findings[key] === undefined) {
+      findings[key] = value;
+    }
+  }
+
   if (!findings.address && !findings.price) {
-    notes.push('homes: only JSON-LD parser implemented; selectors not implemented yet');
+    notes.push('homes: JSON-LD and DOM section parser found no structured data');
   }
   return { findings, notes };
 }
