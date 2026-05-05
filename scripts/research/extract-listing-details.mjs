@@ -266,7 +266,16 @@ function buildEmptyListing(url) {
 // ---------------------------------------------------------------------------
 
 export function pickJsonLdResidence(jsonLdItems = []) {
-  const list = Array.isArray(jsonLdItems) ? jsonLdItems : [];
+  const raw = Array.isArray(jsonLdItems) ? jsonLdItems : [];
+  // Unwrap @graph containers (homes.com wraps residence in a top-level @graph array)
+  const list = [];
+  for (const item of raw) {
+    if (item && typeof item === 'object' && Array.isArray(item['@graph']) && !item['@type']) {
+      for (const inner of item['@graph']) list.push(inner);
+    } else {
+      list.push(item);
+    }
+  }
   for (const item of list) {
     if (!item || typeof item !== 'object') continue;
     const type = item['@type'];
