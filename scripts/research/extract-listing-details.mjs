@@ -265,7 +265,7 @@ function buildEmptyListing(url) {
 // adds a coverageNote about which step failed.
 // ---------------------------------------------------------------------------
 
-function pickJsonLdResidence(jsonLdItems = []) {
+export function pickJsonLdResidence(jsonLdItems = []) {
   const list = Array.isArray(jsonLdItems) ? jsonLdItems : [];
   for (const item of list) {
     if (!item || typeof item !== 'object') continue;
@@ -284,7 +284,7 @@ function pickJsonLdResidence(jsonLdItems = []) {
   return null;
 }
 
-function fromJsonLdResidence(item) {
+export function fromJsonLdResidence(item) {
   if (!item) return {};
   const result = {};
   const address = item.address || {};
