@@ -185,7 +185,7 @@ function pickFirst(...values) {
   return null;
 }
 
-function normalizeListingStatus(raw, bodyText = '') {
+export function normalizeListingStatus(raw, bodyText = '') {
   const rawStr = String(raw ?? '').toLowerCase();
   // schema.org/InStock and explicit active signals in the raw status string take
   // priority over body-text scanning, which can pick up historical listing events.

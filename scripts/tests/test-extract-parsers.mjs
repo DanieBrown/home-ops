@@ -4,7 +4,7 @@
  * Run: node scripts/tests/test-extract-parsers.mjs
  */
 import assert from 'node:assert/strict';
-import { pickJsonLdResidence, fromJsonLdResidence } from '../research/extract-listing-details.mjs';
+import { pickJsonLdResidence, fromJsonLdResidence, normalizeListingStatus } from '../research/extract-listing-details.mjs';
 
 let passed = 0;
 let failed = 0;
@@ -130,6 +130,62 @@ test('fromJsonLdResidence: daysOnMarket is null when datePosted absent', () => {
   };
   const result = fromJsonLdResidence(item);
   assert.equal(result.daysOnMarket, null);
+});
+
+// ---------------------------------------------------------------------------
+// fromJsonLdResidence — mainEntity unwrap (homes.com pattern)
+// ---------------------------------------------------------------------------
+
+test('fromJsonLdResidence: reads beds/baths/sqft from mainEntity when present', () => {
+  const item = {
+    '@type': 'RealEstateListing',
+    address: { streetAddress: '4404 Clarkdale Ct', addressLocality: 'Fuquay Varina', addressRegion: 'NC', postalCode: '27526' },
+    offers: [{ price: 750000, availability: 'https://schema.org/InStock' }],
+    mainEntity: {
+      '@type': 'SingleFamilyResidence',
+      numberOfBedrooms: 5,
+      numberOfBathroomsTotal: 4,
+      floorSize: { value: 3716, unitText: 'SQFT' },
+      yearBuilt: 2023,
+    },
+  };
+  const result = fromJsonLdResidence(item);
+  assert.equal(result.beds, 5);
+  assert.equal(result.baths, 4);
+  assert.equal(result.sqftFinished, 3716);
+  assert.equal(result.yearBuilt, 2023);
+  assert.equal(result.price, 750000);
+});
+
+test('fromJsonLdResidence: falls back to item fields when mainEntity absent', () => {
+  const item = {
+    '@type': 'SingleFamilyResidence',
+    numberOfBedrooms: 3,
+    floorSize: { value: 1800, unitText: 'SQFT' },
+    address: { streetAddress: '1 Main St', addressLocality: 'Raleigh', addressRegion: 'NC' },
+  };
+  const result = fromJsonLdResidence(item);
+  assert.equal(result.beds, 3);
+  assert.equal(result.sqftFinished, 1800);
+});
+
+// ---------------------------------------------------------------------------
+// normalizeListingStatus — InStock handling
+// ---------------------------------------------------------------------------
+
+test('normalizeListingStatus: InStock schema.org URL → active', () => {
+  const result = normalizeListingStatus('https://schema.org/InStock');
+  assert.equal(result, 'active');
+});
+
+test('normalizeListingStatus: in-stock string → active', () => {
+  const result = normalizeListingStatus('in-stock');
+  assert.equal(result, 'active');
+});
+
+test('normalizeListingStatus: sold body text → sold', () => {
+  const result = normalizeListingStatus('', 'This property has been sold.');
+  assert.equal(result, 'sold');
 });
 
 // ---------------------------------------------------------------------------
