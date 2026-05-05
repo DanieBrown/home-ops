@@ -495,7 +495,6 @@ async function extractRealtor(page) {
         findings.homeStyle = pickFirst(desc.sub_type, desc.style);
         findings.description = pickFirst(listing.text);
         findings.listingStatus = normalizeListingStatus(listing.status);
-        findings.daysOnMarket = toNumber(listing.list_date_min ?? listing.days_on_market);
         const hoa = listing.hoa || {};
         findings.hoaMonthly = toNumber(hoa.fee ?? hoa.amount);
         const photos = listing.photos || listing.photo_count;
@@ -532,9 +531,19 @@ async function extractRealtor(page) {
           findings.mls = null;
         }
 
-        // daysOnMarket: prefer source.days_on_mls (authoritative MLS field)
-        if ((findings.daysOnMarket === null || findings.daysOnMarket === undefined) && src?.days_on_mls != null) {
+        // daysOnMarket: source.days_on_mls is authoritative (MLS-supplied); fall back to
+        // listing.days_on_market, then list_date_min, then compute from list_date string
+        if (src?.days_on_mls != null) {
           findings.daysOnMarket = toNumber(src.days_on_mls);
+        } else if (listing.days_on_market != null) {
+          findings.daysOnMarket = toNumber(listing.days_on_market);
+        } else if (listing.list_date_min != null) {
+          findings.daysOnMarket = toNumber(listing.list_date_min);
+        } else if (listing.list_date) {
+          const listed = new Date(listing.list_date);
+          if (!Number.isNaN(listed.getTime())) {
+            findings.daysOnMarket = Math.floor((Date.now() - listed.getTime()) / (1000 * 60 * 60 * 24));
+          }
         }
 
         // Precise baths: use baths_full + halves when available
@@ -542,14 +551,6 @@ async function extractRealtor(page) {
           findings.baths = desc.baths_full
             + 0.5 * (desc.baths_half ?? 0)
             + 0.5 * (desc.baths_3qtr ?? 0);
-        }
-
-        // daysOnMarket from list_date when days_on_market is absent
-        if ((findings.daysOnMarket === null || findings.daysOnMarket === undefined) && listing.list_date) {
-          const listed = new Date(listing.list_date);
-          if (!Number.isNaN(listed.getTime())) {
-            findings.daysOnMarket = Math.floor((Date.now() - listed.getTime()) / (1000 * 60 * 60 * 24));
-          }
         }
       }
     } catch (error) {
