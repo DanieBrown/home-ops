@@ -28,9 +28,47 @@ It also handles a shortlist batch branch:
 
 ## Architecture: Three Axis Agents
 
-This mode uses **three axis agents plus the main agent for every run** — single-home and batch alike. The deterministic capture scripts in Phase A do all live browsing; the axis agents in Phase B only interpret pre-captured JSON sidecars.
+This mode uses **three axis agents plus the main agent for every run** — single-home and batch alike. Their definitions live at:
+
+- `.claude/agents/sentiment-axis.md` (Claude Code) and `.github/agents/sentiment-axis.agent.md` (OpenCode)
+- `.claude/agents/risk-builder-axis.md` and `.github/agents/risk-builder-axis.agent.md`
+- `.claude/agents/schools-axis.md` and `.github/agents/schools-axis.agent.md`
+
+When dispatching, use `subagent_type: sentiment-axis | risk-builder-axis | schools-axis`.
+
+The deterministic capture scripts (Phase 0/2 single, Phase A batch) own all live browsing. The axis agents read pre-captured JSON sidecars **first**. When a sidecar is missing or empty, an axis agent MAY re-run the relevant capture script (e.g. `sentiment-public-extract.mjs`, `school-metadata-fetch.mjs`, `construction-check.mjs`) with `--profile chrome-host`, which connects to the user's already-running hosted browser session via CDP. This is the only permitted fallback — it must NOT use `WebFetch`, `WebSearch`, or any MCP server, and must NOT launch a new browser (a fresh session has no auth and will 403/404 against portals). Each agent records `source: "sidecar" | "fallback-capture"` provenance per datapoint.
 
 Total agent count per run = 4 (3 axis + 1 main).
+
+## Script Execution Order (Authoritative)
+
+The contract system at `.home-ops/command-contract.json` (defined in `scripts/hooks/contract-shared.mjs`) actively gates this mode. The PreToolUse hook (`scripts/hooks/on-pretool.mjs`) **denies** any Bash call whose contract gate has unsatisfied prereqs. The PostToolUse hook (`scripts/hooks/on-bash.mjs`) records satisfaction or **blocks** on non-zero exit.
+
+Single-home flow (`deep-single` contract):
+
+```
+deep-single-runner.mjs        →  extract-listing-details + school-assignments-fetch
+        ↓ (gate: extract-listing-details)
+[main agent] eval report      →  reports/{N}-{slug}-{date}.md, tracker row
+        ↓
+deep-single-final-runner.mjs  →  research-source-plan, community-lookup, sentiment-browser-extract,
+                                  sentiment-public-extract, construction-check, county-permits-check,
+                                  school-metadata-fetch, builder-check, deep-research-packet
+        ↓ (gate: deep-research-packet-single)
+[3 axis agents in parallel]   →  Sentiment, Risk & Builder, Schools
+        ↓
+[main agent] deep brief       →  reports/{slug}-deep-{date}.md
+        ↓
+review-tabs.mjs urls --replace
+        ↓ (gate: review-tabs-single)
+briefing-pdf.mjs --report ... →  output/briefings/{slug}-deep-{date}.pdf
+        ↓ (gate: briefing-pdf-single)
+[final tab state: 2 tabs]
+```
+
+Multi-URL flow uses the same gates, repeated per-URL during capture, with one combined `briefing-pdf.mjs --reports ...` call at the end.
+
+Batch flow (`deep-shortlist` contract): see Phase A/B/C below; gates are `research-audit`, `deep-research-packet`, `promote-finalists`, `finalist-gate`, `review-tabs-top3`, `briefing-pdf`.
 
 ## Run-to-Completion Contract
 
@@ -87,9 +125,15 @@ This runner sequentially runs: research-source-plan, community-lookup, sentiment
 
 ### Phase 3 — Three Axis Agents
 
-Launch the three axis agents in **a single message with three Agent tool calls** so the runtime fans them out in parallel. The agents read pre-written JSON sidecars only — no web access.
+Launch the three axis agents in **a single message with three Agent tool calls** so the runtime fans them out in parallel. Use the named subagents:
 
-See "Phase B — Three Axis Agents" section below for agent prompt specifications.
+- `subagent_type: sentiment-axis`
+- `subagent_type: risk-builder-axis`
+- `subagent_type: schools-axis`
+
+Each agent reads its pre-written JSON sidecars first. When a sidecar is missing or empty, the agent may re-run the relevant capture script with `--profile chrome-host` to use the user's existing hosted session. WebFetch, WebSearch, and launching a new browser are forbidden — a fresh session has no portal auth and will 403/404.
+
+Pass each agent the relevant sidecar paths and the `slug`. The full output schema for each agent is documented in its definition file under `.claude/agents/`.
 
 ### Phase 4 — Brief, PDF, and Tabs
 
@@ -97,17 +141,18 @@ Once the axis agents return:
 
 1. Review the axis outputs with the deep packet and eval report. Write the single-home deep brief to `reports/{slug}-deep-{YYYY-MM-DD}.md`. Organize around the seven research axes below.
 
-2. Render the briefing PDF:
-   ```
-   node scripts/reports/briefing-pdf.mjs --report reports/{slug}-deep-{YYYY-MM-DD}.md
-   ```
-   PDF lands at `output/briefings/{slug}-deep-{YYYY-MM-DD}.pdf`.
-
-3. Replace browser tabs with the listing URL, then open the PDF last:
+2. Replace browser tabs with the listing URL first:
    ```
    node scripts/browser/review-tabs.mjs urls <listing-url> --replace
    ```
-   Then open the briefing PDF tab in the hosted session (PDF must be opened **after** `--replace` so it survives).
+
+3. Render the briefing PDF and open it in the hosted session:
+   ```
+   node scripts/reports/briefing-pdf.mjs --report reports/{slug}-deep-{YYYY-MM-DD}.md
+   ```
+   `briefing-pdf.mjs` renders the PDF **and** opens it as a new CDP tab automatically. Running it after `--replace` means the PDF tab opens into the already-clean session, producing exactly 2 tabs.
+
+   **Do NOT use a raw Playwright script or `node -e` snippet to open the PDF tab.** Always use `briefing-pdf.mjs` for this step — it uses the same CDP `/json/new` path as `review-tabs.mjs` and respects the hosted session state.
 
    **Final tab state: exactly 2 tabs** — the listing URL + the briefing PDF.
 
@@ -136,28 +181,30 @@ Collect the eval report path and listing URL for each home as you go.
 
 ### Axis Agents (batched across all homes)
 
-After all URLs have completed Phases 0–2, launch the three axis agents in **a single message** covering all homes at once. Pass every relevant sidecar path — `output/sentiment/{slug}.json`, `output/construction/{slug}.json`, etc. — for the full set of homes. See "Phase B — Three Axis Agents" for prompt specs.
+After all URLs have completed Phases 0–2, launch the three axis agents in **a single message** covering all homes at once, using `subagent_type: sentiment-axis | risk-builder-axis | schools-axis`. Pass every relevant sidecar path — `output/sentiment/{slug}.json`, `output/construction/{slug}.json`, etc. — for the full set of homes. The hybrid contract still applies: sidecar-first, Playwright MCP fallback only when a sidecar is missing.
 
 ### Briefs, PDFs, and Tabs
 
 For each home (using the axis agent outputs):
 
 1. Write the deep brief: `reports/{slug}-deep-{YYYY-MM-DD}.md`
-2. Render the briefing PDF:
-   ```
-   node scripts/reports/briefing-pdf.mjs --report reports/{slug}-deep-{YYYY-MM-DD}.md
-   ```
-   PDF lands at `output/briefings/{slug}-deep-{YYYY-MM-DD}.pdf`.
 
-After all briefs and PDFs are written, replace the browser tabs:
+After all briefs are written, replace the browser tabs with all listing URLs first:
 ```
 node scripts/browser/review-tabs.mjs urls <url1> <url2> ... --replace
 ```
-Then open each briefing PDF tab in the hosted session, one at a time, in the same order as the listing URLs (PDFs open **after** `--replace` so they survive).
 
-**Final tab state: exactly 2N tabs** — N listing URLs + N briefing PDFs, interleaved in order (listing₁, listing₂, …, PDF₁, PDF₂, …) or sequential pairs — your choice, but every home must have both tabs open.
+Then render **one combined briefing PDF** covering all homes and open it in the hosted session:
+```
+node scripts/reports/briefing-pdf.mjs --reports reports/{slug1}-deep-{YYYY-MM-DD}.md,reports/{slug2}-deep-{YYYY-MM-DD}.md,...
+```
+`briefing-pdf.mjs` renders the combined PDF to `output/briefings/url-deep-{YYYY-MM-DD}.pdf` and opens it as a new CDP tab automatically. Running it after `--replace` means the PDF tab is added into the already-clean session.
 
-Post a final summary: all eval report paths, all brief paths, all briefing PDF paths, and the 2N-tab final state.
+**Do NOT use raw Playwright scripts to open PDF tabs.** Always use `briefing-pdf.mjs`.
+
+**Final tab state: exactly N+1 tabs** — N listing URLs + 1 combined briefing PDF.
+
+Post a final summary: all eval report paths, all brief paths, the combined briefing PDF path, and the N+1-tab final state.
 
 ---
 
@@ -190,7 +237,13 @@ All steps use `--shortlist`.
 
 ### Phase B — Three Axis Agents
 
-Launch the three axis agents in **a single message with three Agent tool calls** so the runtime fans them out in parallel. None of the axis agents browse the web; they read pre-written JSON files and return structured findings.
+Launch the three axis agents in **a single message with three Agent tool calls** so the runtime fans them out in parallel, using the named subagents:
+
+- `subagent_type: sentiment-axis`
+- `subagent_type: risk-builder-axis`
+- `subagent_type: schools-axis`
+
+The agents read pre-written JSON sidecars first. They MAY use Playwright MCP only as a targeted fallback when a specific sidecar is missing or empty. They MUST NOT use WebFetch, WebSearch, or any other MCP server.
 
 **7. Sentiment Agent.** Inputs: every `output/sentiment/{slug}.json`, buyer profile weights, deal_breakers, commute destinations. Output per home:
 - `sentimentScores` keyed by dimension (`crime_safety`, `traffic_commute`, `community`, `livability`) with each entry containing `score` (signed, weight-applied), `signalDirection`, `evidenceCount`, `proximityMix`, and 2–3 raw `quotes`.
@@ -211,7 +264,7 @@ Launch the three axis agents in **a single message with three Agent tool calls**
 - `weightedSchoolScore`: normalized 0–1 × `profile.sentiment.weights.schools`.
 - `flags`: enrollment trending up sharply, ratio above district mean, rating below buyer minimum.
 
-The axis agents must NOT make tool calls (no `WebFetch`, no Playwright). If input JSON is missing, record `status: "missing-input"` and continue.
+**Hybrid input contract:** axis agents read pre-written JSON sidecars first. If a sidecar is missing or empty, an agent MAY re-run the relevant capture script (e.g. `sentiment-public-extract.mjs`, `construction-check.mjs`, `school-metadata-fetch.mjs`) with `--profile chrome-host` to reach the user's established hosted session. WebFetch, WebSearch, MCP servers, and launching a new browser are all forbidden — only the capture scripts with `--profile chrome-host` are a valid fallback. Each datapoint is tagged with `source: "sidecar" | "fallback-capture"`. If the sidecar AND the fallback capture both fail, record `status: "missing-input"` and continue.
 
 ### Phase C — Main Agent Synthesis
 
