@@ -186,7 +186,13 @@ function pickFirst(...values) {
 }
 
 function normalizeListingStatus(raw, bodyText = '') {
-  const candidates = [String(raw ?? '').toLowerCase(), String(bodyText ?? '').toLowerCase()];
+  const rawStr = String(raw ?? '').toLowerCase();
+  // schema.org/InStock and explicit active signals in the raw status string take
+  // priority over body-text scanning, which can pick up historical listing events.
+  if (/instock|in-stock/i.test(rawStr)) return 'active';
+  if (/active|for[\s-]sale|listed/i.test(rawStr)) return 'active';
+
+  const candidates = [rawStr, String(bodyText ?? '').toLowerCase()];
   const flat = candidates.join(' ');
   if (/(off[\s-]?market|delisted|removed|withdrawn)/i.test(flat)) return 'off-market';
   if (/(pending|under\s+contract|contingent)/i.test(flat)) return 'pending';
@@ -296,11 +302,17 @@ export function pickJsonLdResidence(jsonLdItems = []) {
 export function fromJsonLdResidence(item) {
   if (!item) return {};
   const result = {};
-  const address = item.address || {};
-  result.address = pickFirst(address.streetAddress, item.streetAddress);
-  result.city = pickFirst(address.addressLocality, item.addressLocality);
-  result.state = pickFirst(address.addressRegion, item.addressRegion);
-  result.zip = pickFirst(address.postalCode, item.postalCode);
+
+  // homes.com wraps the SingleFamilyResidence under item.mainEntity inside the
+  // RealEstateListing.  When mainEntity is present, prefer its address/bedroom/
+  // sqft fields while keeping the top-level offers/description/datePosted.
+  const entity = (item.mainEntity && typeof item.mainEntity === 'object') ? item.mainEntity : item;
+
+  const address = entity.address || item.address || {};
+  result.address = pickFirst(address.streetAddress, entity.streetAddress, item.streetAddress);
+  result.city = pickFirst(address.addressLocality, entity.addressLocality, item.addressLocality);
+  result.state = pickFirst(address.addressRegion, entity.addressRegion, item.addressRegion);
+  result.zip = pickFirst(address.postalCode, entity.postalCode, item.postalCode);
 
   const offers = Array.isArray(item.offers) ? item.offers[0] : item.offers;
   if (offers && typeof offers === 'object') {
@@ -313,20 +325,21 @@ export function fromJsonLdResidence(item) {
     result.listingAgent = null;
   }
 
-  result.beds = toNumber(item.numberOfBedrooms ?? item.numberOfRooms);
-  const baths = item.numberOfBathroomsTotal ?? item.numberOfBathrooms ?? item.numberOfFullBathrooms;
+  result.beds = toNumber(entity.numberOfBedrooms ?? entity.numberOfRooms ?? item.numberOfBedrooms ?? item.numberOfRooms);
+  const baths = entity.numberOfBathroomsTotal ?? entity.numberOfBathrooms ?? entity.numberOfFullBathrooms
+    ?? item.numberOfBathroomsTotal ?? item.numberOfBathrooms ?? item.numberOfFullBathrooms;
   result.baths = toNumber(baths);
 
-  const floor = item.floorSize;
+  const floor = entity.floorSize ?? item.floorSize;
   if (floor && typeof floor === 'object') {
     result.sqftFinished = toNumber(floor.value);
   } else {
-    result.sqftFinished = toNumber(item.floorSize);
+    result.sqftFinished = toNumber(floor);
   }
 
-  result.yearBuilt = toNumber(item.yearBuilt ?? item.dateBuilt);
-  result.propertyType = pickFirst(item.propertyType, item.category);
-  result.description = pickFirst(item.description);
+  result.yearBuilt = toNumber(entity.yearBuilt ?? entity.dateBuilt ?? item.yearBuilt ?? item.dateBuilt);
+  result.propertyType = pickFirst(entity.propertyType, entity.category, item.propertyType, item.category);
+  result.description = pickFirst(item.description, entity.description);
   if (item.datePosted) {
     const posted = new Date(item.datePosted);
     if (!Number.isNaN(posted.getTime())) {
@@ -590,7 +603,7 @@ async function extractHomes(page) {
     // Parking → garage count
     const parkingText = sectionText(/Parking/i);
     if (parkingText) {
-      const m = parkingText.match(/^(\d+)/);
+      const m = parkingText.match(/(\d+)/);
       if (m) result.garage = Number(m[1]);
     }
 
@@ -601,20 +614,38 @@ async function extractHomes(page) {
       if (m) result.lotSqft = Number(m[1].replace(/,/g, ''));
     }
 
-    // Community Details → communityName
-    const communityText = sectionText(/Community\s*Details?/i);
-    if (communityText) result.communityName = communityText.split('\n')[0].trim() || null;
-
-    // Builder → builderName
-    const builderText = sectionText(/^Builder$/i);
-    if (builderText) result.builderName = builderText.split('\n')[0].trim() || null;
-
-    // MLS → mls
-    const mlsText = sectionText(/^MLS/i);
-    if (mlsText) {
-      const m = mlsText.match(/([A-Z0-9]{6,})/i);
-      if (m) result.mls = m[1];
+    // Listing Details section → builderName (e.g. "Builder Name: Taylor Morrison")
+    const listingDetailsText = sectionText(/^Listing\s*Details?$/i);
+    if (listingDetailsText) {
+      const builderMatch = listingDetailsText.match(/Builder\s*Name\s*:\s*([^\n\r]+)/i);
+      if (builderMatch) result.builderName = builderMatch[1].trim() || null;
     }
+
+    // Builder section (fallback for portals that have a standalone Builder h3)
+    if (!result.builderName) {
+      const builderText = sectionText(/^Builder$/i);
+      if (builderText) result.builderName = builderText.split('\n')[0].trim() || null;
+    }
+
+    // Community Details → communityName from subdivision/built-by lines
+    // The "Overview" h3 sibling contains community info including the subdivision name
+    const communityOverviewText = sectionText(/^Overview$/i);
+    if (communityOverviewText) {
+      // Look for "Brighton Ridge Subdivision" or "Built in XYZ Subdivision" patterns
+      const subMatch = communityOverviewText.match(/([A-Z][A-Za-z0-9 ]+(?:Subdivision|Community|Development|Neighborhood))/i);
+      if (subMatch) {
+        result.communityName = subMatch[1].trim();
+      } else {
+        // Fall back to "Built by X" line
+        const builtByMatch = communityOverviewText.match(/Built\s+by\s+([^\n\r,]+)/i);
+        if (builtByMatch && !result.builderName) result.builderName = builtByMatch[1].trim();
+      }
+    }
+
+    // MLS → extract from body text pattern "MLS Number: XXXXXX" or "MLS# XXXXXX"
+    const allBodyText = document.body?.innerText ?? '';
+    const mlsBodyMatch = allBodyText.match(/MLS(?:\s*Number|\s*#|#)\s*:?\s*([A-Z0-9]{6,})/i);
+    if (mlsBodyMatch) result.mls = mlsBodyMatch[1].trim();
 
     // Schools section → assignedSchools
     const schoolHeaders = Array.from(document.querySelectorAll('h3, h4')).filter(
