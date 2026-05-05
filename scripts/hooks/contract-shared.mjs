@@ -174,6 +174,10 @@ const CONTRACTS = {
         /briefing-pdf\.mjs[^\n]*--report\b/,
         /npm(?:\.cmd)?\s+run\s+brief:single\b/,
       ], { requires: ['review-tabs-single'], isGate: true }),
+      req('briefing-pdf-combined', 'Render combined multi-URL briefing PDF', [
+        /briefing-pdf\.mjs[^\n]*--reports\b/,
+        /npm(?:\.cmd)?\s+run\s+brief:combined\b/,
+      ], { requires: ['review-tabs-single', 'deep-research-packet-single'], isGate: true }),
     ],
   },
   'deep-shortlist': {

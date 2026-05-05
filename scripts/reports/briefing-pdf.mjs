@@ -35,36 +35,53 @@ const SCHOOL_METADATA_DIR = join(ROOT, 'output', 'school-metadata');
 const HELP_TEXT = `Usage:
   node briefing-pdf.mjs [--profile chrome-host] [--no-open]
   node briefing-pdf.mjs --report reports/{slug}-deep-{date}.md [--profile chrome-host] [--no-open]
+  node briefing-pdf.mjs --reports reports/a-deep-{date}.md,reports/b-deep-{date}.md [--profile chrome-host] [--no-open]
 
-Default (batch) mode: renders a top-3 finalist briefing PDF under
-output/briefings/top3-briefing-{date}.pdf using the current refined top 3
-from data/shortlist.md.
+Modes:
+  batch    (default, no flag) renders a top-3 finalist briefing PDF under
+           output/briefings/top3-briefing-{date}.pdf using the current refined
+           top 3 from data/shortlist.md. Cover + TOC + rank badges.
 
---report <path> mode: renders a single-home briefing PDF under
-output/briefings/{slug}-deep-{date}.pdf using the deep brief at <path>. The
-slug is derived from the report's address. Used by deep-single-runner.mjs.
+  single   (--report <path>) renders a single-home briefing PDF under
+           output/briefings/{slug}-deep-{date}.pdf using the deep brief at
+           <path>. No cover, no TOC, no rank badge.
 
-Both modes open the PDF in a new tab inside the hosted Chrome session unless
+  combined (--reports a.md,b.md,...) renders one combined PDF covering N
+           homes from URL-based deep runs, output at
+           output/briefings/url-deep-{date}.pdf. Cover lists all homes (no
+           top-3 ranking); one section per home, no rank badge.
+
+All modes open the PDF in a new tab inside the hosted Chrome session unless
 --no-open is supplied.
 
 Options:
-  --profile <name>  Hosted browser profile to reuse. Defaults to chrome-host.
-  --report <path>   Render a single-home briefing for the given deep report.
-  --no-open         Render the PDF but do not open it in hosted Chrome.
-  --help            Show this help text.
+  --profile <name>     Hosted browser profile to reuse. Defaults to chrome-host.
+  --report <path>      Render a single-home briefing for the given deep report.
+  --reports <paths>    Comma-separated deep reports for a combined URL-deep PDF.
+  --no-open            Render the PDF but do not open it in hosted Chrome.
+  --help               Show this help text.
 `;
 
 function parseArgs(argv) {
-  const config = { profileName: DEFAULT_PROFILE, open: true, help: false, reportPath: null };
+  const config = { profileName: DEFAULT_PROFILE, open: true, help: false, reportPath: null, reportPaths: null };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
     if (arg === '--help' || arg === '-h') { config.help = true; continue; }
     if (arg === '--profile') { config.profileName = argv[index + 1] ?? DEFAULT_PROFILE; index += 1; continue; }
     if (arg === '--no-open') { config.open = false; continue; }
     if (arg === '--report') { config.reportPath = argv[index + 1] ?? ''; index += 1; continue; }
+    if (arg === '--reports') {
+      const raw = argv[index + 1] ?? '';
+      config.reportPaths = raw.split(',').map((s) => s.trim()).filter(Boolean);
+      index += 1;
+      continue;
+    }
     // Silently accept (and ignore) flags that callers commonly pass but this script doesn't need
     if (arg === '--shortlist' || arg === '--top3') { continue; }
     if (arg.startsWith('--')) throw new Error(`Unknown option: ${arg}`);
+  }
+  if (config.reportPath && config.reportPaths && config.reportPaths.length > 0) {
+    throw new Error('Cannot pass both --report and --reports. Pick one.');
   }
   return config;
 }
@@ -710,7 +727,9 @@ function buildSchoolsCard(report) {
     </div>`;
 }
 
-function buildFinalistSection(finalist, profile) {
+function buildFinalistSection(finalist, profile, options = {}) {
+  const showRank = options.showRank !== false;
+  const isFirst = Boolean(options.isFirst);
   const report = finalist.report;
   const construction = finalist.construction;
   const sentiment = finalist.sentiment;
@@ -779,10 +798,15 @@ function buildFinalistSection(finalist, profile) {
       </div>`
     : '';
 
+  const sectionClass = isFirst ? 'finalist finalist-first' : 'finalist';
+  const rankBadgeHtml = showRank
+    ? `<div class="rank-badge">#${escapeHtml(String(finalist.rank))}</div>`
+    : '';
+
   return `
-    <section class="finalist" id="${anchor}">
+    <section class="${sectionClass}" id="${anchor}">
       <header class="finalist-header">
-        <div class="rank-badge">#${escapeHtml(String(finalist.rank))}</div>
+        ${rankBadgeHtml}
         <div class="finalist-title">
           <h2>${addressHeading}</h2>
           <p class="locality">${escapeHtml(report.city)}, ${escapeHtml(report.state)}${finalist.community ? ` <span class="community-tag">&middot; ${escapeHtml(finalist.community)} community</span>` : ''}</p>
@@ -814,17 +838,45 @@ function buildFinalistSection(finalist, profile) {
   `;
 }
 
-function buildHtml(finalists, profile) {
+function buildHtml(finalists, profile, mode = 'batch') {
   const generatedAt = new Date().toISOString().replace('T', ' ').slice(0, 16);
-  const finalistSections = finalists.map((finalist) => buildFinalistSection(finalist, profile)).join('\n');
-  const toc = buildCoverToc(finalists);
+  const showRank = mode === 'batch';
+  const finalistSections = finalists
+    .map((finalist, idx) => buildFinalistSection(finalist, profile, { showRank, isFirst: idx === 0 }))
+    .join('\n');
   const buyerLabel = profile?.buyer?.full_name ? ` &middot; Prepared for ${escapeHtml(profile.buyer.full_name)}` : '';
+
+  const docTitle = mode === 'batch'
+    ? 'Home-Ops Top 3 Finalist Briefing'
+    : mode === 'combined'
+      ? 'Home-Ops URL Deep Briefing'
+      : 'Home-Ops Single-Home Deep Briefing';
+
+  const coverHeading = mode === 'batch'
+    ? 'Top 3 Finalist Briefing'
+    : mode === 'combined'
+      ? 'URL Deep Briefing'
+      : '';
+
+  const coverHtml = mode === 'single'
+    ? '' // single-home: no cover, no TOC — go straight to the section
+    : `
+  <section class="cover">
+    <div class="brand">Home-Ops &middot; Decision Brief</div>
+    <h1>${escapeHtml(coverHeading)}</h1>
+    <p class="cover-meta">Generated ${escapeHtml(generatedAt)} UTC &middot; ${escapeHtml(String(finalists.length))} home${finalists.length === 1 ? '' : 's'}${buyerLabel}</p>
+    ${mode === 'batch' ? buildCoverToc(finalists) : buildCoverList(finalists)}
+    <div class="cover-legend">
+      <p>Each page shows a quick take, a "why this fits" summary tied to your buyer profile, top concerns tailored to that listing, construction pressure, a schools metadata table (rating, enrollment, student/teacher ratio, ethnicity distribution), neighborhood sentiment, and any research gaps worth filling in.</p>
+      <p>Anything marked <strong>Not yet captured</strong> is unknown, not favorable. Ask for a deeper dive to fill in the research gaps before a final decision.</p>
+    </div>
+  </section>`;
 
   return `<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8" />
-<title>Home-Ops Top 3 Finalist Briefing</title>
+<title>${escapeHtml(docTitle)}</title>
 <style>
   @page { size: Letter; margin: 0.5in; }
   * { box-sizing: border-box; }
@@ -1057,19 +1109,34 @@ function buildHtml(finalists, profile) {
 </style>
 </head>
 <body>
-  <section class="cover">
-    <div class="brand">Home-Ops &middot; Decision Brief</div>
-    <h1>Top 3 Finalist Briefing</h1>
-    <p class="cover-meta">Generated ${escapeHtml(generatedAt)} UTC &middot; ${escapeHtml(String(finalists.length))} finalist${finalists.length === 1 ? '' : 's'}${buyerLabel}</p>
-    ${toc}
-    <div class="cover-legend">
-      <p>Each page shows a quick take, a "why this fits" summary tied to your buyer profile, top concerns tailored to that listing, construction pressure, a schools metadata table (rating, enrollment, student/teacher ratio, ethnicity distribution), neighborhood sentiment, and any research gaps worth filling in.</p>
-      <p>Anything marked <strong>Not yet captured</strong> is unknown, not favorable. Ask for a deeper dive to fill in the research gaps before a final decision. Tap a finalist above to jump to its page; listing links open directly in the browser.</p>
-    </div>
-  </section>
+  ${coverHtml}
   ${finalistSections}
 </body>
 </html>`;
+}
+
+function buildCoverList(finalists) {
+  const items = finalists.map((finalist) => {
+    const report = finalist.report;
+    const url = report.metadata.url || '';
+    const addressLine = url
+      ? `<a href="${escapeHtml(url)}">${escapeHtml(report.address)}</a>`
+      : escapeHtml(report.address);
+    return `
+        <li>
+          <div class="toc-row">
+            <div class="toc-body">
+              <span class="toc-address">${addressLine}</span>
+              <span class="toc-locality">${escapeHtml(report.city)}, ${escapeHtml(report.state)}</span>
+            </div>
+          </div>
+        </li>`;
+  }).join('');
+  return `
+    <div class="cover-toc">
+      <h3>Homes covered</h3>
+      <ol>${items}</ol>
+    </div>`;
 }
 
 function loadFinalist(reportPath, rank = 1) {
@@ -1174,17 +1241,24 @@ async function run() {
 
   let finalists;
   let outputPath;
+  let mode;
   if (config.reportPath) {
+    mode = 'single';
     finalists = [loadFinalist(config.reportPath, 1)];
     const slug = slugify(`${finalists[0].report.address}-${finalists[0].report.city}-${finalists[0].report.state || 'NC'}`)
       || 'home';
     outputPath = join(OUTPUT_DIR, `${slug}-deep-${dateStamp}.pdf`);
+  } else if (config.reportPaths && config.reportPaths.length > 0) {
+    mode = 'combined';
+    finalists = config.reportPaths.map((path, idx) => loadFinalist(path, idx + 1));
+    outputPath = join(OUTPUT_DIR, `url-deep-${dateStamp}.pdf`);
   } else {
+    mode = 'batch';
     finalists = loadFinalists();
     outputPath = join(OUTPUT_DIR, `top3-briefing-${dateStamp}.pdf`);
   }
 
-  const html = buildHtml(finalists, profile);
+  const html = buildHtml(finalists, profile, mode);
   await renderPdf(html, outputPath);
   const relPath = relative(ROOT, outputPath).replace(/\\/g, '/');
   console.log(`Wrote briefing PDF: ${relPath}`);
