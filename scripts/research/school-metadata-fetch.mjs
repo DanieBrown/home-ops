@@ -22,6 +22,7 @@
 
 import { existsSync, readFileSync } from 'fs';
 import { mkdir, writeFile } from 'fs/promises';
+import { spawn, spawnSync } from 'child_process';
 import { join } from 'path';
 import { fileURLToPath } from 'url';
 import { ROOT } from '../shared/paths.mjs';
@@ -35,6 +36,9 @@ import { slugify } from '../shared/text-utils.mjs';
 
 const OUTPUT_DIR = join(ROOT, 'output', 'school-metadata');
 const DEFAULT_TIMEOUT_MS = 20000;
+const CRAWL4AI_SCRIPT = join(ROOT, 'scripts', 'research', 'python', 'school_metadata_crawl.py');
+const CRAWL4AI_PROFILE_DIR = join(ROOT, 'output', 'crawl4ai-profile');
+const CRAWL4AI_TIMEOUT_MS = 45000;
 
 const NICHE_GRADE_LETTER_MAP = {
   aplus: 'A+', a: 'A', aminus: 'A-',
@@ -119,9 +123,14 @@ function nicheSlug(value) {
  * stripped variant.
  */
 function buildNicheUrls(schoolName, city, state) {
-  const cleaned = schoolName.replace(/\bSchool\b/i, '').trim();
+  const hasSchoolSuffix = /\bSchool\b/i.test(schoolName);
+  const stripped = schoolName.replace(/\bSchool\b/i, '').trim();
   const variants = [schoolName];
-  if (cleaned && cleaned !== schoolName) variants.push(cleaned);
+  // Strip "School" when present — Niche sometimes drops it for elementary slugs.
+  if (stripped && stripped !== schoolName) variants.push(stripped);
+  // Append "School" when missing — Niche sometimes requires it for middle/high
+  // (e.g. "Holly Grove Middle" 404s; "Holly Grove Middle School" resolves).
+  if (!hasSchoolSuffix) variants.push(`${schoolName} School`);
   const stateSlug = String(state || 'NC').toLowerCase();
   const citySlug = nicheSlug(city);
   const seen = new Set();
@@ -277,15 +286,99 @@ function parseSchoolFromHtml(html, name, sourceUrl) {
   };
 }
 
-async function captureSchool(name, city, state) {
-  const urls = buildNicheUrls(name, city, state);
-  for (const url of urls) {
-    const result = await fetchHtml(url);
-    if (result.ok && /overall-grade__niche-grade/.test(result.html)) {
-      const parsed = parseSchoolFromHtml(result.html, name, result.url);
-      return { ...parsed, attemptedUrls: urls, finalUrl: result.url };
+function pythonCandidates() {
+  return process.platform === 'win32'
+    ? [['py', ['-3']], ['python3', []], ['python', []]]
+    : [['python3', []], ['python', []]];
+}
+
+function probeCrawl4ai(candidate) {
+  const [bin, baseArgs] = candidate;
+  const probe = spawnSync(bin, [...baseArgs, '-c', 'import crawl4ai'], { encoding: 'utf8' });
+  return probe.status === 0;
+}
+
+function detectCrawl4aiInvocation() {
+  for (const candidate of pythonCandidates()) {
+    const [bin, baseArgs] = candidate;
+    const versionProbe = spawnSync(bin, [...baseArgs, '--version'], { encoding: 'utf8' });
+    if (versionProbe.status !== 0) continue;
+    if (probeCrawl4ai(candidate)) {
+      return { bin, baseArgs };
     }
   }
+  return null;
+}
+
+let crawl4aiState = null;
+function getCrawl4aiState() {
+  if (crawl4aiState) return crawl4aiState;
+  const invocation = detectCrawl4aiInvocation();
+  if (!invocation) {
+    console.warn('school-metadata-fetch: crawl4ai not importable; falling back to fetch(). Setup: scripts/research/python/README.md');
+  }
+  crawl4aiState = { invocation, available: Boolean(invocation) };
+  return crawl4aiState;
+}
+
+function runCrawl4aiSidecar(invocation, name, city, state) {
+  return new Promise((resolve) => {
+    const child = spawn(invocation.bin, [
+      ...invocation.baseArgs,
+      CRAWL4AI_SCRIPT,
+      '--school', name,
+      '--city', city,
+      '--state', state,
+      '--profile-dir', CRAWL4AI_PROFILE_DIR,
+      '--json',
+    ], { stdio: ['ignore', 'pipe', 'pipe'] });
+
+    let stdout = '';
+    let stderr = '';
+    let killed = false;
+    const timer = setTimeout(() => {
+      killed = true;
+      child.kill('SIGKILL');
+    }, CRAWL4AI_TIMEOUT_MS);
+
+    child.stdout.on('data', (chunk) => { stdout += chunk.toString('utf8'); });
+    child.stderr.on('data', (chunk) => { stderr += chunk.toString('utf8'); });
+
+    child.on('error', (error) => {
+      clearTimeout(timer);
+      resolve({ ok: false, reason: 'spawn-error', error: error.message, stderr });
+    });
+
+    child.on('close', (code) => {
+      clearTimeout(timer);
+      if (killed) {
+        resolve({ ok: false, reason: 'timeout', stderr });
+        return;
+      }
+      if (code === 2) {
+        resolve({ ok: false, reason: 'environment-failure', stderr: stderr.trim() });
+        return;
+      }
+      if (code !== 0) {
+        resolve({ ok: false, reason: `exit-${code}`, stderr: stderr.trim() });
+        return;
+      }
+      const trimmed = stdout.trim();
+      if (!trimmed) {
+        resolve({ ok: false, reason: 'empty-stdout', stderr: stderr.trim() });
+        return;
+      }
+      try {
+        const record = JSON.parse(trimmed);
+        resolve({ ok: true, record });
+      } catch (error) {
+        resolve({ ok: false, reason: 'parse-error', error: error.message, stdout: trimmed });
+      }
+    });
+  });
+}
+
+function emptyCaptureRecord(name, urls, captureStatus, provider) {
   return {
     name,
     gradeLevel: inferGradeLevel(name),
@@ -302,9 +395,60 @@ async function captureSchool(name, city, state) {
     genderDistribution: null,
     greatSchoolsRating: null,
     stateRating: null,
-    captureStatus: 'fetch-failed',
+    captureStatus,
     attemptedUrls: urls,
+    provider,
   };
+}
+
+async function captureSchoolViaCrawl4ai(name, city, state, invocation) {
+  const urls = buildNicheUrls(name, city, state);
+  const result = await runCrawl4aiSidecar(invocation, name, city, state);
+
+  if (!result.ok) {
+    if (result.reason === 'environment-failure') {
+      console.warn(`school-metadata-fetch: crawl4ai sidecar reported environment failure (${result.stderr || 'no stderr'}). Falling back to fetch().`);
+      crawl4aiState = { invocation: null, available: false };
+      return null;
+    }
+    const status = result.reason === 'timeout' ? 'timeout' : 'sidecar-failed';
+    return emptyCaptureRecord(name, urls, status, 'crawl4ai');
+  }
+
+  const record = result.record;
+  if (record && record.error) {
+    const status = record.error === 'all-candidates-failed' ? 'not-found' : 'parse-failed';
+    return emptyCaptureRecord(name, record.attempted ?? urls, status, 'crawl4ai');
+  }
+  if (!record || !record.nicheGrade) {
+    return emptyCaptureRecord(name, urls, 'parse-failed', 'crawl4ai');
+  }
+  if (!Array.isArray(record.attemptedUrls) || record.attemptedUrls.length === 0) {
+    record.attemptedUrls = urls;
+  }
+  if (!record.provider) record.provider = 'crawl4ai';
+  return record;
+}
+
+async function captureSchoolViaFetch(name, city, state) {
+  const urls = buildNicheUrls(name, city, state);
+  for (const url of urls) {
+    const result = await fetchHtml(url);
+    if (result.ok && /overall-grade__niche-grade/.test(result.html)) {
+      const parsed = parseSchoolFromHtml(result.html, name, result.url);
+      return { ...parsed, attemptedUrls: urls, finalUrl: result.url, provider: 'fetch-fallback' };
+    }
+  }
+  return emptyCaptureRecord(name, urls, 'fetch-failed', 'fetch-fallback');
+}
+
+async function captureSchool(name, city, state) {
+  const { invocation, available } = getCrawl4aiState();
+  if (available) {
+    const viaPython = await captureSchoolViaCrawl4ai(name, city, state, invocation);
+    if (viaPython) return viaPython;
+  }
+  return captureSchoolViaFetch(name, city, state);
 }
 
 async function captureForTarget(target, schoolsEnabled) {

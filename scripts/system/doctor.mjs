@@ -6,6 +6,7 @@
  */
 
 import { existsSync, mkdirSync, readFileSync } from 'fs';
+import { spawnSync } from 'child_process';
 import { join } from 'path';
 import { ROOT } from '../shared/paths.mjs';
 
@@ -45,6 +46,41 @@ function checkDependencies() {
   }
 
   return failResult('Dependencies not installed', 'Run: npm install');
+}
+
+function pythonCandidatesForDoctor() {
+  return process.platform === 'win32'
+    ? [['py', ['-3']], ['python3', []], ['python', []]]
+    : [['python3', []], ['python', []]];
+}
+
+function checkCrawl4ai() {
+  const setupHint = process.platform === 'win32'
+    ? 'Run: py -3 -m pip install -r scripts/research/python/requirements.txt && py -3 -m playwright install chromium'
+    : 'Run: python3 -m pip install -r scripts/research/python/requirements.txt && python3 -m playwright install chromium';
+
+  let foundPython = null;
+  for (const [bin, baseArgs] of pythonCandidatesForDoctor()) {
+    const versionProbe = spawnSync(bin, [...baseArgs, '--version'], { encoding: 'utf8' });
+    if (versionProbe.status !== 0) continue;
+    foundPython = `${bin}${baseArgs.length ? ' ' + baseArgs.join(' ') : ''}`;
+    const probe = spawnSync(bin, [...baseArgs, '-c', 'import crawl4ai'], { encoding: 'utf8' });
+    if (probe.status === 0) {
+      return passResult(`crawl4ai: ok via ${foundPython} (school metadata sidecar enabled)`);
+    }
+  }
+
+  if (!foundPython) {
+    return warnResult(
+      'Python 3.10+ not found on PATH (crawl4ai pilot will fall back to fetch())',
+      ['Install Python 3.10+ from https://www.python.org/downloads/.', setupHint],
+    );
+  }
+
+  return warnResult(
+    `crawl4ai not importable via ${foundPython} (school metadata will use fetch() fallback)`,
+    setupHint,
+  );
 }
 
 async function checkPlaywright() {
@@ -265,6 +301,7 @@ async function main() {
     checkNodeVersion(),
     dependencyCheck,
     await checkPlaywright(),
+    checkCrawl4ai(),
     checkHostedBrowserAvailability(),
     checkFile('buyer-profile.md', 'buyer-profile.md found', 'Create buyer-profile.md with areas, requirements, and deal-breakers.'),
     checkFile('config/profile.yml', 'config/profile.yml found', 'Copy config/profile.example.yml to config/profile.yml and fill in buyer details.'),

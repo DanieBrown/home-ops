@@ -32,6 +32,10 @@ config/county-sources.json
 node_modules/
 .home-ops/
 
+# Python sidecar
+__pycache__/
+*.pyc
+
 # OS
 .DS_Store
 *.mov

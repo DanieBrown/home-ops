@@ -170,14 +170,12 @@ const CONTRACTS = {
         /review-tabs\.mjs[^\n]*urls\b/,
         /npm(?:\.cmd)?\s+run\s+browser:review[^\n]*urls\b/,
       ], { requires: ['deep-research-packet-single'], isGate: true }),
-      req('briefing-pdf-single', 'Render single-home briefing PDF', [
-        /briefing-pdf\.mjs[^\n]*--report\b/,
-        /npm(?:\.cmd)?\s+run\s+brief:single\b/,
+      // Single PDF gate: satisfied by either --report (one home) or --reports
+      // (combined multi-URL run). Only one PDF should be produced per deep run.
+      req('briefing-pdf-deep-single', 'Render deep briefing PDF (single home or combined multi-URL)', [
+        /briefing-pdf\.mjs[^\n]*--reports?\b/,
+        /npm(?:\.cmd)?\s+run\s+brief:(?:single|combined)\b/,
       ], { requires: ['review-tabs-single'], isGate: true }),
-      req('briefing-pdf-combined', 'Render combined multi-URL briefing PDF', [
-        /briefing-pdf\.mjs[^\n]*--reports\b/,
-        /npm(?:\.cmd)?\s+run\s+brief:combined\b/,
-      ], { requires: ['review-tabs-single', 'deep-research-packet-single'], isGate: true }),
     ],
   },
   'deep-shortlist': {

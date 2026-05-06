@@ -1245,8 +1245,18 @@ async function run() {
   if (config.reportPath) {
     mode = 'single';
     finalists = [loadFinalist(config.reportPath, 1)];
-    const slug = slugify(`${finalists[0].report.address}-${finalists[0].report.city}-${finalists[0].report.state || 'NC'}`)
-      || 'home';
+    // Deep brief titles use "Deep Brief: …" with an em dash, which parseReport
+    // does not match — address/city/state come back blank. Fall back to the
+    // report filename, which is already `{slug}-deep-{date}.md` by convention,
+    // so the PDF lands at `{slug}-deep-{date}.pdf` instead of `nc-deep-…`.
+    let slug = slugify(`${finalists[0].report.address}-${finalists[0].report.city}-${finalists[0].report.state || 'NC'}`)
+      || '';
+    if (!slug || slug === 'nc') {
+      const baseName = (finalists[0].report.relativePath || config.reportPath || '').split(/[\\/]/).pop() || '';
+      const stripped = baseName.replace(/\.md$/i, '').replace(/-deep-\d{4}-\d{2}-\d{2}$/i, '');
+      if (stripped) slug = stripped;
+    }
+    if (!slug) slug = 'home';
     outputPath = join(OUTPUT_DIR, `${slug}-deep-${dateStamp}.pdf`);
   } else if (config.reportPaths && config.reportPaths.length > 0) {
     mode = 'combined';

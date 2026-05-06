@@ -62,11 +62,11 @@ deep-single-final-runner.mjs  →  research-source-plan, community-lookup, senti
 review-tabs.mjs urls --replace
         ↓ (gate: review-tabs-single)
 briefing-pdf.mjs --report ... →  output/briefings/{slug}-deep-{date}.pdf
-        ↓ (gate: briefing-pdf-single)
+        ↓ (gate: briefing-pdf-deep-single)
 [final tab state: 2 tabs]
 ```
 
-Multi-URL flow uses the same gates, repeated per-URL during capture, with one combined `briefing-pdf.mjs --reports ...` call at the end.
+Multi-URL flow uses the same gates, repeated per-URL during capture, with one combined `briefing-pdf.mjs --reports …` call at the end. The combined call satisfies the same `briefing-pdf-deep-single` gate — exactly **one** PDF is produced per deep run regardless of single-URL vs. multi-URL input.
 
 Batch flow (`deep-shortlist` contract): see Phase A/B/C below; gates are `research-audit`, `deep-research-packet`, `promote-finalists`, `finalist-gate`, `review-tabs-top3`, `briefing-pdf`.
 
@@ -146,11 +146,13 @@ Once the axis agents return:
    node scripts/browser/review-tabs.mjs urls <listing-url> --replace
    ```
 
-3. Render the briefing PDF and open it in the hosted session:
+3. Render **exactly one** briefing PDF and open it in the hosted session:
    ```
    node scripts/reports/briefing-pdf.mjs --report reports/{slug}-deep-{YYYY-MM-DD}.md
    ```
    `briefing-pdf.mjs` renders the PDF **and** opens it as a new CDP tab automatically. Running it after `--replace` means the PDF tab opens into the already-clean session, producing exactly 2 tabs.
+
+   **Do NOT also run a `--reports` call for a single home.** The single-mode call covers the home in one PDF. Running both `--report` and `--reports` produces duplicate output; the contract has a single `briefing-pdf-deep-single` gate that either form satisfies.
 
    **Do NOT use a raw Playwright script or `node -e` snippet to open the PDF tab.** Always use `briefing-pdf.mjs` for this step — it uses the same CDP `/json/new` path as `review-tabs.mjs` and respects the hosted session state.
 

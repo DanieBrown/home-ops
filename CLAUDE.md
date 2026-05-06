@@ -194,6 +194,7 @@ If verification is blocked, mark it as unconfirmed rather than claiming it is ac
 - Go dashboard for terminal browsing
 - Report filenames: `{###}-{address-slug}-{YYYY-MM-DD}.md`
 - Tracker rows keyed by normalized address + city
+- Niche school metadata uses an optional Python sidecar (crawl4ai) when available; falls back to `fetch()` otherwise. Setup: `scripts/research/python/README.md`.
 
 ## Tracker Rules
 
