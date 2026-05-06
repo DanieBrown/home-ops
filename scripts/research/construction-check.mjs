@@ -28,10 +28,12 @@ import {
   resolveAreaContext,
 } from './research-utils.mjs';
 import { crawl4aiFetchPage } from './crawl4ai-utils.mjs';
+import { ensureGeocode } from './geocode.mjs';
 import { slugify } from '../shared/text-utils.mjs';
 
 const OUTPUT_DIR = join(ROOT, 'output', 'construction');
 const DEFAULT_TIMEOUT_MS = 20000;
+const DEFAULT_STIP_RADIUS_METERS = 32187; // 20 miles
 
 // NCDOT maintains a handful of public project index pages. Rather than guess
 // at their search API (which changes shape often), we fetch a known-stable
@@ -40,6 +42,17 @@ const DEFAULT_TIMEOUT_MS = 20000;
 const NCDOT_INDEX_URLS = [
   'https://www.ncdot.gov/projects/current-projects/Pages/default.aspx',
   'https://www.ncdot.gov/initiatives-policies/Transportation/stip/Pages/default.aspx',
+];
+
+const NCDOT_STIP_LAYERS = [
+  {
+    name: 'NCDOT STIP points',
+    url: 'https://gis11.services.ncdot.gov/arcgis/rest/services/NCDOT_STIP/MapServer/0',
+  },
+  {
+    name: 'NCDOT STIP lines',
+    url: 'https://gis11.services.ncdot.gov/arcgis/rest/services/NCDOT_STIP/MapServer/1',
+  },
 ];
 
 // Match project-phase keywords inside a result snippet so the score reflects
@@ -71,18 +84,28 @@ Options:
   --shortlist   Use the current top 10 cohort from data/shortlist.md.
   --top3        Use the current refined top 3 from data/shortlist.md.
   --quick       Fetch only the primary NCDOT index page for a faster pass.
+  --radius <m>  Spatial STIP query radius in meters (default 32187 = 20 miles).
   --json        Print JSON instead of human-readable text.
   --help        Show this help text.
 `;
 
 function parseArgs(argv) {
-  const config = { shortlist: false, top3: false, json: false, help: false, quick: false, files: [] };
-  for (const arg of argv) {
+  const config = { shortlist: false, top3: false, json: false, help: false, quick: false, radiusMeters: DEFAULT_STIP_RADIUS_METERS, files: [] };
+  for (let index = 0; index < argv.length; index += 1) {
+    const arg = argv[index];
     if (arg === '--shortlist') { config.shortlist = true; continue; }
     if (arg === '--top3') { config.top3 = true; continue; }
     if (arg === '--json') { config.json = true; continue; }
     if (arg === '--quick') { config.quick = true; continue; }
     if (arg === '--help' || arg === '-h') { config.help = true; continue; }
+    if (arg === '--radius') {
+      config.radiusMeters = Number.parseInt(argv[index + 1] ?? '', 10);
+      if (!Number.isFinite(config.radiusMeters) || config.radiusMeters <= 0) {
+        throw new Error('--radius requires a positive integer (meters)');
+      }
+      index += 1;
+      continue;
+    }
     if (arg.startsWith('--')) throw new Error(`Unknown option: ${arg}`);
     config.files.push(arg);
   }
@@ -163,6 +186,115 @@ async function fetchText(url) {
   }
 }
 
+async function queryStipLayer(layer, lng, lat, radiusMeters, counties = []) {
+  const countyFilter = counties
+    .map((county) => String(county ?? '').replace(/'/g, "''").trim())
+    .filter(Boolean)
+    .map((county) => `Counties like '%${county}%'`)
+    .join(' OR ');
+
+  const params = new URLSearchParams({
+    f: 'json',
+    geometry: `${lng},${lat}`,
+    geometryType: 'esriGeometryPoint',
+    inSR: '4326',
+    spatialRel: 'esriSpatialRelIntersects',
+    distance: String(radiusMeters),
+    units: 'esriSRUnit_Meter',
+    outFields: 'TIP,SPOTID,Route,Description,Category,Mode,RightOfWayYear,ConstructionYear,COMMENT,ProjectCost,Counties,MPOsRPOs',
+    returnGeometry: 'false',
+    where: countyFilter ? `(${countyFilter})` : '1=1',
+  });
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT_MS);
+  try {
+    const response = await fetch(`${layer.url}/query?${params.toString()}`, {
+      signal: controller.signal,
+      headers: { 'User-Agent': 'home-ops/construction-check (+https://github.com/)' },
+    });
+    if (!response.ok) {
+      return { ...layer, ok: false, status: response.status, features: [], error: `HTTP ${response.status}` };
+    }
+    const body = await response.json();
+    if (body?.error) {
+      return { ...layer, ok: false, status: response.status, features: [], error: body.error.message || 'service error' };
+    }
+    return { ...layer, ok: true, status: response.status, features: body.features ?? [] };
+  } catch (error) {
+    return { ...layer, ok: false, status: 0, features: [], error: String(error?.message ?? error) };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function queryStipNearTarget(target, areaContext, radiusMeters) {
+  const geocode = await ensureGeocode(target);
+  if (geocode.status !== 'ok' || !Number.isFinite(geocode.lat) || !Number.isFinite(geocode.lng)) {
+    return {
+      status: 'geocode-failed',
+      radiusMeters,
+      sourcesChecked: [],
+      matches: [],
+      pressure: 0,
+      note: `Could not geocode address. Spatial STIP query skipped. (${geocode.error ?? geocode.status})`,
+    };
+  }
+
+  const layerResults = [];
+  for (const layer of NCDOT_STIP_LAYERS) {
+    layerResults.push(await queryStipLayer(layer, geocode.lng, geocode.lat, radiusMeters, areaContext.counties ?? []));
+  }
+
+  const seen = new Set();
+  const matches = [];
+  let pressure = 0;
+
+  for (const result of layerResults) {
+    if (!result.ok) continue;
+    for (const feature of result.features.slice(0, 100)) {
+      const attrs = feature.attributes ?? {};
+      const key = `${attrs.TIP ?? ''}|${attrs.Route ?? ''}|${attrs.Description ?? ''}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const text = `${attrs.COMMENT ?? ''} ${attrs.ConstructionYear ?? ''} ${attrs.RightOfWayYear ?? ''} ${attrs.Description ?? ''}`;
+      const phaseHits = countPhaseHits(text);
+      const phase = classifyStipPhase(attrs, phaseHits);
+      const phaseWeight = PHASE_WEIGHTS[phase] ?? 0;
+      pressure += phaseWeight;
+      matches.push({
+        source: result.name,
+        tip: attrs.TIP ?? null,
+        spotId: attrs.SPOTID ?? null,
+        route: attrs.Route ?? '',
+        description: attrs.Description ?? '',
+        counties: attrs.Counties ?? '',
+        rightOfWayYear: attrs.RightOfWayYear ?? '',
+        constructionYear: attrs.ConstructionYear ?? '',
+        comment: attrs.COMMENT ?? '',
+        projectCost: attrs.ProjectCost ?? null,
+        phase,
+      });
+    }
+  }
+
+  return {
+    status: layerResults.some((result) => result.ok) ? 'reviewed' : 'unreachable',
+    geocode: { lat: geocode.lat, lng: geocode.lng, source: geocode.source },
+    radiusMeters,
+    sourcesChecked: layerResults.map((result) => ({
+      name: result.name,
+      url: result.url,
+      ok: result.ok,
+      status: result.status,
+      featureCount: result.features?.length ?? 0,
+      error: result.error ?? null,
+    })),
+    matches: matches.slice(0, 25),
+    pressure: Math.min(15, pressure),
+  };
+}
+
 function stripHtml(html) {
   return String(html ?? '')
     .replace(/<script[\s\S]*?<\/script>/gi, ' ')
@@ -179,6 +311,32 @@ function countPhaseHits(text) {
     counts[phase] = patterns.reduce((sum, pattern) => sum + (pattern.test(text) ? 1 : 0), 0);
   }
   return counts;
+}
+
+function classifyStipPhase(attrs, phaseHits) {
+  const comment = String(attrs.COMMENT ?? '');
+  if (PHASE_PATTERNS.active.some((pattern) => pattern.test(comment))) return 'active';
+
+  const constructionYear = Number.parseInt(String(attrs.ConstructionYear ?? '').match(/\d{4}/)?.[0] ?? '', 10);
+  const rightOfWayYear = Number.parseInt(String(attrs.RightOfWayYear ?? '').match(/\d{4}/)?.[0] ?? '', 10);
+  const currentYear = new Date().getFullYear();
+
+  if (Number.isFinite(constructionYear)) {
+    if (constructionYear <= currentYear + 1 && !PHASE_PATTERNS.complete.some((pattern) => pattern.test(comment))) return 'active';
+    if (constructionYear <= currentYear + 4) return 'near_term';
+    return 'planning';
+  }
+
+  if (Number.isFinite(rightOfWayYear)) {
+    if (rightOfWayYear <= currentYear + 2) return 'near_term';
+    return 'planning';
+  }
+
+  for (const phase of ['active', 'near_term', 'planning', 'complete']) {
+    if ((phaseHits[phase] ?? 0) > 0) return phase;
+  }
+
+  return 'planning';
 }
 
 function extractProjectSnippets(bodyText, needle, windowSize = 240, maxSnippets = 5) {
@@ -255,7 +413,13 @@ function scoreTarget(target, areaContext, indexPages) {
   };
 }
 
-function buildRecord(target, areaContext, score, indexPages) {
+function buildRecord(target, areaContext, score, indexPages, stipRecord) {
+  const combinedPressure = Math.min(15, (score.constructionPressure ?? 0) + (stipRecord.pressure ?? 0));
+  let level = 'none';
+  if (combinedPressure >= 9) level = 'high';
+  else if (combinedPressure >= 4) level = 'moderate';
+  else if (combinedPressure >= 1) level = 'low';
+
   return {
     generatedAt: new Date().toISOString(),
     address: target.address,
@@ -274,10 +438,11 @@ function buildRecord(target, areaContext, score, indexPages) {
       error: page.error ?? null,
     })),
     reportPath: target.relativePath,
-    reviewed: score.reviewed,
-    level: score.level,
-    constructionPressure: score.constructionPressure,
+    reviewed: score.reviewed || stipRecord.status === 'reviewed',
+    level,
+    constructionPressure: combinedPressure,
     phaseTotals: score.phaseTotals,
+    spatialStip: stipRecord,
     matches: score.matches,
   };
 }
@@ -287,8 +452,9 @@ function printSummary(records) {
   for (const record of records) {
     console.log(`${record.address} | ${record.city}, ${record.state}`);
     console.log(`Counties: ${record.counties.join(', ') || '(none)'}`);
-    console.log(`Level: ${record.level} (pressure ${record.constructionPressure}/10)`);
-    console.log(`Matches: ${record.matches.length}, sources reachable: ${record.sourcesChecked.filter((s) => s.ok).length}/${record.sourcesChecked.length}`);
+    console.log(`Level: ${record.level} (pressure ${record.constructionPressure}/15)`);
+    console.log(`Text matches: ${record.matches.length}, STIP matches: ${record.spatialStip?.matches?.length ?? 0}`);
+    console.log(`Sources reachable: ${record.sourcesChecked.filter((s) => s.ok).length}/${record.sourcesChecked.length} text, ${(record.spatialStip?.sourcesChecked || []).filter((s) => s.ok).length}/${record.spatialStip?.sourcesChecked?.length ?? 0} STIP`);
     console.log('');
   }
 }
@@ -323,7 +489,8 @@ async function run() {
   for (const target of targets) {
     const areaContext = resolveAreaContext(target, researchContext);
     const score = scoreTarget(target, areaContext, indexPages);
-    const record = buildRecord(target, areaContext, score, indexPages);
+    const stipRecord = await queryStipNearTarget(target, areaContext, config.radiusMeters);
+    const record = buildRecord(target, areaContext, score, indexPages, stipRecord);
     const outputPath = buildOutputPath(target);
     await writeFile(outputPath, `${JSON.stringify(record, null, 2)}\n`, 'utf8');
     records.push({ ...record, outputPath });

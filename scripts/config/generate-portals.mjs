@@ -65,16 +65,19 @@ const STATE_RESEARCH_DEFAULTS = {
     },
     municipalities: {
       'holly springs': {
-        name: 'Holly Springs Planning & Zoning',
-        url: 'https://www.hollyspringsnc.gov/255/Planning-Zoning',
+        name: 'Holly Springs Interactive Development Activity Map',
+        url: 'https://hollyspringsnc.gov/321/Maps',
+        note: 'Use the Development Activity Map / Interactive Development Activity Map for proposed, approved, and under-construction projects.',
       },
       'fuquay-varina': {
-        name: 'Fuquay-Varina Planning',
-        url: 'https://www.fuquay-varina.org/271/Planning',
+        name: 'Fuquay-Varina Interactive Development Map',
+        url: 'https://fuquay-varina.org/304/Whats-Coming-to-Fuquay-Varina',
+        note: 'Use the interactive development map and project tabs for proposed, approved, under-construction, and completed projects.',
       },
       apex: {
-        name: 'Apex Planning & Community Development',
-        url: 'https://www.apexnc.org/159/Planning-Community-Development',
+        name: 'Apex Interactive Development Map',
+        url: 'https://www.apexnc.org/659/View',
+        note: 'Use the development map for proposed, approved, and under-construction projects.',
       },
       cary: {
         name: 'Cary Planning & Development Services',

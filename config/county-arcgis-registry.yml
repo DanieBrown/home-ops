@@ -25,3 +25,11 @@ counties:
     folderHints:
       - "Planning"
       - "Infrastructure"
+  harnett:
+    label: "Harnett County, NC"
+    state: "NC"
+    arcgisBase: "https://gis.harnett.org/arcgis/rest/services"
+    folderHints:
+      - "Development"
+      - "Planning"
+      - "Trakit"

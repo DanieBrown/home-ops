@@ -325,6 +325,23 @@ Schools Agent output. Include the metadata table and any flags about ratings dri
 ### 3. Development Pipeline and Future Change
 Risk & Builder Quality Agent output. Combine NCDOT + county permits. Always cite specific case IDs and project descriptions when present in `output/permits/`.
 
+Use this evidence ladder for construction and permit research:
+
+1. **Spatial official data first.** Start with `output/construction/{slug}.json` and `output/permits/{slug}.json`, because those are address-geocoded radius checks. Prefer official GIS feature matches over keyword web results.
+2. **Transportation projects.** Treat NCDOT STIP point/line matches as the transportation backbone. Record TIP/SPOT ID, route, description, right-of-way year, construction year, phase/comment, and whether the project is immediate-road, same-town, or broader-corridor pressure.
+3. **County planning and permits.** Treat county GIS matches as nearby land-use pressure. Record case/permit ID, project or subdivision name, status, lots/acres when present, date, and approximate radius. If `county-permits-check` returns `unsupported-county`, run `npm.cmd run permits:discover -- --county <county> --base-url <arcgis-rest-base>` after finding the official county ArcGIS REST catalog.
+4. **Municipal development maps.** For Apex, Holly Springs, Fuquay-Varina, Cary, and similar towns, use official interactive development maps or project lists to validate whether a nearby project is proposed, approved, under construction, or complete. This is especially important when county GIS is thin or when the address sits inside municipal planning jurisdiction.
+5. **Parcel/project detail lookup.** When a map match is material, search by address, parcel/PIN, subdivision name, case ID, and nearby road/intersection. Avoid relying on address-only search because large developments often use parent parcels, project names, or intersections instead of the listing address.
+6. **Fallback narrative sources.** Use news, agendas, public-hearing packets, MPO/CIP pages, and neighborhood posts only to explain context after the official project match is identified. If no official spatial match exists, classify narrative-only evidence as lower confidence.
+
+Report permit/construction findings as one of:
+- `none found`: official spatial sources checked and returned no material nearby matches.
+- `low`: small, completed, pedestrian, signal, or routine projects unlikely to change daily life.
+- `moderate`: active or approved projects that may affect traffic, school capacity, resale, or neighborhood character.
+- `high`: road widening, interchange, large subdivision, industrial/commercial expansion, or multiple active projects close enough to affect the home.
+
+Never describe the area as clear of construction risk when NCDOT, county GIS, or municipal project sources were unreachable. Mark it as `unconfirmed`.
+
 ### 4. Commute and Daily Convenience
 Sentiment Agent's `traffic_commute` dimension (Google Maps / construction signals). Cross-reference with buyer commute destinations from `config/profile.yml`.
 

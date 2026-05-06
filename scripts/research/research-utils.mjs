@@ -264,6 +264,8 @@ function parseOverallScore(content) {
   if (header) return header;
   const table = parseTableField(content, ['Overall Score', 'Score']);
   if (table && /\d/.test(table)) return table;
+  const finalScore = getSection(content, 'Final Score').match(/(\d+(?:\.\d+)?)\s*\/\s*5/i);
+  if (finalScore) return `${finalScore[1]}/5`;
   const preliminary = content.match(/\b(?:Preliminary\s+)?score\s*:\s*(\d+(?:\.\d+)?)\s*\/\s*5/i);
   return preliminary ? `${preliminary[1]}/5` : '';
 }
@@ -614,6 +616,19 @@ function mapDevelopmentSources(report, context) {
   const developmentSources = context.portals.development_sources ?? {};
   const sources = [];
 
+  const countySources = [
+    ...(Array.isArray(developmentSources.county) ? developmentSources.county : []),
+    ...(Array.isArray(developmentSources.wake_county) ? developmentSources.wake_county : []),
+    ...(Array.isArray(developmentSources.harnett_county) ? developmentSources.harnett_county : []),
+  ];
+  if (countySources.length > 0) {
+    const countyNeedles = areaContext.counties.map(normalizeLookupValue);
+    sources.push(...countySources.filter((source) => {
+      const haystack = normalizeLookupValue(`${source?.name ?? ''} ${source?.url ?? ''}`);
+      return countyNeedles.length === 0 || countyNeedles.some((needle) => needle && haystack.includes(needle));
+    }));
+  }
+
   if (areaContext.counties.some((county) => normalizeLookupValue(county) === 'wake')) {
     sources.push(...(Array.isArray(developmentSources.wake_county) ? developmentSources.wake_county : []));
   }
@@ -624,14 +639,21 @@ function mapDevelopmentSources(report, context) {
 
   const cityNeedles = dedupeStrings([report.city, areaContext.matchedArea?.name]).map(normalizeLookupValue);
   const municipalitySources = Array.isArray(developmentSources.municipalities)
-    ? developmentSources.municipalities.filter((source) => {
+    ? developmentSources.municipalities
+    : Array.isArray(developmentSources.municipality)
+      ? developmentSources.municipality
+      : [];
+  const matchedMunicipalitySources = municipalitySources.length > 0
+    ? municipalitySources.filter((source) => {
       const haystack = normalizeLookupValue(`${source?.name ?? ''} ${source?.url ?? ''}`);
       return cityNeedles.some((needle) => needle && haystack.includes(needle));
     })
     : [];
-  sources.push(...municipalitySources);
+  sources.push(...matchedMunicipalitySources);
 
   sources.push(...(Array.isArray(developmentSources.ncdot) ? developmentSources.ncdot : []));
+  sources.push(...(Array.isArray(developmentSources.transportation) ? developmentSources.transportation : []));
+  sources.push(...(Array.isArray(developmentSources.mpo) ? developmentSources.mpo : []));
 
   return {
     areaContext,

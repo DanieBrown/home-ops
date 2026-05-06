@@ -150,6 +150,24 @@ function summarizeSection(sectionText, maxLength = 900) {
   return `${compact.slice(0, maxLength - 1)}\u2026`;
 }
 
+function plainText(value) {
+  return String(value ?? '')
+    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '$1')
+    .replace(/[*_`#>]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function shortRecommendationLabel(report) {
+  const raw = firstNonEmpty(report.metadata.recommendation, report.sections.Recommendation);
+  const text = plainText(raw);
+  if (!text) return 'Not recorded';
+  const emphasized = String(raw).match(/\*\*([^*]+)\*\*/);
+  if (emphasized?.[1]) return plainText(emphasized[1]).slice(0, 48);
+  const sentence = text.split(/[.!?]\s/)[0] || text;
+  return sentence.length > 48 ? `${sentence.slice(0, 47)}...` : sentence;
+}
+
 function extractBullets(sectionText, maxItems = 5) {
   if (!sectionText) return [];
   const bullets = [];
@@ -328,29 +346,20 @@ function classifyFitStatus(report, profile) {
   return items;
 }
 
-function buildQuickFitPanel(report, profile, quickTakeText, propertyText) {
+function buildBuyerFitChecks(report, profile) {
   const items = classifyFitStatus(report, profile);
+  if (items.length === 0) return '';
   const rows = items.slice(0, 6).map((item) => `
     <li class="fit-row fit-${escapeHtml(item.status)}">
       <span class="fit-mark" aria-hidden="true">${item.status === 'match' ? '&#10003;' : '!'}</span>
       <span class="fit-label">${escapeHtml(item.label)}</span>
     </li>
   `).join('');
-  const summary = firstNonEmpty(
-    summarizeSection(quickTakeText, 650),
-    summarizeSection(propertyText, 650),
-    'No quick-take narrative was captured for this listing.',
-  );
-  const propertyDetail = propertyText && propertyText !== quickTakeText
-    ? `<p class="muted">${escapeHtml(summarizeSection(propertyText, 420))}</p>`
-    : '';
 
   return `
-    <div class="panel fit quick-fit wide">
-      <h3>Quick Take &amp; Property Fit</h3>
-      <p>${escapeHtml(summary)}</p>
-      ${propertyDetail}
-      ${rows ? `<ul class="fit-list">${rows}</ul>` : ''}
+    <div class="panel fit wide">
+      <h3>Buyer Fit Checks</h3>
+      <ul class="fit-list">${rows}</ul>
     </div>
   `;
 }
@@ -456,6 +465,7 @@ function sourceLabelFromUrl(url) {
 function addSourceLink(target, label, url, status = '') {
   const cleanUrl = normalizeUrl(url);
   if (!cleanUrl) return;
+  if (/google\.com\/maps\/search/i.test(cleanUrl)) return;
   const key = cleanUrl.toLowerCase();
   if (target.seen.has(key)) return;
   target.seen.add(key);
@@ -499,6 +509,7 @@ function collectSourceLinks(finalist) {
   for (const plan of Object.values(sourcePlans)) {
     for (const entry of plan?.entries ?? []) {
       addSourceLink(collector, entry.name || entry.key || 'Planned source', entry.url, entry.captureStatus || entry.reviewStatus);
+      if (entry.key === 'google_maps') continue;
       for (const searchUrl of entry.searchUrls ?? []) {
         addSourceLink(collector, `${entry.name || entry.key || 'Search'} query`, searchUrl, entry.captureStatus || entry.reviewStatus);
       }
@@ -627,8 +638,8 @@ function buildCoverToc(finalists) {
     const address = finalist.report.address;
     const city = finalist.report.city;
     const state = finalist.report.state;
-    const score = finalist.report.metadata.overallScore || 'n/a';
-    const recommendation = finalist.report.metadata.recommendation || 'Not recorded';
+    const score = finalist.report.metadata.overallScore || 'N/A';
+    const recommendation = shortRecommendationLabel(finalist.report);
     const recClass = classifyRecommendation(recommendation);
     return `
       <li>
@@ -711,16 +722,16 @@ function buildDevelopmentInfrastructureSection({ construction, permits, developm
     summaryParts.push('NCDOT/STIP construction review has not been captured yet.');
   }
 
-  const keyItems = [
+  const statusRows = [
     { label: 'County permits', value: reviewedPermits ? `${permitLevel} pressure` : 'not reviewed', tone: statusTone(reviewedPermits ? permitLevel : 'unknown') },
     { label: 'Road projects', value: reviewedConstruction ? `${constructionLevel} pressure` : 'not reviewed', tone: statusTone(reviewedConstruction ? constructionLevel : 'unknown') },
     { label: 'Search radius', value: radius, tone: 'risk-info' },
     { label: 'Lookahead', value: '10-year STIP + recent county cases', tone: 'risk-info' },
   ].map((item) => `
-    <div class="risk-key ${item.tone}">
-      <span>${escapeHtml(item.label)}</span>
-      <strong>${escapeHtml(item.value)}</strong>
-    </div>`).join('');
+    <tr class="${item.tone}">
+      <th>${escapeHtml(item.label)}</th>
+      <td>${escapeHtml(item.value)}</td>
+    </tr>`).join('');
 
   const permitRows = (permits?.matches ?? []).slice(0, 4).map((match) => `
     <li>${escapeHtml(formatPermitMatch(match))}</li>
@@ -739,19 +750,12 @@ function buildDevelopmentInfrastructureSection({ construction, permits, developm
   return `
     <div class="panel wide infrastructure">
       <h3>Permits, Development &amp; Infrastructure</h3>
-      <div class="risk-key-grid">${keyItems}</div>
-      <p>${escapeHtml(summaryParts.join(' '))}</p>
-      ${developmentText ? `<p class="muted">${escapeHtml(summarizeSection(developmentText, 520))}</p>` : ''}
-      <div class="infra-columns">
-        <div>
-          <h4>Permit / Development Cases</h4>
-          <ul>${permitRows || '<li class="muted">No county permit or subdivision cases captured within the current radius.</li>'}</ul>
-        </div>
-        <div>
-          <h4>Road / Infrastructure Signals</h4>
-          <ul>${constructionRows || '<li class="muted">No matched NCDOT/STIP project snippets captured for this home.</li>'}</ul>
-        </div>
-      </div>
+      <table class="infra-status"><tbody>${statusRows}</tbody></table>
+      <p class="infra-summary">${escapeHtml(summaryParts.join(' '))}</p>
+      <h4>Permit / Development Cases</h4>
+      <ul class="infra-list">${permitRows || '<li class="muted">No county permit or subdivision cases captured within the current radius.</li>'}</ul>
+      <h4>Road / Infrastructure Signals</h4>
+      <ul class="infra-list">${constructionRows || '<li class="muted">No matched NCDOT/STIP project snippets captured for this home.</li>'}</ul>
       ${sourceRows ? `<ul class="resource-list compact">${sourceRows}</ul>` : ''}
     </div>`;
 }
@@ -1139,7 +1143,6 @@ function buildSchoolsCard(report) {
           <td>${formatSchoolField(calendar)}</td>
           <td>${formatSchoolField(enrichmentSource)}</td>
           <td>${performance}</td>
-          <td>${formatEthnicitySummary(school.ethnicityDistribution)}</td>
         </tr>`;
     }).join('');
     const ethnicityBars = buildEthnicityBars(schoolRows);
@@ -1166,7 +1169,6 @@ function buildSchoolsCard(report) {
               <th>Calendar / Cap</th>
               <th>Metadata</th>
               <th>Performance</th>
-              <th>Ethnicity Summary</th>
             </tr>
           </thead>
           <tbody>${rows}</tbody>
@@ -1227,8 +1229,8 @@ function buildFinalistSection(finalist, profile, options = {}) {
   const sentiment = finalist.sentiment;
   const packet = finalist.packet;
 
-  const scoreDisplay = report.metadata.overallScore || 'n/a';
-  const recommendation = report.metadata.recommendation || 'Not recorded';
+  const scoreDisplay = report.metadata.overallScore || 'N/A';
+  const recommendation = shortRecommendationLabel(report);
   const recClass = classifyRecommendation(recommendation);
   const url = report.metadata.url || report.sourceUrl || finalist.listing?.canonicalUrl || finalist.listing?.url || '';
   const displayAddress = firstNonEmpty(report.address, finalist.listing?.address, report.title, 'Home');
@@ -1253,16 +1255,9 @@ function buildFinalistSection(finalist, profile, options = {}) {
     : '';
 
   const concerns = buildTailoredConcerns(report, finalist).slice(0, 4);
-  const quickTakeText = firstNonEmpty(
-    report.sections['Quick Take'],
-    report.sections['Property Fit'],
-    report.sections['Recommendation'],
-    report.content,
-  );
   const recommendationText = firstNonEmpty(report.sections.Recommendation, recommendation);
-  const propertyText = summarizeSection(report.sections['Property Fit'], 850);
   const developmentText = summarizeSection(report.sections['Development and Infrastructure'], 850);
-  const quickFitBlock = buildQuickFitPanel(report, profile, quickTakeText, propertyText);
+  const buyerFitBlock = buildBuyerFitChecks(report, profile);
   const infrastructureBlock = buildDevelopmentInfrastructureSection({ construction, permits, developmentText });
 
   const topKpi = (sentiment?.kpiRollup ?? []).slice(0, 5).map((row) => `
@@ -1326,9 +1321,9 @@ function buildFinalistSection(finalist, profile, options = {}) {
         ${buildFactsCard(finalist)}
         <div class="panel decision">
           <h3>Decision Read</h3>
-          <p>${escapeHtml(summarizeSection(recommendationText, 700))}</p>
+          <p>${escapeHtml(summarizeSection(plainText(recommendationText), 1500))}</p>
         </div>
-        ${quickFitBlock}
+        ${buyerFitBlock}
         <div class="panel concerns wide">
           <h3>Top Concerns</h3>
           <ul>${(concerns.length ? concerns : ['(none captured)']).map((s) => `<li>${escapeHtml(s)}</li>`).join('')}</ul>
@@ -1373,7 +1368,7 @@ function buildHtml(finalists, profile, mode = 'batch') {
     <p class="cover-meta">Generated ${escapeHtml(generatedAt)} UTC &middot; ${escapeHtml(String(finalists.length))} home${finalists.length === 1 ? '' : 's'}${buyerLabel}</p>
     ${mode === 'batch' ? buildCoverToc(finalists) : buildCoverList(finalists)}
     <div class="cover-legend">
-      <p>Each page shows a quick take, a "why this fits" summary tied to your buyer profile, top concerns tailored to that listing, construction pressure, a schools metadata table (rating, enrollment, student/teacher ratio, ethnicity distribution), neighborhood sentiment, and any research gaps worth filling in.</p>
+      <p>Each page shows the decision read, buyer fit checks, top concerns tailored to that listing, construction pressure, a schools metadata table, neighborhood sentiment, and any research gaps worth filling in.</p>
       <p>Anything marked <strong>Not yet captured</strong> is unknown, not favorable. Ask for a deeper dive to fill in the research gaps before a final decision.</p>
     </div>
   </section>`;
@@ -1394,6 +1389,7 @@ function buildHtml(finalists, profile, mode = 'batch') {
     line-height: 1.5;
     -webkit-font-smoothing: antialiased;
   }
+  p, li, td, th, a { overflow-wrap: anywhere; }
   a { color: #1d4ed8; text-decoration: none; }
   p { margin: 0 0 6px; }
   h1, h2, h3 { margin: 0; color: #111827; }
@@ -1482,8 +1478,11 @@ function buildHtml(finalists, profile, mode = 'batch') {
   .card, .panel {
     border: 1px solid #d1d5db; border-radius: 6px;
     padding: 12px 14px; background: #ffffff;
-    page-break-inside: avoid;
+    break-inside: auto;
+    page-break-inside: auto;
+    overflow: visible;
   }
+  .facts { break-inside: avoid; page-break-inside: avoid; }
   .card.wide, .panel.wide { grid-column: span 2; }
   .card h3, .panel h3 {
     font-size: 9pt; font-weight: 700; text-transform: uppercase;
@@ -1578,56 +1577,40 @@ function buildHtml(finalists, profile, mode = 'batch') {
   }
   .construction .resource-list a { color: #1d4ed8; }
   .infrastructure h3 { color: #075985; }
-  .risk-key-grid {
-    display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 8px;
-    margin: 4px 0 10px;
+  .risk-none th { border-left: 4px solid #16a34a; }
+  .risk-low th { border-left: 4px solid #84cc16; }
+  .risk-med th { border-left: 4px solid #f59e0b; }
+  .risk-high th { border-left: 4px solid #dc2626; }
+  .risk-unknown th { border-left: 4px solid #94a3b8; }
+  .risk-info th { border-left: 4px solid #0284c7; }
+  .infra-status {
+    width: 100%;
+    margin-bottom: 8px;
+    table-layout: fixed;
   }
-  .risk-key {
-    border: 1px solid #e5e7eb;
-    border-radius: 6px;
-    padding: 7px 8px;
+  .infra-status th {
+    width: 34%;
+    text-transform: none;
+    letter-spacing: 0;
+    font-size: 8.5pt;
     background: #f8fafc;
   }
-  .risk-key span {
-    display: block;
-    font-size: 7.2pt;
-    color: #64748b;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-  }
-  .risk-key strong {
-    display: block;
-    margin-top: 3px;
-    font-size: 9pt;
-    color: #111827;
-  }
-  .risk-none { border-left: 4px solid #16a34a; }
-  .risk-low { border-left: 4px solid #84cc16; }
-  .risk-med { border-left: 4px solid #f59e0b; }
-  .risk-high { border-left: 4px solid #dc2626; }
-  .risk-unknown { border-left: 4px solid #94a3b8; }
-  .risk-info { border-left: 4px solid #0284c7; }
-  .infra-columns {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 12px;
-    margin-top: 8px;
-  }
-  .infra-columns h4 {
+  .infra-status td { font-size: 9pt; font-weight: 600; color: #111827; }
+  .infra-summary { margin-top: 6px; }
+  .infrastructure h4 {
     margin: 0 0 5px;
     color: #334155;
     font-size: 8.5pt;
     text-transform: uppercase;
     letter-spacing: 0.04em;
   }
-  .infra-columns ul,
+  .infra-list,
   .resource-list.compact {
     margin: 0;
     padding-left: 14px;
     font-size: 8.5pt;
   }
+  .infra-list { margin-bottom: 9px; }
   .resource-list.compact {
     margin-top: 9px;
     padding-top: 7px;
