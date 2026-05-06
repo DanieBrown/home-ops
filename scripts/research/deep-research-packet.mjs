@@ -417,7 +417,7 @@ async function buildPacket(target, researchContext) {
         'ethnicityDistribution',
         'url',
       ],
-      note: 'Workers must capture these fields per assigned school from GreatSchools plus the listing source (Redfin / Zillow). Leave missing values null.',
+      note: 'Workers must capture these fields per assigned school from the listing or district assignment source first, then GreatSchools or configured school metadata sources when available. Leave missing values null.',
     },
     constructionEvidence: constructionSummary,
     builderEvidence: {
@@ -441,7 +441,7 @@ async function buildPacket(target, researchContext) {
     },
     workerRequirements: [
       'Explicitly mark Facebook, Nextdoor, NCDOT, county planning, municipal planning, and school-source coverage as captured, blocked, no-match, or still missing.',
-      'Use profileWeights.sentiment when explaining metric importance and deep rerank changes. Facebook and Nextdoor only contribute to crime_safety, community, and livability; traffic_commute must come from Reddit, Google Maps, or the NCDOT construction record.',
+      'Use profileWeights.sentiment when explaining metric importance and deep rerank changes. Facebook and Nextdoor only contribute to crime_safety, community, and livability; traffic_commute must come from Google Maps or the NCDOT construction record.',
       'Nextdoor must be loaded via communityUrls.nextdoor (built from the mapdevelopers community lookup). If community is null, skip Nextdoor and record nextdoor: { status: "no-community-match" } in sourceCoverage -- do not fall back to a generic Nextdoor search.',
       'Facebook must be loaded via communityUrls.facebook (the /search/top?q=<community> neighborhood <city> URL). Filter out membership-announcement posts ("X joined the group", "Welcome X to the neighborhood") before scoring.',
       'Return schoolMetadata as an array of per-school objects matching schoolMetadataPlan.fields. Do not return a schoolMetrics sentiment rollup -- schools are metadata-only.',

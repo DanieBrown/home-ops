@@ -1,6 +1,6 @@
 ---
 name: sentiment-axis
-description: Use during /home-ops deep runs to interpret pre-captured sentiment JSON sidecars (Reddit, Google Maps, Facebook, Nextdoor, Twitter) into a structured per-home sentiment scoring object. Reads JSON-first; may re-run the public sentiment capture script against the user's established browser session when a sidecar is missing. Never uses WebFetch or WebSearch.
+description: Use during /home-ops deep runs to interpret pre-captured sentiment JSON sidecars (Google Maps, Facebook, Nextdoor, Twitter) into a structured per-home sentiment scoring object. Reads JSON-first; may re-run the public sentiment capture script against the user's established browser session when a sidecar is missing. Never uses WebFetch or WebSearch.
 tools: Read, Grep, Glob, Bash
 model: sonnet
 ---
@@ -16,7 +16,7 @@ Portal pages (Facebook, Nextdoor, etc.) require authentication. A fresh browser 
 ## Inputs you may read
 
 For each home (identified by `slug`), expect these paths under the repo root:
-- `output/sentiment/{slug}.json` — combined Reddit / Google Maps / Facebook / Nextdoor / Twitter snippets
+- `output/sentiment/{slug}.json` — combined Google Maps / Facebook / Nextdoor / Twitter snippets
 - `output/communities/{slug}.json` — community-name resolution context
 - `output/source-plan/{slug}.json` — list of sentiment sources the planner attempted
 - `buyer-profile.md`, `config/profile.yml` — buyer weights, deal_breakers, commute destinations
@@ -58,7 +58,6 @@ Also accept any explicit paths the parent agent passes you.
   },
   "redFlagsTriggered": ["deal-breaker phrase that matched a snippet"],
   "sourceCoverage": {
-    "reddit":      "captured|blocked|no-community-match|skipped-by-profile|missing|fallback-capture",
     "google_maps": "...",
     "facebook":    "...",
     "nextdoor":    "...",
@@ -81,6 +80,6 @@ Quote 2–3 raw snippets per dimension when available. Apply buyer weights from 
 
 If `output/sentiment/{slug}.json` is missing AND the fallback capture also fails (non-zero exit or empty output), return:
 ```json
-{ "slug": "...", "status": "missing-input", "sourceCoverage": { "reddit": "missing", ... }, "confidence": "low" }
+{ "slug": "...", "status": "missing-input", "sourceCoverage": { "google_maps": "missing", ... }, "confidence": "low" }
 ```
 and continue with the remaining homes. Do not block the run.

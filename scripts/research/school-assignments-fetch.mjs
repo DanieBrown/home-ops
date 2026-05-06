@@ -2,31 +2,31 @@
 
 /**
  * school-assignments-fetch.mjs -- Resolve assigned schools for an address via
- * the hosted Chrome session and write them to output/school-metadata/<slug>.json
- * using the schema school-metadata-fetch.mjs already publishes.
+ * district/listing sources first, then GreatSchools as a fallback, and write
+ * them to output/school-metadata/<slug>.json using the schema
+ * school-metadata-fetch.mjs already publishes.
  *
  * Why this exists: school-metadata-fetch.mjs parses school NAMES out of an
  * already-written report. If the report doesn't list them yet (which happens
  * for fresh single-home runs), it returns "no-assigned-schools" and the deep
  * brief is forced to fall back on web search. This script closes that loop
- * by hitting GreatSchools directly with the address.
+ * by hitting the configured district assignment lookup first. GreatSchools is
+ * still checked as a fallback/verification source, but it is no longer the
+ * bottleneck that decides whether crawl4ai receives school names.
  *
  * Approach:
- *   1. Open https://www.greatschools.org/search/search.page?... with the
- *      address as locationLabel (the URL pattern research-source-plan already
- *      builds for the school source plan).
- *   2. Wait for the assigned-schools panel to render.
- *   3. page.evaluate() to extract elementary / middle / high school names,
- *      ratings, and link URLs.
- *   4. For each school link, navigate and capture rating + enrollment +
- *      student/teacher ratio + ethnicity distribution.
- *   5. Write the same schema school-metadata-fetch.mjs writes, so the deep
+ *   1. Query the WCPSS public assignment lookup by address when the target is
+ *      in Wake County.
+ *   2. Fall back to assigned schools already captured from the listing JSON.
+ *   3. Fall back to GreatSchools address search when district/listing data is
+ *      unavailable.
+ *   4. Write the same schema school-metadata-fetch.mjs writes, so the deep
  *      packet builder doesn't care which script populated the file.
  *
  * Hard rule: hosted browser only. No WebFetch / WebSearch.
  */
 
-import { mkdir, writeFile } from 'fs/promises';
+import { mkdir, readFile, writeFile } from 'fs/promises';
 import { join } from 'path';
 import { fileURLToPath } from 'url';
 import { ROOT } from '../shared/paths.mjs';
@@ -42,14 +42,15 @@ const OUTPUT_DIR = join(ROOT, 'output', 'school-metadata');
 const DEFAULT_PROFILE = 'chrome-host';
 const SEARCH_TIMEOUT_MS = 30000;
 const SCHOOL_PAGE_TIMEOUT_MS = 25000;
+const WCPSS_LOOKUP_BASE = 'https://osageo.wcpss.net/assignment-lookup';
 
 const HELP_TEXT = `Usage:
   node school-assignments-fetch.mjs --address "192 Castle Pond Way" --city "Fuquay-Varina" [--state NC]
   node school-assignments-fetch.mjs reports/001-foo.md
   node school-assignments-fetch.mjs --listing output/listings/<slug>.json
 
-Looks up the assigned elementary / middle / high schools for an address on
-GreatSchools via the hosted Chrome session and writes the metadata to
+Looks up the assigned elementary / middle / high schools for an address from
+WCPSS/listing data first, with GreatSchools fallback, and writes the metadata to
 output/school-metadata/<slug>.json. Used by deep-single-runner.mjs as the
 address-driven fallback when the eval report doesn't yet list schools.
 
@@ -100,10 +101,11 @@ async function resolveTarget(config) {
       city: config.city.trim(),
       state: (config.state || 'NC').trim(),
       reportPath: null,
+      listingSchools: [],
+      listingUrl: null,
     };
   }
   if (config.listingPath) {
-    const { readFile } = await import('fs/promises');
     const raw = await readFile(config.listingPath, 'utf8');
     const listing = JSON.parse(raw);
     if (!listing.address || !listing.city) {
@@ -114,6 +116,8 @@ async function resolveTarget(config) {
       city: String(listing.city).trim(),
       state: String(listing.state || 'NC').trim(),
       reportPath: null,
+      listingSchools: Array.isArray(listing.assignedSchools) ? listing.assignedSchools : [],
+      listingUrl: listing.canonicalUrl || listing.url || null,
     };
   }
   if (config.reportPath) {
@@ -123,6 +127,8 @@ async function resolveTarget(config) {
       city: report.city,
       state: report.state || 'NC',
       reportPath: report.relativePath,
+      listingSchools: [],
+      listingUrl: report.metadata.url || null,
     };
   }
   throw new Error('Provide either --address + --city, --listing <json>, or a report path positional argument.');
@@ -152,7 +158,186 @@ function levelFromGrade(value) {
   if (/elementary|primary|kindergarten|k-?5|k-?4|prek/.test(text)) return 'elementary';
   if (/middle|junior|6-?8|7-?8/.test(text)) return 'middle';
   if (/high|senior|9-?12|10-?12/.test(text)) return 'high';
+  if (text === 'e') return 'elementary';
+  if (text === 'm') return 'middle';
+  if (text === 'h') return 'high';
   return null;
+}
+
+function levelSortValue(level) {
+  const normalized = levelFromGrade(level) || level;
+  if (normalized === 'elementary') return 0;
+  if (normalized === 'middle') return 1;
+  if (normalized === 'high') return 2;
+  return 9;
+}
+
+function buildWcpssSearchTerms(target) {
+  const address = String(target.address ?? '').trim();
+  const city = String(target.city ?? '').trim();
+  return [
+    address,
+    [address, city].filter(Boolean).join(' '),
+    address.replace(/\b(Lane|Ln|Road|Rd|Drive|Dr|Court|Ct|Way|Street|St|Avenue|Ave)\b\.?/gi, '').replace(/\s+/g, ' ').trim(),
+  ]
+    .map((value) => value.toUpperCase())
+    .filter(Boolean)
+    .filter((value, index, list) => list.indexOf(value) === index);
+}
+
+async function fetchJson(url) {
+  const response = await fetch(url, {
+    headers: {
+      'Accept': 'application/json,text/plain,*/*',
+      'User-Agent': 'Home-Ops local research assistant; school assignment lookup',
+    },
+  });
+  if (!response.ok) {
+    return { ok: false, status: response.status, data: null };
+  }
+  try {
+    return { ok: true, status: response.status, data: await response.json() };
+  } catch (error) {
+    return { ok: false, status: response.status, data: null, error: error.message };
+  }
+}
+
+function normalizeWcpssSchool(row) {
+  return {
+    name: row.name_long || null,
+    level: levelFromGrade(row.grade_level),
+    gradeLevel: row.grade_level || null,
+    district: 'Wake County Public School System',
+    rating: null,
+    enrollment: null,
+    studentTeacherRatio: null,
+    ethnicityDistribution: null,
+    url: row.url || null,
+    source: 'wcpss',
+    assignmentSource: 'wcpss',
+    scenario: row.scenario || null,
+    calendar: row.calendar || null,
+    transportation: row.transportation_type || null,
+    capStatus: row.cap_status || null,
+    schoolCode: row.school_code || null,
+    fetchStatus: 'ok',
+  };
+}
+
+function normalizeListingSchool(row, listingUrl) {
+  const name = row?.name || row?.schoolName || row?.officialName;
+  if (!name) return null;
+  return {
+    name: String(name).trim(),
+    level: levelFromGrade(row.level || row.gradeLevel || row.type),
+    gradeLevel: row.gradeLevel || row.gradeRange || row.level || null,
+    district: row.district || row.schoolDistrict || null,
+    rating: row.rating ?? row.greatSchoolsRating ?? null,
+    enrollment: row.enrollment ?? null,
+    studentTeacherRatio: row.studentTeacherRatio ?? null,
+    ethnicityDistribution: row.ethnicityDistribution ?? null,
+    url: row.url || listingUrl || null,
+    source: row.source || 'listing',
+    assignmentSource: row.source || 'listing',
+    fetchStatus: 'ok',
+  };
+}
+
+function dedupeSchools(schools) {
+  const seen = new Set();
+  const result = [];
+  for (const school of schools) {
+    if (!school?.name) continue;
+    const key = `${String(school.name).trim().toLowerCase()}|${school.level || ''}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    result.push(school);
+  }
+  return result.sort((a, b) => levelSortValue(a.level) - levelSortValue(b.level));
+}
+
+async function captureSchoolsFromWcpss(target) {
+  if (!/NC/i.test(target.state || 'NC')) {
+    return {
+      status: 'skipped-non-nc',
+      schools: [],
+      searchUrl: null,
+      assignmentUrl: null,
+      candidatesScraped: 0,
+      error: null,
+    };
+  }
+
+  const searchTerms = buildWcpssSearchTerms(target);
+  let searchUrl = null;
+  let search = null;
+  let candidates = [];
+  for (const searchText of searchTerms) {
+    searchUrl = `${WCPSS_LOOKUP_BASE}/php/functions/search_wcpss_addresses.php?search_text=${encodeURIComponent(searchText)}`;
+    search = await fetchJson(searchUrl);
+    if (!search.ok) break;
+    candidates = Array.isArray(search.data?.features) ? search.data.features : [];
+    if (candidates.length > 0) break;
+  }
+
+  if (!search?.ok) {
+    return {
+      status: 'search-failed',
+      schools: [],
+      searchUrl,
+      assignmentUrl: null,
+      candidatesScraped: 0,
+      error: search.error || `HTTP ${search.status}`,
+    };
+  }
+
+  const targetAddress = `${target.address} ${target.city}`.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  const picked = candidates.find((feature) => {
+    const full = String(feature?.attributes?.full_addr ?? '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+    return full.includes(targetAddress) || targetAddress.includes(full);
+  }) ?? candidates[0];
+
+  const x = Number.parseFloat(picked?.attributes?.x);
+  const y = Number.parseFloat(picked?.attributes?.y);
+  if (!Number.isFinite(x) || !Number.isFinite(y)) {
+    return {
+      status: 'no-address-match',
+      schools: [],
+      searchUrl,
+      assignmentUrl: null,
+      candidatesScraped: candidates.length,
+      error: null,
+    };
+  }
+
+  const assignmentUrl = `${WCPSS_LOOKUP_BASE}/php/functions/get_assignment_info.php?x=${x}&y=${y}&scenarios=CURRENT,NEXT`;
+  const assignment = await fetchJson(assignmentUrl);
+  if (!assignment.ok || !Array.isArray(assignment.data)) {
+    return {
+      status: 'assignment-failed',
+      schools: [],
+      searchUrl,
+      assignmentUrl,
+      candidatesScraped: candidates.length,
+      error: assignment.error || `HTTP ${assignment.status}`,
+    };
+  }
+
+  const rows = assignment.data.filter((row) => row.assignment_type === 'BASE');
+  const currentRows = rows.filter((row) => row.scenario === 'CURRENT');
+  const nextRows = rows.filter((row) => row.scenario === 'NEXT');
+  const selectedRows = currentRows.length > 0 ? currentRows : nextRows;
+  const schools = dedupeSchools(selectedRows.map(normalizeWcpssSchool));
+  return {
+    status: schools.length ? 'ok' : 'no-assigned-schools',
+    schools,
+    searchUrl,
+    assignmentUrl,
+    candidatesScraped: candidates.length,
+    matchedAddress: picked?.attributes?.full_addr ?? null,
+    scenarioUsed: currentRows.length > 0 ? 'CURRENT' : (nextRows.length > 0 ? 'NEXT' : null),
+    error: null,
+  };
 }
 
 async function scrapeAssignedList(page) {
@@ -249,7 +434,7 @@ async function scrapeSchoolDetails(context, school) {
   }
 }
 
-async function captureSchools(target, profileName) {
+async function captureSchoolsFromGreatSchools(target, profileName) {
   const attached = await attachHostedBrowser(ROOT, profileName);
   const { browser, context } = attached;
   try {
@@ -308,6 +493,78 @@ async function captureSchools(target, profileName) {
   }
 }
 
+function buildListingFallbackCapture(target) {
+  const schools = dedupeSchools(
+    (target.listingSchools ?? [])
+      .map((school) => normalizeListingSchool(school, target.listingUrl))
+      .filter(Boolean),
+  );
+  return {
+    status: schools.length ? 'ok' : 'no-assigned-schools',
+    schools,
+    sourcesChecked: schools.length
+      ? [{
+        name: 'listing-source-assigned-schools',
+        url: target.listingUrl,
+        candidatesScraped: schools.length,
+      }]
+      : [],
+    note: schools.length ? null : 'No listing-source assigned schools were available.',
+  };
+}
+
+async function captureSchools(target, profileName) {
+  const sourcesChecked = [];
+
+  const wcpss = await captureSchoolsFromWcpss(target);
+  sourcesChecked.push({
+    name: 'wcpss-address-lookup',
+    url: wcpss.assignmentUrl || wcpss.searchUrl,
+    searchUrl: wcpss.searchUrl,
+    assignmentUrl: wcpss.assignmentUrl,
+    status: wcpss.status,
+    candidatesScraped: wcpss.candidatesScraped ?? 0,
+    matchedAddress: wcpss.matchedAddress ?? null,
+    scenarioUsed: wcpss.scenarioUsed ?? null,
+    error: wcpss.error ?? null,
+  });
+  if (wcpss.schools.length > 0) {
+    return {
+      status: 'ok',
+      schools: wcpss.schools,
+      sourcesChecked,
+      primarySource: 'wcpss',
+      note: null,
+    };
+  }
+
+  const listing = buildListingFallbackCapture(target);
+  sourcesChecked.push(...listing.sourcesChecked);
+  if (listing.schools.length > 0) {
+    return {
+      status: 'ok',
+      schools: listing.schools,
+      sourcesChecked,
+      primarySource: 'listing',
+      note: null,
+    };
+  }
+
+  const greatSchools = await captureSchoolsFromGreatSchools(target, profileName);
+  sourcesChecked.push({
+    name: 'greatschools-address-search',
+    url: greatSchools.searchUrl,
+    status: greatSchools.status,
+    candidatesScraped: greatSchools.candidatesScraped ?? 0,
+    error: greatSchools.error ?? null,
+  });
+  return {
+    ...greatSchools,
+    sourcesChecked,
+    primarySource: greatSchools.schools.length > 0 ? 'greatschools' : 'none',
+  };
+}
+
 async function writeMetadata(target, capture) {
   const outputPath = buildOutputPath(target);
   const payload = {
@@ -318,17 +575,12 @@ async function writeMetadata(target, capture) {
     reportPath: target.reportPath,
     status: capture.status,
     schools: capture.schools,
-    sourcesChecked: [
-      {
-        name: 'greatschools',
-        url: capture.searchUrl,
-        candidatesScraped: capture.candidatesScraped ?? 0,
-      },
-    ],
+    sourcesChecked: capture.sourcesChecked ?? [],
+    primarySource: capture.primarySource ?? null,
     note: capture.error
       ? `error: ${capture.error}`
       : (capture.status === 'no-assigned-schools'
-        ? 'No assigned-school links found on the GreatSchools search page.'
+        ? 'No assigned-school names found from WCPSS, listing data, or GreatSchools.'
         : null),
   };
   await mkdir(OUTPUT_DIR, { recursive: true });

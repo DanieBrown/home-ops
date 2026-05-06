@@ -11,7 +11,7 @@
  *   2. community-lookup          — resolve each address to its named community (Nextdoor/Facebook key)
  *   3. sentiment-browser-extract — capture Facebook/Nextdoor evidence via hosted browser
  *   4. construction-check        — fetch NCDOT construction signals
- *   5. sentiment-public-extract  — fetch Reddit/Google Maps public sentiment (traffic_commute sole source)
+ *   5. sentiment-public-extract  — fetch Google Maps public sentiment (traffic_commute source)
  *   6. deep-research-packet      — assemble one packet per shortlisted home
  *
  * After this runner exits 0, the main agent reads output/deep-packets/ and
@@ -57,7 +57,7 @@ const PHASES = [
   },
   {
     contractId: 'sentiment-public-extract',
-    label: 'Shortlist public sentiment extraction (Reddit/Google Maps — traffic_commute source)',
+    label: 'Shortlist public sentiment extraction (Google Maps — traffic_commute source)',
     cmd: NODE,
     args: ['scripts/research/sentiment-public-extract.mjs', '--shortlist'],
   },

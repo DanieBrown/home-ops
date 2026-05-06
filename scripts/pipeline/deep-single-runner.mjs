@@ -9,7 +9,7 @@
  *
  * Steps:
  *   1. extract-listing-details   — scrape Zillow/Redfin/Realtor/Homes via hosted Chrome
- *   2. school-assignments-fetch  — resolve assigned schools via GreatSchools
+ *   2. school-assignments-fetch  — resolve assigned schools via WCPSS/listing fallback, with GreatSchools as optional verification
  *
  * After this runner exits 0, the main agent should:
  *   - Read output/listings/<slug>.json + output/school-metadata/<slug>.json
@@ -35,8 +35,8 @@ const HELP_TEXT = `Usage:
   node deep-single-runner.mjs --url <listing-url> [--profile chrome-host]
 
 Pre-evaluation phase of the single-home deep flow. Drives extract-listing-details
-and school-assignments-fetch against the hosted Chrome session so the main
-agent has structured listing data + GreatSchools metadata before writing the
+and school-assignments-fetch so the main
+agent has structured listing data + assigned-school metadata before writing the
 canonical evaluate report.
 
 Options:
@@ -180,7 +180,7 @@ function main() {
   // Phase 2: school assignments
   const schoolsPhase = {
     contractId: 'school-assignments-fetch',
-    label: 'Assigned-school capture via GreatSchools',
+    label: 'Assigned-school capture via WCPSS/listing fallback',
     cmd: NODE,
     args: ['scripts/research/school-assignments-fetch.mjs', '--listing', listingPath, '--profile', config.profileName],
   };

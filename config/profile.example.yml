@@ -89,7 +89,6 @@ research_sources:
     realtor: true
     homes: false
   sentiment:
-    reddit: true
     nextdoor: true
     facebook: true
     google_maps: true

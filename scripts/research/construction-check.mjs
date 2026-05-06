@@ -9,9 +9,10 @@
  * refetch.
  *
  * This is a deterministic, public-source lookup -- no login, no scraping of
- * private data, no evasion. Failures are tolerated (empty fetch = zero score
- * plus an explicit "unreviewed" flag) so downstream workers can still reason
- * about gap coverage.
+ * private data, no evasion. It prefers crawl4ai for rendered capture and
+ * falls back to fetch() when crawl4ai is unavailable. Failures are tolerated
+ * (empty fetch = zero score plus an explicit "unreviewed" flag) so downstream
+ * workers can still reason about gap coverage.
  */
 
 import { existsSync, readFileSync } from 'fs';
@@ -26,6 +27,7 @@ import {
   parseShortlist,
   resolveAreaContext,
 } from './research-utils.mjs';
+import { crawl4aiFetchPage } from './crawl4ai-utils.mjs';
 import { slugify } from '../shared/text-utils.mjs';
 
 const OUTPUT_DIR = join(ROOT, 'output', 'construction');
@@ -126,6 +128,18 @@ function resolveTargets(config) {
 }
 
 async function fetchText(url) {
+  const crawled = await crawl4aiFetchPage(url, { timeoutMs: DEFAULT_TIMEOUT_MS });
+  if (crawled.ok && crawled.html) {
+    return {
+      ok: true,
+      status: crawled.status || 200,
+      text: crawled.html,
+      url: crawled.finalUrl || url,
+      requestedUrl: url,
+      provider: 'crawl4ai',
+    };
+  }
+
   try {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT_MS);
@@ -140,12 +154,12 @@ async function fetchText(url) {
     });
     clearTimeout(timer);
     if (!response.ok) {
-      return { ok: false, status: response.status, text: '', url };
+      return { ok: false, status: response.status, text: '', url, provider: 'fetch', crawl4aiError: crawled.error ?? null };
     }
     const text = await response.text();
-    return { ok: true, status: response.status, text, url };
+    return { ok: true, status: response.status, text, url, provider: 'fetch', crawl4aiError: crawled.error ?? null };
   } catch (error) {
-    return { ok: false, status: 0, text: '', url, error: String(error?.message ?? error) };
+    return { ok: false, status: 0, text: '', url, provider: 'fetch', error: String(error?.message ?? error), crawl4aiError: crawled.error ?? null };
   }
 }
 
@@ -254,6 +268,9 @@ function buildRecord(target, areaContext, score, indexPages) {
       url: page.url,
       ok: page.ok,
       status: page.status,
+      provider: page.provider ?? null,
+      requestedUrl: page.requestedUrl ?? page.url,
+      crawl4aiError: page.crawl4aiError ?? null,
       error: page.error ?? null,
     })),
     reportPath: target.relativePath,

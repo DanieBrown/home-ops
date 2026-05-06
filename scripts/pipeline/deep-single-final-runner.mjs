@@ -11,7 +11,7 @@
  *   1. research-source-plan       — concrete lookup plan from portals.yml
  *   2. community-lookup           — mapdevelopers community resolution
  *   3. sentiment-browser-extract  — Facebook/Nextdoor (login-walled)
- *   4. sentiment-public-extract   — Reddit/Google Maps (traffic_commute source)
+ *   4. sentiment-public-extract   — Google Maps (traffic_commute source)
  *   5. construction-check         — NCDOT projects
  *   6. county-permits-check       — county GIS spatial query
  *   7. school-metadata-fetch      — Niche.com / GreatSchools details
@@ -20,8 +20,8 @@
  *
  * After this runner exits 0, the main agent should:
  *   - Launch the 3 axis agents (Sentiment, Risk & Builder, Schools)
- *   - Write reports/{slug}-deep-{date}.md
- *   - Run briefing-pdf.mjs --report <deep-report>
+ *   - Update the same canonical reports/{N}-{slug}-{date}.md with the deep findings
+ *   - Run briefing-pdf.mjs --report <canonical-report>
  *   - Run review-tabs.mjs urls <listing-url> --replace
  *   - Open the briefing PDF tab last so it survives the tab replacement
  *
@@ -161,7 +161,7 @@ function main() {
     },
     {
       contractId: 'sentiment-public-extract-single',
-      label: 'Public sentiment capture (Reddit/Google Maps)',
+      label: 'Public sentiment capture (Google Maps)',
       cmd: NODE,
       args: ['scripts/research/sentiment-public-extract.mjs', reportArg],
     },
@@ -181,7 +181,7 @@ function main() {
       contractId: 'school-metadata-fetch-single',
       label: 'School metadata details',
       cmd: NODE,
-      args: ['scripts/research/school-metadata-fetch.mjs', reportArg],
+      args: ['scripts/research/school-metadata-fetch.mjs', reportArg, '--profile', config.profileName],
     },
     {
       contractId: 'builder-check-single',
@@ -210,8 +210,8 @@ function main() {
 
   console.log('\n[deep-single-final] ✅ Post-eval data capture complete.');
   console.log('[deep-single-final]    Main agent: launch the 3 axis agents (Sentiment / Risk & Builder / Schools),');
-  console.log('[deep-single-final]    write reports/{slug}-deep-{date}.md, then run:');
-  console.log('[deep-single-final]      node scripts/reports/briefing-pdf.mjs --report reports/{slug}-deep-{date}.md');
+  console.log('[deep-single-final]    update the same canonical report with deep findings, then run:');
+  console.log('[deep-single-final]      node scripts/reports/briefing-pdf.mjs --report <canonical-report>');
   console.log('[deep-single-final]      node scripts/browser/review-tabs.mjs urls <listing-url> --replace');
   console.log('[deep-single-final]    Open the PDF tab last so it survives the --replace.');
 

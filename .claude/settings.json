@@ -7,7 +7,11 @@
       "PowerShell($env:PYTHONIOENCODING='utf-8'; py -3 scripts/research/python/school_metadata_crawl.py --school \"Buckhorn Creek Elementary\" --city \"Holly Springs\" --state \"NC\" --json 2>&1 | Select-Object -Last 80)",
       "PowerShell($env:PYTHONIOENCODING='utf-8'; node scripts/research/school-metadata-fetch.mjs reports/002-101-jewell-farm-ln-holly-springs-2026-05-05.md 2>&1 | Select-Object -Last 30)",
       "Bash(node -e \"const j = JSON.parse\\(require\\('fs'\\).readFileSync\\('output/school-metadata/101-jewell-farm-ln-holly-springs-nc.json','utf8'\\)\\); console.log\\('status:', j.status\\); j.schools.forEach\\(s => console.log\\('  -', s.name, '|', s.captureStatus, '| provider:', s.provider, '| niche:', s.nicheGrade?.letter, '| enroll:', s.enrollment, '| ratio:', s.studentTeacherRatio\\)\\);\")",
-      "PowerShell($env:PYTHONIOENCODING='utf-8'; py -3 scripts/research/python/school_metadata_crawl.py --school \"Holly Grove Middle\" --city \"Holly Springs\" --state \"NC\" --json 2>&1 | Select-Object -Last 3)"
+      "PowerShell($env:PYTHONIOENCODING='utf-8'; py -3 scripts/research/python/school_metadata_crawl.py --school \"Holly Grove Middle\" --city \"Holly Springs\" --state \"NC\" --json 2>&1 | Select-Object -Last 3)",
+      "Bash(node -e \"const j = JSON.parse\\(require\\('fs'\\).readFileSync\\('output/listings/101-jewell-farm-ln-holly-springs-nc.json','utf8'\\)\\); console.log\\('platform:', j.platform\\); console.log\\('schools:', JSON.stringify\\(j.assignedSchools, null, 2\\)\\);\")",
+      "Bash(node -e ' *)",
+      "Bash(node scripts/research/extract-listing-details.mjs --url \"https://www.realtor.com/realestateandhomes-detail/101-Jewell-Farm-Ln_Holly-Springs_NC_27540_M57922-30867?from=srp-list-card\" --profile chrome-host)",
+      "Bash(node scripts/system/probe-realtor-schools.mjs \"https://www.realtor.com/realestateandhomes-detail/101-Jewell-Farm-Ln_Holly-Springs_NC_27540_M57922-30867?from=srp-list-card\")"
     ]
   },
   "hooks": {

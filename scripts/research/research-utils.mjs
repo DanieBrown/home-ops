@@ -14,7 +14,7 @@ export { ROOT, REPORTS_DIR, SHORTLIST_PATH, PROFILE_PATH, PORTALS_PATH };
 export const AUDIT_SECTION_DEFS = [
   {
     heading: 'Neighborhood Sentiment',
-    sourcePatterns: [/reddit/i, /facebook/i, /nextdoor/i, /google maps/i, /google reviews/i, /wral/i, /abc11/i, /news\s*&?\s*observer/i],
+    sourcePatterns: [/facebook/i, /nextdoor/i, /google maps/i, /google reviews/i, /wral/i, /abc11/i, /news\s*&?\s*observer/i],
     gapPatterns: [
       /neighborhood sentiment was not expanded beyond the listing page evidence/i,
       /limited community sentiment/i,
@@ -61,6 +61,18 @@ const REPORT_SECTION_HEADINGS = [
   'Risks and Open Questions',
   'Recommendation',
 ];
+
+const REPORT_SECTION_ALIASES = {
+  'Quick Take': ['Executive Summary'],
+  'Summary Card': ['Listing Facts'],
+  'Property Fit': ['Listing Facts', 'Key Positives', 'Key Gaps / Risks', 'Axis 1 — Listing Facts & Property Assessment', 'Axis 1 - Listing Facts & Property Assessment'],
+  'Neighborhood Sentiment': ['Axis 2 — Neighborhood Sentiment', 'Axis 2 - Neighborhood Sentiment'],
+  'School Review': ['Schools', 'Schools (Preliminary)', 'Axis 3 — Schools', 'Axis 3 - Schools'],
+  'Development and Infrastructure': ['Axis 4 — Development & Infrastructure Risk', 'Axis 4 - Development & Infrastructure Risk', 'Development Pipeline and Future Change'],
+  'Financial Snapshot': ['Axis 7 — Financial Fit & Resale', 'Axis 7 - Financial Fit & Resale'],
+  'Risks and Open Questions': ['Data Gap Summary', 'Key Gaps / Risks', 'Research Coverage'],
+  Recommendation: ['Verdict', 'Recommendation (Preliminary)'],
+};
 
 function escapeForRegex(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -185,41 +197,118 @@ export function getSection(content, heading) {
   return match ? match[1].trim() : '';
 }
 
+function getSectionAny(content, headings) {
+  return headings
+    .map((heading) => getSection(content, heading))
+    .find((section) => section && section.trim()) ?? '';
+}
+
+function parseTitleLocation(titleLine) {
+  const rawTitle = titleLine.replace(/^#\s+/, '').trim();
+  const normalizedTitle = rawTitle
+    .replace(/^Deep\s+Brief\s*[—-]\s*/i, '')
+    .replace(/^\d+\s*[—-]\s*/, '')
+    .trim();
+
+  const dashMatch = normalizedTitle.match(/^(.+?)\s+-\s+([^,]+),\s*([A-Za-z]{2})(?:\s+\d{5}(?:-\d{4})?)?\s*$/);
+  if (dashMatch) {
+    return {
+      address: dashMatch[1].trim(),
+      city: dashMatch[2].trim(),
+      state: dashMatch[3].trim(),
+    };
+  }
+
+  const commaMatch = normalizedTitle.match(/^(.+?),\s*([^,]+),\s*([A-Za-z]{2})(?:\s+\d{5}(?:-\d{4})?)?\s*$/);
+  if (commaMatch) {
+    return {
+      address: commaMatch[1].trim(),
+      city: commaMatch[2].trim(),
+      state: commaMatch[3].trim(),
+    };
+  }
+
+  return { address: '', city: '', state: '' };
+}
+
+function stripMarkdown(value) {
+  return String(value ?? '')
+    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '$1')
+    .replace(/[*_`]/g, '')
+    .trim();
+}
+
+function extractMarkdownLink(value) {
+  const match = String(value ?? '').match(/\[[^\]]+\]\(([^)]+)\)/);
+  return match ? match[1].trim() : '';
+}
+
+function parseTableField(content, labels) {
+  const labelPattern = labels.map(escapeForRegex).join('|');
+  const pattern = new RegExp(`^\\|\\s*(?:${labelPattern})\\s*\\|\\s*([^|]+?)\\s*\\|`, 'mi');
+  const match = content.match(pattern);
+  return match ? stripMarkdown(match[1]) : '';
+}
+
+function parseCombinedBedsBaths(content) {
+  const combined = parseHeaderField(content, 'Beds/Baths') || parseTableField(content, ['Beds/Baths', 'Bed/Bath']);
+  if (combined) return combined;
+  const beds = parseTableField(content, ['Beds', 'Bedrooms']);
+  const baths = parseTableField(content, ['Baths', 'Bathrooms']);
+  if (beds || baths) return `${beds || '--'}/${baths || '--'}`;
+  return '';
+}
+
+function parseOverallScore(content) {
+  const header = parseHeaderField(content, 'Overall Score');
+  if (header) return header;
+  const table = parseTableField(content, ['Overall Score', 'Score']);
+  if (table && /\d/.test(table)) return table;
+  const preliminary = content.match(/\b(?:Preliminary\s+)?score\s*:\s*(\d+(?:\.\d+)?)\s*\/\s*5/i);
+  return preliminary ? `${preliminary[1]}/5` : '';
+}
+
 export function parseReport(projectRoot = ROOT, reportPath) {
   const absoluteReportPath = resolveWorkspacePath(projectRoot, reportPath);
   const content = readUtf8(absoluteReportPath).replace(/^\uFEFF/, '');
   const lines = content.split(/\r?\n/);
   const titleLine = lines.find((line) => line.startsWith('# ')) ?? '';
-  const titleMatch = titleLine.match(/^#\s+(.+)\s+-\s+([^,]+),\s*([A-Za-z]{2})\s*$/);
+  const titleLocation = parseTitleLocation(titleLine);
 
   const sections = Object.fromEntries(
-    REPORT_SECTION_HEADINGS.map((heading) => [heading, getSection(content, heading)]),
+    REPORT_SECTION_HEADINGS.map((heading) => {
+      const aliases = REPORT_SECTION_ALIASES[heading] ?? [];
+      return [heading, getSectionAny(content, [heading, ...aliases])];
+    }),
   );
+
+  const source = parseHeaderField(content, 'Source');
+  const sourceUrl = extractMarkdownLink(source);
 
   return {
     filePath: absoluteReportPath,
     relativePath: normalizeWorkspacePath(relative(projectRoot, absoluteReportPath)),
     title: titleLine.replace(/^#\s+/, '').trim(),
-    address: titleMatch ? titleMatch[1].trim() : '',
-    city: titleMatch ? titleMatch[2].trim() : '',
-    state: titleMatch ? titleMatch[3].trim() : '',
+    address: titleLocation.address,
+    city: titleLocation.city,
+    state: titleLocation.state,
     metadata: {
       date: parseHeaderField(content, 'Date'),
-      source: parseHeaderField(content, 'Source'),
-      url: parseHeaderField(content, 'URL'),
-      price: parseHeaderField(content, 'Price'),
-      bedsBaths: parseHeaderField(content, 'Beds/Baths'),
-      sqft: parseHeaderField(content, 'SqFt'),
-      lot: parseHeaderField(content, 'Lot'),
-      yearBuilt: parseHeaderField(content, 'Year Built'),
-      hoa: parseHeaderField(content, 'HOA'),
-      daysOnMarket: parseHeaderField(content, 'Days on Market'),
-      overallScore: parseHeaderField(content, 'Overall Score'),
+      source,
+      url: parseHeaderField(content, 'URL') || sourceUrl,
+      price: parseHeaderField(content, 'Price') || parseTableField(content, ['Price', 'List price', 'List Price']),
+      bedsBaths: parseCombinedBedsBaths(content),
+      sqft: parseHeaderField(content, 'SqFt') || parseTableField(content, ['SqFt', 'Finished SqFt', 'Finished Sqft', 'Square Feet']),
+      lot: parseHeaderField(content, 'Lot') || parseTableField(content, ['Lot', 'Lot size', 'Lot Size']),
+      yearBuilt: parseHeaderField(content, 'Year Built') || parseTableField(content, ['Year Built', 'Built']),
+      hoa: parseHeaderField(content, 'HOA') || parseTableField(content, ['HOA', 'HOA monthly', 'HOA Monthly']),
+      daysOnMarket: parseHeaderField(content, 'Days on Market') || parseTableField(content, ['Days on Market', 'DOM']),
+      overallScore: parseOverallScore(content),
       recommendation: parseHeaderField(content, 'Recommendation'),
       confidence: parseHeaderField(content, 'Confidence'),
       verification: parseHeaderField(content, 'Verification'),
     },
-    scoreNumber: parseScoreNumber(parseHeaderField(content, 'Overall Score')),
+    scoreNumber: parseScoreNumber(parseOverallScore(content)),
     sections,
     content,
   };
@@ -353,7 +442,19 @@ export function extractSchoolNames(report) {
   ].filter(Boolean).join('\n');
 
   const regex = /\b([A-Z][A-Za-z0-9.'&-]*(?:\s+[A-Z][A-Za-z0-9.'&-]*)*\s(?:Elementary|Middle|High|Academy|School))\b/g;
-  return dedupeStrings(Array.from(schoolText.matchAll(regex), (match) => match[1]));
+  const names = dedupeStrings(Array.from(schoolText.matchAll(regex), (match) => match[1]))
+    .filter((name) => {
+      const value = name.toLowerCase();
+      if (/\b(elementary|middle|high|academy)\b/.test(value)) return true;
+      if (/\b(public|county|district|system|assigned|magnet|charter)\b/.test(value)) return false;
+      return true;
+    });
+  const nameSet = new Set(names.map((name) => name.toLowerCase()));
+  return names.filter((name) => {
+    const value = name.toLowerCase();
+    if (/\bschool$/.test(value)) return true;
+    return !nameSet.has(`${value} school`);
+  });
 }
 
 export function extractSubdivisionHints(report) {
@@ -572,20 +673,6 @@ function buildSentimentSearchUrls(key, source, queries) {
   const urls = [];
   const encodedQueries = queries.map((query) => encodeURIComponent(query));
 
-  if (key === 'reddit') {
-    const subreddits = Array.isArray(source?.subreddits) ? source.subreddits : [];
-    for (const subreddit of subreddits) {
-      const clean = String(subreddit).replace(/^r\//i, '').trim();
-      if (!clean) continue;
-      for (const encoded of encodedQueries.slice(0, 3)) {
-        urls.push(`https://www.reddit.com/r/${clean}/search/?q=${encoded}&restrict_sr=1&sort=new`);
-      }
-    }
-    for (const encoded of encodedQueries.slice(0, 2)) {
-      urls.push(`https://www.reddit.com/search/?q=${encoded}&sort=new`);
-    }
-  }
-
   if (key === 'google_maps') {
     for (const encoded of encodedQueries.slice(0, 3)) {
       urls.push(`https://www.google.com/maps/search/${encoded}`);
@@ -615,10 +702,9 @@ export function buildSentimentSourcePlan(report, context) {
         lookbackDays: Number.isFinite(source.lookback_days) ? source.lookback_days : null,
         // Facebook and Nextdoor require login and are reached via Playwright
         // against the hosted session via communityUrls from community-lookup.
-        // Reddit and Google Maps are public and reachable via WebFetch, so
-        // only those sources expose searchUrls directly.
+        // Google Maps is public and can expose searchUrls directly.
         browserSupported: key === 'facebook' || key === 'nextdoor',
-        publicFetchSupported: key === 'reddit' || key === 'google_maps',
+        publicFetchSupported: key === 'google_maps',
         searchUrls: buildSentimentSearchUrls(key, source, recommendedQueries),
         recommendedQueries,
       };

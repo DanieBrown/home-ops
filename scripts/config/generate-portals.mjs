@@ -272,7 +272,7 @@ function buildPlatforms(areas, registryIndex, warnings, selection) {
   return platforms;
 }
 
-const DEFAULT_SENTIMENT_SELECTION = { reddit: true, nextdoor: true, facebook: true, google_maps: true, twitter: false };
+const DEFAULT_SENTIMENT_SELECTION = { nextdoor: true, facebook: true, google_maps: true, twitter: false };
 const DEFAULT_SCHOOL_SELECTION = { greatschools: true, niche: true, state_report_cards: true, schooldigger: false };
 const DEFAULT_DEVELOPMENT_SELECTION = { state_dot: true, county_planning: true, municipal_planning: true, mpo: false };
 
@@ -333,12 +333,6 @@ function buildResearchSources(areas, profile) {
   }
 
   const sentimentSources = {};
-  if (sentimentSelection.reddit) {
-    sentimentSources.reddit = {
-      subreddits: defaults?.reddit_subreddits ?? ['r/RealEstate'],
-      login_required: false,
-    };
-  }
   if (sentimentSelection.google_maps) {
     sentimentSources.google_maps = {
       login_required: false,

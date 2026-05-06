@@ -1,5 +1,5 @@
 ---
-description: "Use during /home-ops deep runs to interpret pre-captured school-metadata JSON sidecars (GreatSchools assignments + per-school metrics) into a structured per-home schools object. Reads JSON-first; may re-run the school metadata capture script against the user's established browser session when a sidecar is missing. Never uses WebFetch or WebSearch."
+description: "Use during /home-ops deep runs to interpret pre-captured school-metadata JSON sidecars (district/listing assignments plus per-school metrics) into a structured per-home schools object. Reads JSON-first; may re-run the school metadata capture script against the user's established browser session when a sidecar is missing. Never uses WebFetch or WebSearch."
 name: "Schools Axis"
 tools: ['read/*', 'grep/*', 'glob/*', 'bash/*']
 agents: []

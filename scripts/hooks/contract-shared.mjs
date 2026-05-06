@@ -133,7 +133,7 @@ const CONTRACTS = {
         /deep-single-final-runner\.mjs\b/,
         /npm(?:\.cmd)?\s+run\s+deep:single-final\b/,
       ], { requires: ['community-lookup-single'] }),
-      req('sentiment-public-extract-single', 'Single-home public sentiment — Reddit/Google Maps', [
+      req('sentiment-public-extract-single', 'Single-home public sentiment — Google Maps', [
         /sentiment-public-extract\.mjs\b/,
         /deep-single-final-runner\.mjs\b/,
         /npm(?:\.cmd)?\s+run\s+deep:single-final\b/,
@@ -202,7 +202,7 @@ const CONTRACTS = {
         /construction-check\.mjs[^\n]*--shortlist/,
         /npm(?:\.cmd)?\s+run\s+check:construction[^\n]*--shortlist/,
       ], { requires: ['research-audit'], isGate: true }),
-      req('sentiment-public-extract', 'Shortlist public sentiment — Reddit/Google Maps/traffic_commute (fan-out 6e)', [
+      req('sentiment-public-extract', 'Shortlist public sentiment — Google Maps/traffic_commute (fan-out 6e)', [
         /sentiment-public-extract\.mjs[^\n]*--shortlist/,
       ], { requires: ['research-audit'], isGate: true }),
       req('deep-research-packet', 'Deep research packets per shortlisted home', [

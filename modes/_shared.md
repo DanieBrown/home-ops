@@ -154,10 +154,9 @@ Use the configured weights from `config/profile.yml`.
 | Community | 27% | Neighbor quality, family friendliness, upkeep, neighborhood cohesion |
 | Livability | 22% | Parks, groceries, healthcare, noise, recreation, day-to-day comfort |
 
-Facebook and Nextdoor extractions only populate Crime/Safety, Community, and Livability. Traffic/Commute is sourced from Reddit, Google Maps, and the NCDOT construction check. School quality is no longer a sentiment dimension -- it is captured as metadata (see the School Metadata section below).
+Facebook and Nextdoor extractions only populate Crime/Safety, Community, and Livability. Traffic/Commute is sourced from Google Maps and the NCDOT construction check. School quality is no longer a sentiment dimension -- it is captured as metadata (see the School Metadata section below).
 
 Preferred sources:
-- Reddit communities focused on the Triangle and Raleigh area
 - Google Maps and Google Reviews for subdivision or nearby anchor businesses
 - Local news outlets such as WRAL, ABC11, and News & Observer
 - Facebook neighborhood groups and Nextdoor feeds when logged in and accessible through the hosted browser session
@@ -178,16 +177,17 @@ Schools are surfaced as a metadata table in the final PDF report, not as a weigh
 
 | Field | Source |
 |-------|--------|
-| Name and grade level | Listing page (Redfin / Zillow) as primary, GreatSchools as verification |
+| Name and grade level | Listing page or district assignment lookup as primary, GreatSchools as verification |
 | GreatSchools rating (1-10) | GreatSchools |
 | State report-card rating, if available | State report card source configured in `research_sources.schools` |
 | Total enrollment | GreatSchools |
 | Student / teacher ratio | GreatSchools |
 | Ethnicity distribution (percent by group) | GreatSchools |
-| Direct link | GreatSchools URL |
+| Direct link | Listing, district assignment, or GreatSchools URL used for that school |
 
 Rules:
 - The hard-requirement gate still enforces `schools_min_rating`. A school below threshold caps the composite score per the Score Caps rules.
+- Do not let a GreatSchools address-search miss block the rest of school research. If listing-sourced or district-sourced assigned school names are available, pass those names to the metadata fetch/crawl4ai stage and record GreatSchools as a checked-but-missing verification source.
 - Quote actual ratings and percentages directly. Do not paraphrase.
 - If a field cannot be captured, show `--` and note the source status in the report rather than inventing values.
 

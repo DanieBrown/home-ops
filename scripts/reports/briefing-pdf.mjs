@@ -28,13 +28,15 @@ const DEFAULT_PROFILE = 'chrome-host';
 const OUTPUT_DIR = join(ROOT, 'output', 'briefings');
 const SENTIMENT_DIR = join(ROOT, 'output', 'sentiment');
 const CONSTRUCTION_DIR = join(ROOT, 'output', 'construction');
+const PERMITS_DIR = join(ROOT, 'output', 'permits');
 const COMMUNITY_DIR = join(ROOT, 'output', 'communities');
 const DEEP_PACKET_DIR = join(ROOT, 'output', 'deep-packets');
 const SCHOOL_METADATA_DIR = join(ROOT, 'output', 'school-metadata');
+const LISTING_DIR = join(ROOT, 'output', 'listings');
 
 const HELP_TEXT = `Usage:
   node briefing-pdf.mjs [--profile chrome-host] [--no-open]
-  node briefing-pdf.mjs --report reports/{slug}-deep-{date}.md [--profile chrome-host] [--no-open]
+  node briefing-pdf.mjs --report reports/{N}-{slug}-{date}.md [--profile chrome-host] [--no-open]
   node briefing-pdf.mjs --reports reports/a-deep-{date}.md,reports/b-deep-{date}.md [--profile chrome-host] [--no-open]
 
 Modes:
@@ -43,8 +45,8 @@ Modes:
            top 3 from data/shortlist.md. Cover + TOC + rank badges.
 
   single   (--report <path>) renders a single-home briefing PDF under
-           output/briefings/{slug}-deep-{date}.pdf using the deep brief at
-           <path>. No cover, no TOC, no rank badge.
+           output/briefings/{slug}-deep-{date}.pdf using the canonical
+           single-home report at <path>. No cover, no TOC, no rank badge.
 
   combined (--reports a.md,b.md,...) renders one combined PDF covering N
            homes from URL-based deep runs, output at
@@ -102,6 +104,10 @@ function readJsonIfExists(filePath) {
   } catch {
     return null;
   }
+}
+
+function firstNonEmpty(...values) {
+  return values.find((value) => String(value ?? '').trim()) ?? '';
 }
 
 function findCompanionJson(target, dir) {
@@ -322,21 +328,29 @@ function classifyFitStatus(report, profile) {
   return items;
 }
 
-function buildFitNarrative(report, profile) {
+function buildQuickFitPanel(report, profile, quickTakeText, propertyText) {
   const items = classifyFitStatus(report, profile);
-  if (items.length === 0) return '';
-
-  const rows = items.slice(0, 8).map((item) => `
+  const rows = items.slice(0, 6).map((item) => `
     <li class="fit-row fit-${escapeHtml(item.status)}">
       <span class="fit-mark" aria-hidden="true">${item.status === 'match' ? '&#10003;' : '!'}</span>
       <span class="fit-label">${escapeHtml(item.label)}</span>
     </li>
   `).join('');
+  const summary = firstNonEmpty(
+    summarizeSection(quickTakeText, 650),
+    summarizeSection(propertyText, 650),
+    'No quick-take narrative was captured for this listing.',
+  );
+  const propertyDetail = propertyText && propertyText !== quickTakeText
+    ? `<p class="muted">${escapeHtml(summarizeSection(propertyText, 420))}</p>`
+    : '';
 
   return `
-    <div class="card fit wide">
-      <h3>Why this fits</h3>
-      <ul class="fit-list">${rows}</ul>
+    <div class="panel fit quick-fit wide">
+      <h3>Quick Take &amp; Property Fit</h3>
+      <p>${escapeHtml(summary)}</p>
+      ${propertyDetail}
+      ${rows ? `<ul class="fit-list">${rows}</ul>` : ''}
     </div>
   `;
 }
@@ -347,6 +361,9 @@ function buildGapList(report, finalist, profile) {
   if (!finalist.construction) {
     gaps.push('Construction and road-project pressure has not been captured yet.');
   }
+  if (!finalist.permits) {
+    gaps.push('County permits and development cases within the 5-mile radius have not been captured yet.');
+  }
   if (!finalist.sentiment) {
     gaps.push('Neighborhood sentiment from Facebook and Nextdoor has not been pulled yet.');
   }
@@ -355,6 +372,9 @@ function buildGapList(report, finalist, profile) {
   }
   if (finalist.constructionMismatch) {
     gaps.push(finalist.constructionMismatch);
+  }
+  if (finalist.permitsMismatch) {
+    gaps.push(finalist.permitsMismatch);
   }
   if (finalist.packetMismatch) {
     gaps.push(finalist.packetMismatch);
@@ -399,6 +419,147 @@ function buildMapsUrl(address, city, state) {
 function buildDirectionsUrl(origin, destination) {
   if (!origin || !destination) return '';
   return `https://www.google.com/maps/dir/?api=1&travelmode=driving&origin=${encodeURIComponent(origin)}&destination=${encodeURIComponent(destination)}`;
+}
+
+function formatNumber(value) {
+  const numeric = typeof value === 'number' ? value : Number(String(value ?? '').replace(/[^0-9.\-]/g, ''));
+  return Number.isFinite(numeric) ? numeric.toLocaleString() : '';
+}
+
+function formatListingMoney(value) {
+  const numeric = typeof value === 'number' ? value : Number(String(value ?? '').replace(/[^0-9.\-]/g, ''));
+  return Number.isFinite(numeric) ? `$${numeric.toLocaleString()}` : '';
+}
+
+function loadListingFacts(report) {
+  const payload = findCompanionJson(report, LISTING_DIR);
+  if (!payload || !companionMatchesReport(payload, report)) return null;
+  return payload;
+}
+
+function normalizeUrl(value) {
+  const trimmed = String(value ?? '').trim();
+  if (!trimmed || trimmed === '#') return '';
+  if (/^https?:\/\//i.test(trimmed) || /^file:\/\//i.test(trimmed)) return trimmed;
+  return '';
+}
+
+function sourceLabelFromUrl(url) {
+  try {
+    const parsed = new URL(url);
+    return parsed.hostname.replace(/^www\./, '');
+  } catch {
+    return 'Source';
+  }
+}
+
+function addSourceLink(target, label, url, status = '') {
+  const cleanUrl = normalizeUrl(url);
+  if (!cleanUrl) return;
+  const key = cleanUrl.toLowerCase();
+  if (target.seen.has(key)) return;
+  target.seen.add(key);
+  target.links.push({
+    label: String(label || sourceLabelFromUrl(cleanUrl)).trim(),
+    url: cleanUrl,
+    status: String(status ?? '').trim(),
+  });
+}
+
+function collectSourceLinks(finalist) {
+  const report = finalist.report;
+  const collector = { seen: new Set(), links: [] };
+  addSourceLink(collector, 'Listing source', report.metadata.url);
+
+  const schoolMetadata = loadSchoolMetadata(report);
+  for (const source of schoolMetadata?.sourcesChecked ?? []) {
+    addSourceLink(collector, source.name || 'School source', source.url || source.assignmentUrl || source.searchUrl || source.baseUrl, source.status);
+    addSourceLink(collector, `${source.name || 'School source'} search`, source.searchUrl, source.status);
+    addSourceLink(collector, `${source.name || 'School source'} assignment`, source.assignmentUrl, source.status);
+  }
+  for (const school of schoolMetadata?.schools ?? []) {
+    addSourceLink(collector, school.name || 'School page', school.url, school.source || school.assignmentSource);
+  }
+  for (const school of schoolMetadata?.assignedSchools ?? []) {
+    addSourceLink(collector, school.name || 'Assigned school', school.url, school.source || school.assignmentSource);
+  }
+
+  for (const source of finalist.construction?.sourcesChecked ?? []) {
+    addSourceLink(collector, source.name || 'Construction source', source.url, source.ok === false ? 'unreachable' : 'checked');
+  }
+  for (const source of finalist.permits?.sourcesChecked ?? []) {
+    addSourceLink(collector, source.name || source.service || 'Permit source', source.url, source.ok === false ? 'unreachable' : 'checked');
+  }
+
+  for (const source of finalist.sentiment?.sourceCoverage ?? []) {
+    addSourceLink(collector, source.name || source.key || 'Sentiment source', source.url, source.status);
+  }
+
+  const sourcePlans = finalist.packet?.sourcePlans ?? {};
+  for (const plan of Object.values(sourcePlans)) {
+    for (const entry of plan?.entries ?? []) {
+      addSourceLink(collector, entry.name || entry.key || 'Planned source', entry.url, entry.captureStatus || entry.reviewStatus);
+      for (const searchUrl of entry.searchUrls ?? []) {
+        addSourceLink(collector, `${entry.name || entry.key || 'Search'} query`, searchUrl, entry.captureStatus || entry.reviewStatus);
+      }
+    }
+  }
+
+  for (const [key, url] of Object.entries(finalist.packet?.communityUrls ?? {})) {
+    addSourceLink(collector, `${key} community URL`, url, 'planned');
+  }
+
+  return collector.links;
+}
+
+function buildFactsCard(finalist) {
+  const report = finalist.report;
+  const listing = finalist.listing;
+  const facts = [
+    ['Price', firstNonEmpty(report.metadata.price, formatListingMoney(listing?.price))],
+    ['Beds / Baths', firstNonEmpty(report.metadata.bedsBaths, listing?.beds || listing?.baths ? `${listing?.beds ?? '--'}/${listing?.baths ?? '--'}` : '')],
+    ['SqFt', firstNonEmpty(report.metadata.sqft, formatNumber(listing?.sqftFinished))],
+    ['Lot', firstNonEmpty(report.metadata.lot, formatNumber(listing?.lotSqft) ? `${formatNumber(listing?.lotSqft)} sqft` : '')],
+    ['Year Built', firstNonEmpty(report.metadata.yearBuilt, listing?.yearBuilt)],
+    ['Garage', listing?.garage ? `${listing.garage} spaces` : ''],
+    ['HOA', firstNonEmpty(report.metadata.hoa, listing?.hoaMonthly != null ? `$${listing.hoaMonthly}/mo` : '')],
+    ['DOM', firstNonEmpty(report.metadata.daysOnMarket, listing?.daysOnMarket != null ? `${listing.daysOnMarket} days` : '')],
+    ['Status', firstNonEmpty(report.metadata.verification, listing?.listingStatus)],
+    ['MLS', listing?.mls || ''],
+  ].filter(([, value]) => String(value ?? '').trim());
+
+  const rows = facts.map(([label, value]) => `
+    <tr>
+      <th>${escapeHtml(label)}</th>
+      <td>${escapeHtml(value)}</td>
+    </tr>
+  `).join('');
+
+  return `
+    <div class="panel facts">
+      <h3>Listing Snapshot</h3>
+      <table>${rows || '<tr><td class="muted">No structured facts captured.</td></tr>'}</table>
+    </div>`;
+}
+
+function buildSourceLedger(finalist) {
+  const links = collectSourceLinks(finalist);
+  if (links.length === 0) return '';
+  const rows = links.map((entry) => `
+    <tr>
+      <td>${escapeHtml(entry.label)}</td>
+      <td>${entry.status ? escapeHtml(entry.status) : '<span class="muted">checked</span>'}</td>
+      <td><a href="${escapeHtml(entry.url)}">${escapeHtml(entry.url)}</a></td>
+    </tr>
+  `).join('');
+  return `
+    <div class="panel wide sources">
+      <h3>Sources Checked</h3>
+      <table>
+        <thead><tr><th>Source</th><th>Status</th><th>URL</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>`;
 }
 
 function resolveCommuteDestinationAddress(dest) {
@@ -493,47 +654,105 @@ function buildCoverToc(finalists) {
 }
 
 function buildConstructionBlurb(construction) {
-  if (!construction) {
-    return `
-      <div class="card wide construction unreviewed">
-        <h3>Construction Pressure</h3>
-        <p class="muted">Not yet captured. Flagged in the research gaps below so it can be filled in before you decide.</p>
-      </div>`;
-  }
+  return buildDevelopmentInfrastructureSection({ construction });
+}
 
-  const reachableSources = (construction.sourcesChecked ?? []).filter((entry) => entry?.ok);
-  const resourceList = reachableSources.length > 0
-    ? `<ul class="resource-list">${reachableSources.map((entry) => `
-        <li><a href="${escapeHtml(entry.url)}">${escapeHtml(entry.url)}</a></li>
-      `).join('')}</ul>`
-    : '<p class="muted">No resources were reachable during the last check.</p>';
+function statusTone(level) {
+  const normalized = String(level || '').toLowerCase();
+  if (normalized === 'high') return 'risk-high';
+  if (normalized === 'moderate') return 'risk-med';
+  if (normalized === 'low') return 'risk-low';
+  if (normalized === 'none') return 'risk-none';
+  return 'risk-unknown';
+}
 
-  const level = String(construction.level || 'unknown').toLowerCase();
-  const pressure = Number(construction.constructionPressure);
-  const active = Number(construction.phaseTotals?.active ?? 0);
-  const matches = Number(construction.matches?.length ?? 0);
+function milesFromMeters(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return '';
+  return `${(numeric / 1609.344).toFixed(1)} mi`;
+}
 
-  let findings;
-  if (!construction.reviewed) {
-    findings = 'the public project index pages were unreachable during this run, so the result is inconclusive rather than clear.';
-  } else if (level === 'none' || (matches === 0 && pressure === 0)) {
-    findings = 'no active or planned road projects appear to be near this home, so construction pressure looks minimal for now.';
-  } else if (level === 'low') {
-    findings = `there is some nearby project activity (${matches} snippet${matches === 1 ? '' : 's'} matched, ${active} active-phase hit${active === 1 ? '' : 's'}), but nothing that looks likely to meaningfully affect this home.`;
-  } else if (level === 'moderate') {
-    findings = `there is moderate construction activity in the surrounding area (${matches} snippet${matches === 1 ? '' : 's'} matched, ${active} active-phase hit${active === 1 ? '' : 's'}); worth checking whether any of those projects sit on your immediate commute or frontage.`;
-  } else if (level === 'high') {
-    findings = `there is heavy construction pressure in the surrounding area (${matches} snippet${matches === 1 ? '' : 's'} matched, ${active} active-phase hit${active === 1 ? '' : 's'}); read through the matched projects before deciding, since this is the kind of level that can affect traffic, noise, or resale.`;
+function formatPermitMatch(match) {
+  const label = firstNonEmpty(match.subdivisionName, match.description, match.caseId, match.kind, 'Permit / case');
+  const bits = [
+    match.phase ? `phase ${match.phase}` : '',
+    match.status ? `status ${match.status}` : '',
+    match.proposedLots ? `${match.proposedLots} lots` : '',
+    match.acres ? `${match.acres} acres` : '',
+  ].filter(Boolean);
+  return `${label}${bits.length ? ` (${bits.join('; ')})` : ''}`;
+}
+
+function buildDevelopmentInfrastructureSection({ construction, permits, developmentText = '' }) {
+  const constructionLevel = String(construction?.level || 'unknown').toLowerCase();
+  const permitLevel = String(permits?.level || 'unknown').toLowerCase();
+  const constructionMatches = Number(construction?.matches?.length ?? 0);
+  const permitMatches = Number(permits?.matchCount ?? permits?.matches?.length ?? 0);
+  const radius = permits?.radiusMeters ? milesFromMeters(permits.radiusMeters) : '5.0 mi';
+  const reviewedConstruction = Boolean(construction?.reviewed);
+  const permitSourcesReachable = (permits?.sourcesChecked ?? []).some((source) => source?.ok);
+  const reviewedPermits = permits?.status === 'reviewed' && permitSourcesReachable;
+
+  const summaryParts = [];
+  if (reviewedPermits) {
+    summaryParts.push(`${permitMatches} county permit/development case${permitMatches === 1 ? '' : 's'} found within ${radius}.`);
+  } else if (permits) {
+    const sourceError = (permits.sourcesChecked ?? []).find((source) => source?.error)?.error;
+    summaryParts.push(`County permit search did not complete cleanly (${sourceError || permits.status || 'unknown'}).`);
   } else {
-    findings = `the review was completed but returned no strong signal either way (${matches} snippet${matches === 1 ? '' : 's'} matched).`;
+    summaryParts.push('County permit search has not been captured yet.');
   }
+
+  if (reviewedConstruction) {
+    summaryParts.push(`${constructionMatches} NCDOT/STIP project snippet${constructionMatches === 1 ? '' : 's'} matched the home area/city signals.`);
+  } else if (construction) {
+    summaryParts.push('NCDOT/STIP construction review was inconclusive.');
+  } else {
+    summaryParts.push('NCDOT/STIP construction review has not been captured yet.');
+  }
+
+  const keyItems = [
+    { label: 'County permits', value: reviewedPermits ? `${permitLevel} pressure` : 'not reviewed', tone: statusTone(reviewedPermits ? permitLevel : 'unknown') },
+    { label: 'Road projects', value: reviewedConstruction ? `${constructionLevel} pressure` : 'not reviewed', tone: statusTone(reviewedConstruction ? constructionLevel : 'unknown') },
+    { label: 'Search radius', value: radius, tone: 'risk-info' },
+    { label: 'Lookahead', value: '10-year STIP + recent county cases', tone: 'risk-info' },
+  ].map((item) => `
+    <div class="risk-key ${item.tone}">
+      <span>${escapeHtml(item.label)}</span>
+      <strong>${escapeHtml(item.value)}</strong>
+    </div>`).join('');
+
+  const permitRows = (permits?.matches ?? []).slice(0, 4).map((match) => `
+    <li>${escapeHtml(formatPermitMatch(match))}</li>
+  `).join('');
+  const constructionRows = (construction?.matches ?? []).slice(0, 4).map((match) => `
+    <li>${escapeHtml(firstNonEmpty(match.needle, 'Project signal'))}: ${escapeHtml(summarizeSection(match.snippet, 220))}</li>
+  `).join('');
+
+  const sourceRows = [
+    ...(permits?.sourcesChecked ?? []).map((source) => ({ label: source.name || source.service || 'County source', url: source.url, ok: source.ok })),
+    ...(construction?.sourcesChecked ?? []).map((source) => ({ label: source.name || 'NCDOT/STIP source', url: source.url, ok: source.ok })),
+  ].slice(0, 6).map((source) => `
+    <li>${source.ok === false ? '<span class="source-dot bad"></span>' : '<span class="source-dot good"></span>'}<a href="${escapeHtml(source.url)}">${escapeHtml(source.label)}</a></li>
+  `).join('');
 
   return `
-    <div class="card wide construction">
-      <h3>Construction Pressure</h3>
-      <p>After reviewing the following resources:</p>
-      ${resourceList}
-      <p>${escapeHtml(findings.charAt(0).toUpperCase() + findings.slice(1))}</p>
+    <div class="panel wide infrastructure">
+      <h3>Permits, Development &amp; Infrastructure</h3>
+      <div class="risk-key-grid">${keyItems}</div>
+      <p>${escapeHtml(summaryParts.join(' '))}</p>
+      ${developmentText ? `<p class="muted">${escapeHtml(summarizeSection(developmentText, 520))}</p>` : ''}
+      <div class="infra-columns">
+        <div>
+          <h4>Permit / Development Cases</h4>
+          <ul>${permitRows || '<li class="muted">No county permit or subdivision cases captured within the current radius.</li>'}</ul>
+        </div>
+        <div>
+          <h4>Road / Infrastructure Signals</h4>
+          <ul>${constructionRows || '<li class="muted">No matched NCDOT/STIP project snippets captured for this home.</li>'}</ul>
+        </div>
+      </div>
+      ${sourceRows ? `<ul class="resource-list compact">${sourceRows}</ul>` : ''}
     </div>`;
 }
 
@@ -633,6 +852,74 @@ function formatEthnicityDistribution(distribution) {
   return entries.length ? entries.join('<br>') : '--';
 }
 
+function numericPercent(value) {
+  if (value === null || value === undefined || value === '') return null;
+  const numeric = Number(String(value).replace(/[^0-9.]+/g, ''));
+  return Number.isFinite(numeric) ? numeric : null;
+}
+
+function ethnicityEntries(distribution) {
+  if (!distribution || typeof distribution !== 'object') return [];
+  return Object.entries(distribution)
+    .map(([group, value]) => ({
+      group: group.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()),
+      percent: numericPercent(value),
+    }))
+    .filter((entry) => entry.percent !== null && entry.percent > 0)
+    .sort((a, b) => b.percent - a.percent);
+}
+
+function formatEthnicitySummary(distribution) {
+  const entries = ethnicityEntries(distribution).slice(0, 2);
+  if (entries.length === 0) return '--';
+  return entries.map((entry) => `${escapeHtml(entry.group)} ${entry.percent}%`).join('<br>');
+}
+
+function ethnicityColor(group, index) {
+  const key = String(group ?? '').toLowerCase();
+  if (/white/.test(key)) return '#2563eb';
+  if (/hispanic|latino/.test(key)) return '#16a34a';
+  if (/african|black/.test(key)) return '#7c3aed';
+  if (/asian/.test(key)) return '#0891b2';
+  if (/two|multi/.test(key)) return '#d97706';
+  if (/native|american indian|alaska/.test(key)) return '#be123c';
+  if (/pacific/.test(key)) return '#0f766e';
+  const palette = ['#475569', '#9333ea', '#0284c7', '#ca8a04'];
+  return palette[index % palette.length];
+}
+
+function buildEthnicityBars(schoolRows) {
+  const cards = schoolRows
+    .map((school) => {
+      const entries = ethnicityEntries(school.ethnicityDistribution);
+      if (entries.length === 0) return '';
+      const bars = entries.map((entry, index) => {
+        const width = Math.max(2, Math.min(100, entry.percent));
+        return `
+          <div class="ethnicity-row">
+            <div class="ethnicity-label">${escapeHtml(entry.group)}</div>
+            <div class="ethnicity-track">
+              <div class="ethnicity-fill" style="width:${width}%;background:${ethnicityColor(entry.group, index)}"></div>
+            </div>
+            <div class="ethnicity-value">${escapeHtml(String(entry.percent))}%</div>
+          </div>`;
+      }).join('');
+      return `
+        <div class="ethnicity-card">
+          <h4>${escapeHtml(school.name ?? 'School')}</h4>
+          ${bars}
+        </div>`;
+    })
+    .filter(Boolean)
+    .join('');
+  if (!cards) return '';
+  return `
+    <div class="ethnicity-breakdown">
+      <h4>Ethnicity Distribution</h4>
+      <div class="ethnicity-grid">${cards}</div>
+    </div>`;
+}
+
 function formatSchoolField(value) {
   if (value === null || value === undefined || value === '') return '--';
   return escapeHtml(String(value));
@@ -661,51 +948,255 @@ function formatSubGrades(subGrades) {
   return parts.length ? escapeHtml(parts.join(' · ')) : '--';
 }
 
+function formatGreatSchoolsSubratings(subratings) {
+  if (!subratings || typeof subratings !== 'object') return '--';
+  const labels = {
+    testScores: 'Test',
+    studentProgress: 'Progress',
+    collegeReadiness: 'College',
+    equity: 'Equity',
+  };
+  const parts = Object.entries(subratings)
+    .filter(([, value]) => value !== null && value !== undefined && value !== '')
+    .map(([key, value]) => `${labels[key] ?? key}: ${value}`);
+  return parts.length ? escapeHtml(parts.join(' · ')) : '--';
+}
+
+function schoolSourceLabel(school) {
+  const source = String(school.source || school.assignmentSource || school.provider || school.metadataSource || '').trim();
+  if (!source) return '--';
+  if (source.toLowerCase() === 'wcpss') return 'WCPSS';
+  if (/niche/i.test(source)) return 'Niche';
+  if (/greatschools/i.test(source)) return 'GreatSchools';
+  return source;
+}
+
+function schoolRatingCell(school) {
+  if (school.rating != null) return `${escapeHtml(String(school.rating))}/10`;
+  if (school.greatSchoolsRating != null) return `${escapeHtml(String(school.greatSchoolsRating))}/10`;
+  if (school.nicheGrade?.letter) return formatNicheGrade(school.nicheGrade);
+  return '--';
+}
+
+function normalizeSchoolKeyForPdf(value) {
+  return String(value ?? '')
+    .toLowerCase()
+    .replace(/\bschool\b/g, '')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
+function normalizeSchoolLevelForPdf(...values) {
+  for (const value of values) {
+    const text = String(value ?? '').toLowerCase();
+    if (/elementary|\bpk\b|\bk\b|k-?5|primary|\be\b/.test(text)) return 'elementary';
+    if (/middle|junior|6-?8|\bm\b/.test(text)) return 'middle';
+    if (/\bhigh\b|9-?12|\bh\b/.test(text)) return 'high';
+  }
+  return '';
+}
+
+function mergeSchoolRowsForPdf(metadata) {
+  if (!metadata) return [];
+  if (Array.isArray(metadata.standardizedSchools) && metadata.standardizedSchools.length > 0) {
+    return metadata.standardizedSchools;
+  }
+
+  const assigned = Array.isArray(metadata.assignedSchools) ? metadata.assignedSchools : [];
+  const enriched = Array.isArray(metadata.schools) ? metadata.schools : [];
+  const enrichedByName = new Map();
+  for (const school of enriched) {
+    const key = normalizeSchoolKeyForPdf(school?.name);
+    if (key && !enrichedByName.has(key)) enrichedByName.set(key, school);
+  }
+
+  const baseRows = assigned.length > 0 ? assigned : enriched;
+  const seen = new Set();
+  const rows = [];
+  for (const base of baseRows) {
+    const key = normalizeSchoolKeyForPdf(base?.name);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    const school = assigned.length > 0 ? (enrichedByName.get(key) ?? {}) : base;
+    rows.push({
+      name: base.name || school.name,
+      level: normalizeSchoolLevelForPdf(base.level, base.gradeLevel, school.gradeLevel, base.name, school.name),
+      gradeLevel: school.gradeLevel || base.gradeLevel || base.level || '',
+      assignmentSource: base.assignmentSource || base.source || '',
+      assignmentUrl: base.url || '',
+      district: base.district || '',
+      calendar: base.calendar || '',
+      capStatus: base.capStatus || '',
+      transportation: base.transportation || '',
+      rating: base.rating ?? school.greatSchoolsRating ?? null,
+      ratingSource: base.rating != null ? (base.source || base.assignmentSource || '') : (school.greatSchoolsRating != null ? 'GreatSchools' : ''),
+      greatSchoolsRatingScale: school.greatSchoolsRatingScale || null,
+      greatSchoolsSubratings: school.greatSchoolsSubratings || null,
+      nicheGrade: school.nicheGrade || null,
+      enrollment: school.enrollment ?? base.enrollment ?? null,
+      studentTeacherRatio: school.studentTeacherRatio ?? base.studentTeacherRatio ?? null,
+      percentProficient: school.percentProficient || null,
+      ethnicityDistribution: school.ethnicityDistribution ?? base.ethnicityDistribution ?? null,
+      metadataSource: school.source || school.provider || '',
+      metadataUrl: school.url || '',
+      metadataStatus: school.captureStatus || base.fetchStatus || '',
+    });
+  }
+
+  for (const school of enriched) {
+    const key = normalizeSchoolKeyForPdf(school?.name);
+    if (!key || seen.has(key)) continue;
+    rows.push({
+      name: school.name,
+      level: normalizeSchoolLevelForPdf(school.gradeLevel, school.name),
+      gradeLevel: school.gradeLevel || '',
+      assignmentSource: '',
+      assignmentUrl: '',
+      district: '',
+      calendar: '',
+      capStatus: '',
+      transportation: '',
+      rating: school.greatSchoolsRating ?? null,
+      ratingSource: school.greatSchoolsRating != null ? 'GreatSchools' : '',
+      greatSchoolsRatingScale: school.greatSchoolsRatingScale || null,
+      greatSchoolsSubratings: school.greatSchoolsSubratings || null,
+      nicheGrade: school.nicheGrade || null,
+      enrollment: school.enrollment ?? null,
+      studentTeacherRatio: school.studentTeacherRatio ?? null,
+      percentProficient: school.percentProficient || null,
+      ethnicityDistribution: school.ethnicityDistribution || null,
+      metadataSource: school.source || school.provider || '',
+      metadataUrl: school.url || '',
+      metadataStatus: school.captureStatus || '',
+    });
+  }
+  return rows;
+}
+
+function parseSchoolRowsFromReport(report) {
+  const section = report.sections['School Review'] ?? '';
+  const rows = [];
+  for (const line of section.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith('|') || /^\|\s*:?-{2,}/.test(trimmed)) continue;
+    const cols = trimmed.split('|').slice(1, -1).map((col) => col.trim());
+    if (cols.length < 4 || /assigned school/i.test(cols.join(' '))) continue;
+    const [level, name, source, metadataStatus, notes] = cols;
+    if (!name || /school/i.test(level) && /source/i.test(source)) continue;
+    rows.push({
+      name: name.replace(/\[[^\]]+\]\(([^)]+)\)/g, '').trim(),
+      level: normalizeSchoolLevelForPdf(level, name),
+      gradeLevel: level,
+      assignmentSource: source,
+      assignmentUrl: '',
+      calendar: notes?.match(/traditional|year-round/i)?.[0] || '',
+      capStatus: notes?.match(/not capped|capped/i)?.[0] || '',
+      rating: null,
+      ratingSource: '',
+      nicheGrade: null,
+      enrollment: null,
+      studentTeacherRatio: null,
+      percentProficient: null,
+      ethnicityDistribution: null,
+      metadataSource: '',
+      metadataUrl: '',
+      metadataStatus,
+    });
+  }
+  return rows;
+}
+
 function buildSchoolsCard(report) {
   const metadata = loadSchoolMetadata(report);
+  const schoolRows = mergeSchoolRowsForPdf(metadata);
 
-  if (metadata && Array.isArray(metadata.schools) && metadata.schools.length > 0) {
-    const rows = metadata.schools.map((school) => {
-      const nameCell = school.url
-        ? `<a href="${escapeHtml(school.url)}">${escapeHtml(school.name ?? '--')}</a>`
+  if (schoolRows.length > 0) {
+    const rows = schoolRows.map((school) => {
+      const displayUrl = school.assignmentUrl || school.metadataUrl || '';
+      const nameCell = displayUrl
+        ? `<a href="${escapeHtml(displayUrl)}">${escapeHtml(school.name ?? '--')}</a>`
         : formatSchoolField(school.name);
       const profMath = school.percentProficient?.math != null ? `${school.percentProficient.math}%` : '--';
       const profReading = school.percentProficient?.reading != null ? `${school.percentProficient.reading}%` : '--';
-      const frl = school.freeReducedLunchPct != null ? `${school.freeReducedLunchPct}%` : '--';
+      const performance = profMath === '--' && profReading === '--'
+        ? formatGreatSchoolsSubratings(school.greatSchoolsSubratings)
+        : `${profMath} / ${profReading}`;
+      const calendar = school.calendar
+        ? `${school.calendar}${school.capStatus ? `; ${school.capStatus}` : ''}`
+        : '--';
+      const assignmentSource = school.assignmentSource || schoolSourceLabel(school);
+      const enrichmentSource = school.metadataSource
+        ? `${schoolSourceLabel({ metadataSource: school.metadataSource })}${school.metadataStatus ? ` (${school.metadataStatus})` : ''}`
+        : (school.metadataStatus || '--');
       return `
         <tr>
           <td>${nameCell}</td>
-          <td>${formatSchoolField(school.gradeLevel)}</td>
-          <td class="num">${formatNicheGrade(school.nicheGrade)}</td>
-          <td class="num" style="font-size:0.72em">${formatSubGrades(school.subGrades)}</td>
+          <td>${formatSchoolField(school.level || school.gradeLevel)}</td>
+          <td>${formatSchoolField(assignmentSource)}</td>
+          <td class="num">${schoolRatingCell(school)}</td>
           <td class="num">${formatSchoolField(school.enrollment)}</td>
           <td class="num">${formatSchoolField(school.studentTeacherRatio)}</td>
-          <td class="num">${frl}</td>
-          <td class="num">${profMath} / ${profReading}</td>
-          <td>${formatEthnicityDistribution(school.ethnicityDistribution)}</td>
+          <td>${formatSchoolField(calendar)}</td>
+          <td>${formatSchoolField(enrichmentSource)}</td>
+          <td>${performance}</td>
+          <td>${formatEthnicitySummary(school.ethnicityDistribution)}</td>
         </tr>`;
     }).join('');
+    const ethnicityBars = buildEthnicityBars(schoolRows);
+
+    const sourceNames = Array.from(new Set(
+      (metadata.sourcesChecked ?? [])
+        .map((source) => source.name)
+        .filter(Boolean),
+    ));
+    const sourceNote = sourceNames.length ? `Sources: ${sourceNames.join(', ')}` : 'Sources recorded in the ledger below.';
 
     return `
-      <div class="card wide schools">
-        <h3>Schools &amp; Metadata <span class="muted" style="font-size:0.8em;font-weight:400">via Niche.com</span></h3>
+      <div class="panel wide schools">
+        <h3>Schools &amp; Metadata</h3>
         <table class="school-metadata">
           <thead>
             <tr>
               <th>School</th>
               <th>Level</th>
-              <th class="num">Grade</th>
-              <th class="num">Sub-grades</th>
+              <th>Assignment</th>
+              <th class="num">Rating / Grade</th>
               <th class="num">Enrollment</th>
               <th class="num">Stu/Tch</th>
-              <th class="num">FRL%</th>
-              <th class="num">Math/Read</th>
-              <th>Ethnicity</th>
+              <th>Calendar / Cap</th>
+              <th>Metadata</th>
+              <th>Performance</th>
+              <th>Ethnicity Summary</th>
             </tr>
           </thead>
           <tbody>${rows}</tbody>
         </table>
-        <p class="muted">FRL% = Free/Reduced Lunch; Math/Read = % proficient; Sub-grades condensed from Niche category scores.</p>
+        ${ethnicityBars}
+        <p class="muted">${escapeHtml(sourceNote)} Performance shows Math/Read proficiency when available, otherwise GreatSchools subratings.</p>
+      </div>`;
+  }
+
+  const reportRows = parseSchoolRowsFromReport(report);
+  if (reportRows.length > 0) {
+    const rows = reportRows.map((school) => `
+        <tr>
+          <td>${formatSchoolField(school.name)}</td>
+          <td>${formatSchoolField(school.level || school.gradeLevel)}</td>
+          <td>${formatSchoolField(school.assignmentSource)}</td>
+          <td class="num">--</td>
+          <td class="num">--</td>
+          <td class="num">--</td>
+          <td>${formatSchoolField([school.calendar, school.capStatus].filter(Boolean).join('; ') || '--')}</td>
+          <td>${formatSchoolField(school.metadataStatus)}</td>
+        </tr>`).join('');
+    return `
+      <div class="panel wide schools">
+        <h3>Schools &amp; Metadata</h3>
+        <table class="school-metadata">
+          <thead><tr><th>School</th><th>Level</th><th>Assignment</th><th class="num">Rating</th><th class="num">Enrollment</th><th class="num">Stu/Tch</th><th>Calendar / Cap</th><th>Metadata</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+        <p class="muted">Rendered from the report's School Review table because no structured school sidecar was available.</p>
       </div>`;
   }
 
@@ -720,7 +1211,7 @@ function buildSchoolsCard(report) {
       </li>`).join('');
   const footnote = '<p class="muted">Run the deep-mode school-metadata capture to populate the full table (Niche grades, enrollment, demographics).</p>';
   return `
-    <div class="card wide schools">
+    <div class="panel wide schools">
       <h3>Schools &amp; Ratings</h3>
       <ul class="school-list">${rows}</ul>
       ${footnote}
@@ -732,19 +1223,23 @@ function buildFinalistSection(finalist, profile, options = {}) {
   const isFirst = Boolean(options.isFirst);
   const report = finalist.report;
   const construction = finalist.construction;
+  const permits = finalist.permits;
   const sentiment = finalist.sentiment;
   const packet = finalist.packet;
 
   const scoreDisplay = report.metadata.overallScore || 'n/a';
   const recommendation = report.metadata.recommendation || 'Not recorded';
   const recClass = classifyRecommendation(recommendation);
-  const url = report.metadata.url || '';
-  const mapsUrl = buildMapsUrl(report.address, report.city, report.state);
+  const url = report.metadata.url || report.sourceUrl || finalist.listing?.canonicalUrl || finalist.listing?.url || '';
+  const displayAddress = firstNonEmpty(report.address, finalist.listing?.address, report.title, 'Home');
+  const displayCity = firstNonEmpty(report.city, finalist.listing?.city);
+  const displayState = firstNonEmpty(report.state, finalist.listing?.state);
+  const mapsUrl = buildMapsUrl(displayAddress, displayCity, displayState);
   const anchor = finalistAnchor(finalist.rank);
 
   const addressHeading = url
-    ? `<a href="${escapeHtml(url)}">${escapeHtml(report.address)}</a>`
-    : escapeHtml(report.address);
+    ? `<a href="${escapeHtml(url)}">${escapeHtml(displayAddress)}</a>`
+    : escapeHtml(displayAddress);
 
   const linkRow = [];
   if (url) {
@@ -758,7 +1253,17 @@ function buildFinalistSection(finalist, profile, options = {}) {
     : '';
 
   const concerns = buildTailoredConcerns(report, finalist).slice(0, 4);
-  const constructionBlock = buildConstructionBlurb(construction);
+  const quickTakeText = firstNonEmpty(
+    report.sections['Quick Take'],
+    report.sections['Property Fit'],
+    report.sections['Recommendation'],
+    report.content,
+  );
+  const recommendationText = firstNonEmpty(report.sections.Recommendation, recommendation);
+  const propertyText = summarizeSection(report.sections['Property Fit'], 850);
+  const developmentText = summarizeSection(report.sections['Development and Infrastructure'], 850);
+  const quickFitBlock = buildQuickFitPanel(report, profile, quickTakeText, propertyText);
+  const infrastructureBlock = buildDevelopmentInfrastructureSection({ construction, permits, developmentText });
 
   const topKpi = (sentiment?.kpiRollup ?? []).slice(0, 5).map((row) => `
     <tr>
@@ -772,7 +1277,7 @@ function buildFinalistSection(finalist, profile, options = {}) {
 
   const sentimentBlock = sentiment
     ? `
-      <div class="card wide">
+      <div class="panel wide">
         <h3>Neighborhood Sentiment <span class="subtle">profile-weighted</span></h3>
         <table>
           <thead>
@@ -782,16 +1287,15 @@ function buildFinalistSection(finalist, profile, options = {}) {
         </table>
       </div>`
     : `
-      <div class="card wide unreviewed">
+      <div class="panel wide unreviewed">
         <h3>Neighborhood Sentiment</h3>
         <p class="muted">Not yet captured from Facebook or Nextdoor. Listed in the research gaps below.</p>
       </div>`;
 
-  const fitNarrative = buildFitNarrative(report, profile);
   const gapItems = buildGapList(report, finalist, profile);
   const gapBlock = gapItems.length > 0
     ? `
-      <div class="card wide warn">
+      <div class="panel wide warn">
         <h3>Research gaps you may want filled in</h3>
         <ul>${gapItems.map((item) => `<li>${escapeHtml(item)}</li>`).join('')}</ul>
         <p class="muted">Ask for a deeper dive on this listing to capture these before a final decision.</p>
@@ -809,7 +1313,7 @@ function buildFinalistSection(finalist, profile, options = {}) {
         ${rankBadgeHtml}
         <div class="finalist-title">
           <h2>${addressHeading}</h2>
-          <p class="locality">${escapeHtml(report.city)}, ${escapeHtml(report.state)}${finalist.community ? ` <span class="community-tag">&middot; ${escapeHtml(finalist.community)} community</span>` : ''}</p>
+          <p class="locality">${escapeHtml(displayCity)}, ${escapeHtml(displayState)}${finalist.community ? ` <span class="community-tag">&middot; ${escapeHtml(finalist.community)} community</span>` : ''}</p>
           <div class="badges">
             <span class="score-badge">Score ${escapeHtml(scoreDisplay)}</span>
             <span class="rec-badge rec-${escapeHtml(recClass)}">${escapeHtml(recommendation)}</span>
@@ -819,20 +1323,22 @@ function buildFinalistSection(finalist, profile, options = {}) {
       </header>
 
       <div class="grid">
-        <div class="card quick-take wide">
-          <h3>Quick Take</h3>
-          <p>${escapeHtml(summarizeSection(report.sections['Quick Take'], 600))}</p>
+        ${buildFactsCard(finalist)}
+        <div class="panel decision">
+          <h3>Decision Read</h3>
+          <p>${escapeHtml(summarizeSection(recommendationText, 700))}</p>
         </div>
-        ${fitNarrative}
-        <div class="card concerns wide">
+        ${quickFitBlock}
+        <div class="panel concerns wide">
           <h3>Top Concerns</h3>
           <ul>${(concerns.length ? concerns : ['(none captured)']).map((s) => `<li>${escapeHtml(s)}</li>`).join('')}</ul>
         </div>
-        ${constructionBlock}
+        ${infrastructureBlock}
         ${buildSchoolsCard(report)}
         ${sentimentBlock}
         ${buildCommuteCard(report, profile)}
         ${gapBlock}
+        ${buildSourceLedger(finalist)}
       </div>
     </section>
   `;
@@ -912,7 +1418,7 @@ function buildHtml(finalists, profile, mode = 'batch') {
   .cover-toc li { margin-bottom: 10px; }
   .toc-row {
     display: flex; align-items: center; gap: 14px;
-    padding: 12px 14px; border: 1px solid #e5e7eb; border-radius: 10px;
+    padding: 12px 14px; border: 1px solid #e5e7eb; border-radius: 6px;
     color: #1f2937; background: #ffffff;
     page-break-inside: avoid;
   }
@@ -938,8 +1444,8 @@ function buildHtml(finalists, profile, mode = 'batch') {
     border-bottom: 2px solid #0f172a; padding-bottom: 14px; margin-bottom: 16px;
   }
   .rank-badge {
-    width: 58px; height: 58px; border-radius: 12px;
-    background: linear-gradient(135deg, #1d4ed8 0%, #312e81 100%);
+    width: 58px; height: 58px; border-radius: 8px;
+    background: #0f766e;
     color: #ffffff; font-size: 20pt; font-weight: 800;
     display: flex; align-items: center; justify-content: center;
     flex-shrink: 0; letter-spacing: -0.02em;
@@ -973,30 +1479,32 @@ function buildHtml(finalists, profile, mode = 'batch') {
 
   /* Grid and cards */
   .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-  .card {
-    border: 1px solid #e5e7eb; border-radius: 10px;
+  .card, .panel {
+    border: 1px solid #d1d5db; border-radius: 6px;
     padding: 12px 14px; background: #ffffff;
     page-break-inside: avoid;
   }
-  .card.wide { grid-column: span 2; }
-  .card h3 {
+  .card.wide, .panel.wide { grid-column: span 2; }
+  .card h3, .panel h3 {
     font-size: 9pt; font-weight: 700; text-transform: uppercase;
     letter-spacing: 0.08em; color: #6b7280; margin-bottom: 8px;
   }
-  .card h3 .subtle {
+  .card h3 .subtle, .panel h3 .subtle {
     font-size: 8pt; font-weight: 500; color: #9ca3af;
     text-transform: none; letter-spacing: 0; margin-left: 4px;
   }
-  .card p { font-size: 9.5pt; margin-bottom: 4px; }
-  .card ul { margin: 0; padding-left: 18px; font-size: 9.5pt; }
-  .card li { margin-bottom: 4px; }
+  .card p, .panel p { font-size: 9.5pt; margin-bottom: 4px; }
+  .card ul, .panel ul { margin: 0; padding-left: 18px; font-size: 9.5pt; }
+  .card li, .panel li { margin-bottom: 4px; }
 
-  .card.quick-take { background: #f0f9ff; border-color: #bae6fd; }
-  .card.quick-take h3 { color: #0369a1; }
-  .card.strengths h3 { color: #166534; }
-  .card.concerns h3 { color: #991b1b; }
+  .quick-take { background: #f0f9ff; border-color: #bae6fd; }
+  .quick-take h3 { color: #0369a1; }
+  .strengths h3 { color: #166534; }
+  .concerns h3 { color: #991b1b; }
+  .decision { background: #f8fafc; border-color: #cbd5e1; }
+  .decision h3, .facts h3 { color: #334155; }
 
-  .card.construction { text-align: center; }
+  .construction { text-align: left; }
   .pressure-level {
     font-size: 16pt; font-weight: 800; margin: 4px 0 8px;
     letter-spacing: 0.03em;
@@ -1006,13 +1514,13 @@ function buildHtml(finalists, profile, mode = 'batch') {
   .pressure-level.low { color: #166534; }
   .pressure-level.none, .pressure-level.unknown { color: #6b7280; }
 
-  .card.warn { background: #fffbeb; border-color: #fde68a; }
-  .card.warn h3 { color: #92400e; }
-  .card.recommendation {
-    background: linear-gradient(135deg, #f8fafc 0%, #eef2ff 100%);
+  .warn { background: #fffbeb; border-color: #fde68a; }
+  .warn h3 { color: #92400e; }
+  .recommendation {
+    background: #f8fafc;
     border-color: #c7d2fe;
   }
-  .card.recommendation h3 { color: #3730a3; }
+  .recommendation h3 { color: #3730a3; }
 
   .stat { font-size: 9.5pt; color: #4b5563; margin-bottom: 2px; }
   .stat strong { color: #111827; }
@@ -1020,7 +1528,7 @@ function buildHtml(finalists, profile, mode = 'batch') {
 
   /* Fit narrative */
   .card.fit {
-    background: linear-gradient(135deg, #ecfdf5 0%, #f0f9ff 100%);
+    background: #f0fdf4;
     border-color: #bbf7d0;
   }
   .card.fit h3 { color: #166534; }
@@ -1056,21 +1564,89 @@ function buildHtml(finalists, profile, mode = 'batch') {
   .pos { color: #166534; font-weight: 600; }
   .neg { color: #991b1b; font-weight: 600; }
 
-  .card.unreviewed { background: #f9fafb; border-style: dashed; color: #6b7280; }
-  .card.unreviewed h3 { color: #9ca3af; }
+  .unreviewed { background: #f9fafb; border-style: dashed; color: #6b7280; }
+  .unreviewed h3 { color: #9ca3af; }
 
-  .card.construction p { font-size: 9.5pt; color: #1f2937; }
-  .card.construction .resource-list {
+  .construction p { font-size: 9.5pt; color: #1f2937; }
+  .construction .resource-list {
     list-style: none; padding: 6px 0 6px 0; margin: 0 0 6px;
     border-top: 1px dashed #e5e7eb; border-bottom: 1px dashed #e5e7eb;
   }
-  .card.construction .resource-list li {
+  .construction .resource-list li {
     font-size: 8.5pt; padding: 2px 0; word-break: break-all;
     color: #4b5563;
   }
-  .card.construction .resource-list a { color: #1d4ed8; }
+  .construction .resource-list a { color: #1d4ed8; }
+  .infrastructure h3 { color: #075985; }
+  .risk-key-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 8px;
+    margin: 4px 0 10px;
+  }
+  .risk-key {
+    border: 1px solid #e5e7eb;
+    border-radius: 6px;
+    padding: 7px 8px;
+    background: #f8fafc;
+  }
+  .risk-key span {
+    display: block;
+    font-size: 7.2pt;
+    color: #64748b;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .risk-key strong {
+    display: block;
+    margin-top: 3px;
+    font-size: 9pt;
+    color: #111827;
+  }
+  .risk-none { border-left: 4px solid #16a34a; }
+  .risk-low { border-left: 4px solid #84cc16; }
+  .risk-med { border-left: 4px solid #f59e0b; }
+  .risk-high { border-left: 4px solid #dc2626; }
+  .risk-unknown { border-left: 4px solid #94a3b8; }
+  .risk-info { border-left: 4px solid #0284c7; }
+  .infra-columns {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+    margin-top: 8px;
+  }
+  .infra-columns h4 {
+    margin: 0 0 5px;
+    color: #334155;
+    font-size: 8.5pt;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .infra-columns ul,
+  .resource-list.compact {
+    margin: 0;
+    padding-left: 14px;
+    font-size: 8.5pt;
+  }
+  .resource-list.compact {
+    margin-top: 9px;
+    padding-top: 7px;
+    border-top: 1px dashed #e5e7eb;
+    list-style: none;
+    padding-left: 0;
+  }
+  .resource-list.compact li { margin: 2px 0; word-break: break-all; }
+  .source-dot {
+    display: inline-block;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    margin-right: 5px;
+  }
+  .source-dot.good { background: #16a34a; }
+  .source-dot.bad { background: #dc2626; }
 
-  .card.schools h3 { color: #0369a1; }
+  .schools h3 { color: #0369a1; }
   .school-list { list-style: none; padding: 0; margin: 0; }
   .school-row {
     display: flex; align-items: center; justify-content: space-between;
@@ -1092,8 +1668,68 @@ function buildHtml(finalists, profile, mode = 'batch') {
   .school-metadata td { vertical-align: top; padding: 4px 6px; }
   .school-metadata td a { color: #1d4ed8; text-decoration: none; }
   .school-metadata .school-rating { display: inline-block; min-width: 24px; text-align: center; }
+  .ethnicity-breakdown {
+    margin-top: 12px;
+    padding-top: 10px;
+    border-top: 1px solid #e5e7eb;
+    break-inside: avoid;
+  }
+  .ethnicity-breakdown h4 {
+    margin: 0 0 8px;
+    font-size: 9.5pt;
+    color: #334155;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .ethnicity-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
+  }
+  .ethnicity-card {
+    border: 1px solid #e5e7eb;
+    border-radius: 6px;
+    padding: 8px;
+    background: #ffffff;
+    break-inside: avoid;
+  }
+  .ethnicity-card h4 {
+    margin: 0 0 6px;
+    font-size: 8.5pt;
+    color: #111827;
+    text-transform: none;
+    letter-spacing: 0;
+  }
+  .ethnicity-row {
+    display: grid;
+    grid-template-columns: minmax(68px, 1.1fr) minmax(78px, 1.4fr) 30px;
+    align-items: center;
+    gap: 6px;
+    margin: 4px 0;
+    font-size: 7.4pt;
+  }
+  .ethnicity-label {
+    color: #475569;
+    line-height: 1.15;
+  }
+  .ethnicity-track {
+    height: 7px;
+    border-radius: 999px;
+    background: #e5e7eb;
+    overflow: hidden;
+  }
+  .ethnicity-fill {
+    height: 100%;
+    border-radius: 999px;
+  }
+  .ethnicity-value {
+    text-align: right;
+    color: #111827;
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
+  }
 
-  .card.commute h3 { color: #0369a1; }
+  .commute h3 { color: #0369a1; }
   .commute-list { list-style: none; padding: 0; margin: 0; }
   .commute-row {
     display: flex; align-items: center; justify-content: space-between;
@@ -1106,6 +1742,15 @@ function buildHtml(finalists, profile, mode = 'batch') {
     color: #9ca3af; font-size: 8.5pt; font-weight: 400; margin-left: 6px;
     text-transform: uppercase; letter-spacing: 0.05em;
   }
+  .facts table th {
+    width: 34%; text-transform: none; letter-spacing: 0;
+    font-size: 8.5pt; color: #475569; background: #f8fafc;
+  }
+  .facts table td { font-size: 9pt; }
+  .sources table { table-layout: fixed; }
+  .sources th:nth-child(1), .sources td:nth-child(1) { width: 22%; }
+  .sources th:nth-child(2), .sources td:nth-child(2) { width: 16%; }
+  .sources td { font-size: 7.7pt; word-break: break-all; }
 </style>
 </head>
 <body>
@@ -1142,8 +1787,10 @@ function buildCoverList(finalists) {
 function loadFinalist(reportPath, rank = 1) {
   const report = parseReport(ROOT, reportPath);
   const constructionCompanion = loadCompanionForReport(report, CONSTRUCTION_DIR, 'Construction');
+  const permitsCompanion = loadCompanionForReport(report, PERMITS_DIR, 'Permits');
   const sentimentCompanion = loadCompanionForReport(report, SENTIMENT_DIR, 'Sentiment');
   const packetCompanion = loadCompanionForReport(report, DEEP_PACKET_DIR, 'Deep packet');
+  const listing = loadListingFacts(report);
   const communityPayload = findCompanionJson(report, COMMUNITY_DIR);
   const community = communityPayload && communityPayload.community
     && communityPayload.status !== 'no-community-match'
@@ -1153,10 +1800,13 @@ function loadFinalist(reportPath, rank = 1) {
     rank,
     report,
     construction: constructionCompanion.data,
+    permits: permitsCompanion.data,
     sentiment: sentimentCompanion.data,
     packet: packetCompanion.data,
+    listing,
     community,
     constructionMismatch: constructionCompanion.mismatchMessage,
+    permitsMismatch: permitsCompanion.mismatchMessage,
     sentimentMismatch: sentimentCompanion.mismatchMessage,
     packetMismatch: packetCompanion.mismatchMessage,
   };
@@ -1245,10 +1895,9 @@ async function run() {
   if (config.reportPath) {
     mode = 'single';
     finalists = [loadFinalist(config.reportPath, 1)];
-    // Deep brief titles use "Deep Brief: …" with an em dash, which parseReport
-    // does not match — address/city/state come back blank. Fall back to the
-    // report filename, which is already `{slug}-deep-{date}.md` by convention,
-    // so the PDF lands at `{slug}-deep-{date}.pdf` instead of `nc-deep-…`.
+    // Older deep brief titles used "Deep Brief: …"; canonical single-home
+    // reports use numbered filenames. Fall back to the filename if parsing
+    // cannot determine a useful slug.
     let slug = slugify(`${finalists[0].report.address}-${finalists[0].report.city}-${finalists[0].report.state || 'NC'}`)
       || '';
     if (!slug || slug === 'nc') {

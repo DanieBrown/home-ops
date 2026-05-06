@@ -57,7 +57,7 @@ deep-single-final-runner.mjs  →  research-source-plan, community-lookup, senti
         ↓ (gate: deep-research-packet-single)
 [3 axis agents in parallel]   →  Sentiment, Risk & Builder, Schools
         ↓
-[main agent] deep brief       →  reports/{slug}-deep-{date}.md
+[main agent] update report    →  enrich the same reports/{N}-{slug}-{date}.md with deep findings
         ↓
 review-tabs.mjs urls --replace
         ↓ (gate: review-tabs-single)
@@ -100,7 +100,7 @@ node scripts/pipeline/deep-single-runner.mjs --url <url> --profile chrome-host
 
 This runner sequentially:
 1. Scrapes listing facts from the live page via Playwright → `output/listings/{slug}.json`
-2. Resolves assigned schools from GreatSchools for that address → `output/school-metadata/{slug}.json`
+2. Resolves assigned schools from district/listing sources first, with GreatSchools as fallback verification → `output/school-metadata/{slug}.json`
 
 If the runner exits non-zero (listing extraction failed), stop and surface the error. Schools failure is soft — continue with a gap note.
 
@@ -139,7 +139,7 @@ Pass each agent the relevant sidecar paths and the `slug`. The full output schem
 
 Once the axis agents return:
 
-1. Review the axis outputs with the deep packet and eval report. Write the single-home deep brief to `reports/{slug}-deep-{YYYY-MM-DD}.md`. Organize around the seven research axes below.
+1. Review the axis outputs with the deep packet and eval report. Update the same canonical report `reports/{N}-{slug}-{YYYY-MM-DD}.md` with the deep findings instead of creating a second markdown report. A single URL should leave exactly one report for that physical home. Organize the added deep content around the seven research axes below.
 
 2. Replace browser tabs with the listing URL first:
    ```
@@ -148,7 +148,7 @@ Once the axis agents return:
 
 3. Render **exactly one** briefing PDF and open it in the hosted session:
    ```
-   node scripts/reports/briefing-pdf.mjs --report reports/{slug}-deep-{YYYY-MM-DD}.md
+   node scripts/reports/briefing-pdf.mjs --report reports/{N}-{slug}-{YYYY-MM-DD}.md
    ```
    `briefing-pdf.mjs` renders the PDF **and** opens it as a new CDP tab automatically. Running it after `--replace` means the PDF tab opens into the already-clean session, producing exactly 2 tabs.
 
@@ -158,7 +158,7 @@ Once the axis agents return:
 
    **Final tab state: exactly 2 tabs** — the listing URL + the briefing PDF.
 
-Post a final summary: eval report path, brief path, briefing PDF path, and the 2-tab final state.
+Post a final summary: canonical report path, briefing PDF path, and the 2-tab final state.
 
 ---
 
@@ -230,7 +230,7 @@ All steps use `--shortlist`.
 - **4d:** `node scripts/research/sentiment-public-extract.mjs --shortlist`
 - **4e:** `node scripts/research/construction-check.mjs --shortlist` (add `--quick` when requested)
 - **4f:** `node scripts/research/county-permits-check.mjs --shortlist`
-- **4g:** `node scripts/research/school-metadata-fetch.mjs --shortlist`
+- **4g:** `node scripts/research/school-metadata-fetch.mjs --shortlist --profile chrome-host`
 - **4h:** `node scripts/research/builder-check.mjs --shortlist`
 
 5. Wait for all Phase A jobs to finish. Surface any failures in the brief rather than silently proceeding.
@@ -326,7 +326,7 @@ Schools Agent output. Include the metadata table and any flags about ratings dri
 Risk & Builder Quality Agent output. Combine NCDOT + county permits. Always cite specific case IDs and project descriptions when present in `output/permits/`.
 
 ### 4. Commute and Daily Convenience
-Sentiment Agent's `traffic_commute` dimension (Reddit / Google Maps / construction signals). Cross-reference with buyer commute destinations from `config/profile.yml`.
+Sentiment Agent's `traffic_commute` dimension (Google Maps / construction signals). Cross-reference with buyer commute destinations from `config/profile.yml`.
 
 ### 5. Risk Review (including Builder Quality)
 Combine: Risk & Builder Quality Agent's high-pressure projects, builder quality note, Sentiment Agent's red flags, and audit blockers from the deep packet. When builder data is present, lead with the builder verdict before development risk.

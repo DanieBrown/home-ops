@@ -6,8 +6,9 @@
  * Complements sentiment-browser-extract.mjs (which handles login-walled
  * Facebook + Nextdoor via the hosted session) by pulling snippets from
  * the opted-in public sources listed in portals.yml under sentiment_sources
- * -- currently reddit (via old.reddit.com search) and google_maps (lightly,
- * since their search pages are JS-heavy).
+ * -- currently google_maps. Public pages are fetched through
+ * crawl4ai first so rendered snippets are available, with fetch() retained
+ * as a fallback when crawl4ai is unavailable or blocked.
  *
  * Writes to the same output/sentiment/{slug}.json file as the browser
  * extractor. If a file already exists for the target, the public results
@@ -32,10 +33,11 @@ import {
   classifyProximity,
   scoreProfileRedFlags,
 } from './sentiment-scoring.mjs';
+import { crawl4aiFetchPage } from './crawl4ai-utils.mjs';
 import { slugify } from '../shared/text-utils.mjs';
 
 const OUTPUT_DIR = join(ROOT, 'output', 'sentiment');
-const PUBLIC_KEYS = new Set(['reddit', 'google_maps']);
+const PUBLIC_KEYS = new Set(['google_maps']);
 const DEFAULT_TIMEOUT_MS = 20000;
 const MAX_QUERIES_PER_SOURCE = 4;
 
@@ -63,7 +65,7 @@ const HELP_TEXT = `Usage:
   node sentiment-public-extract.mjs --shortlist
   node sentiment-public-extract.mjs --top3
 
-Fetches opted-in public sentiment sources (reddit, google_maps) from
+Fetches opted-in public sentiment sources (google_maps) from
 portals.yml for each target and merges snippets into output/sentiment/.
 
 Options:
@@ -106,6 +108,18 @@ function buildOutputPath(target) {
 }
 
 async function fetchText(url) {
+  const crawled = await crawl4aiFetchPage(url, { timeoutMs: DEFAULT_TIMEOUT_MS });
+  if (crawled.ok && crawled.html) {
+    return {
+      ok: true,
+      status: crawled.status || 200,
+      text: crawled.html,
+      url: crawled.finalUrl || url,
+      requestedUrl: url,
+      provider: 'crawl4ai',
+    };
+  }
+
   try {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT_MS);
@@ -118,11 +132,11 @@ async function fetchText(url) {
       },
     });
     clearTimeout(timer);
-    if (!response.ok) return { ok: false, status: response.status, text: '', url };
+    if (!response.ok) return { ok: false, status: response.status, text: '', url, provider: 'fetch', crawl4aiError: crawled.error ?? null };
     const text = await response.text();
-    return { ok: true, status: response.status, text, url };
+    return { ok: true, status: response.status, text, url, provider: 'fetch', crawl4aiError: crawled.error ?? null };
   } catch (error) {
-    return { ok: false, status: 0, text: '', url, error: String(error?.message ?? error) };
+    return { ok: false, status: 0, text: '', url, provider: 'fetch', error: String(error?.message ?? error), crawl4aiError: crawled.error ?? null };
   }
 }
 
@@ -207,13 +221,21 @@ async function runSource(sourceEntry, scoringContext) {
     if (!query) continue;
     const page = await fetchText(url);
     if (!page.ok) {
-      queryResults.push({ status: 'error', query, searchUrl: url, finalUrl: url, reason: `HTTP ${page.status}${page.error ? ` ${page.error}` : ''}` });
+      queryResults.push({
+        status: 'error',
+        query,
+        searchUrl: url,
+        finalUrl: page.url || url,
+        provider: page.provider ?? null,
+        crawl4aiError: page.crawl4aiError ?? null,
+        reason: `HTTP ${page.status}${page.error ? ` ${page.error}` : ''}`,
+      });
       continue;
     }
     const body = stripHtml(page.text);
     const snippets = extractSnippets(body, query);
     if (snippets.length === 0) {
-      queryResults.push({ status: 'empty', query, searchUrl: url, finalUrl: url });
+      queryResults.push({ status: 'empty', query, searchUrl: url, finalUrl: page.url || url, provider: page.provider ?? null, crawl4aiError: page.crawl4aiError ?? null });
       continue;
     }
     const snippetObjects = snippets.map((text) => {
@@ -226,7 +248,9 @@ async function runSource(sourceEntry, scoringContext) {
       status: 'ok',
       query,
       searchUrl: url,
-      finalUrl: url,
+      finalUrl: page.url || url,
+      provider: page.provider ?? null,
+      crawl4aiError: page.crawl4aiError ?? null,
       snippets: snippetObjects,
       themes: summarizeThemes(snippets, redFlagPatterns, proximityHints),
     });
@@ -287,9 +311,12 @@ function readExistingOutput(outputPath) {
   try { return JSON.parse(readFileSync(outputPath, 'utf8')); } catch { return null; }
 }
 
-function mergeSources(existingSources, newSources) {
+function mergeSources(existingSources, newSources, allowedKeys = null) {
   const byKey = new Map();
-  for (const entry of existingSources ?? []) byKey.set(entry.key, entry);
+  for (const entry of existingSources ?? []) {
+    if (allowedKeys && !allowedKeys.has(entry.key)) continue;
+    byKey.set(entry.key, entry);
+  }
   for (const entry of newSources) byKey.set(entry.key, entry);
   return [...byKey.values()];
 }
@@ -314,7 +341,8 @@ async function extractTarget(target, researchContext) {
 
   const outputPath = buildOutputPath(target);
   const existing = readExistingOutput(outputPath);
-  const mergedSources = mergeSources(existing?.sources, newSources);
+  const allowedKeys = new Set(sentimentPlan.entries.map((entry) => entry.key));
+  const mergedSources = mergeSources(existing?.sources, newSources, allowedKeys);
   const kpiWeights = researchContext.profile?.sentiment?.weights ?? {};
   const kpiRollup = rollupKpiScores(mergedSources, kpiWeights);
 
