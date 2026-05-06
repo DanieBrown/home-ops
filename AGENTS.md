@@ -35,4 +35,3 @@ Key files and outputs:
 Verification:
 - General repo health: `npm.cmd run doctor`, `npm.cmd run sync-check`, `npm.cmd run verify`.
 - After report-heavy evaluate or deep work: `npm.cmd run audit:research`.
-- After dashboard changes: `npm.cmd run dashboard:build` or `cd dashboard && go build ./...`.

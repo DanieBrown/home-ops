@@ -35,7 +35,6 @@ Rule:
 | `reports/` | Listing evaluation reports |
 | `modes/*` | Prompt-driven workflows |
 | `templates/states.yml` | Canonical listing states |
-| `dashboard/` | Go terminal dashboard |
 
 ## OpenCode Commands
 
@@ -191,7 +190,6 @@ If verification is blocked, mark it as unconfirmed rather than claiming it is ac
 - Node.js `.mjs` utilities
 - Playwright for listing verification and portal scanning support
 - YAML config, markdown modes, markdown reports, TSV scan logs
-- Go dashboard for terminal browsing
 - Report filenames: `{###}-{address-slug}-{YYYY-MM-DD}.md`
 - Tracker rows keyed by normalized address + city
 - Niche school metadata uses an optional Python sidecar (crawl4ai) when available; falls back to `fetch()` otherwise. Setup: `scripts/research/python/README.md`.

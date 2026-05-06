@@ -71,6 +71,3 @@ If you change tracker states, update all three of these together:
 2. `scripts/pipeline/normalize-statuses.mjs`
 3. any prompt text that references status names
 
-## Dashboard Theme
-
-The Go dashboard theme lives under `dashboard/internal/theme/`. Change that layer only if you want to alter the visual presentation of the terminal UI without affecting evaluation logic.

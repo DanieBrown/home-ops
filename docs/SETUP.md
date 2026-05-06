@@ -4,17 +4,19 @@
 
 - Claude Code, Codex, or another compatible local coding agent
 - Node.js 18+
-- Playwright browser binaries for listing verification
-- Optional: Go 1.21+ for the terminal dashboard
+- npm 9+
+- Playwright browser binaries for listing verification. `/home-ops init` auto-installs Chromium when it is missing.
+- Optional: Python 3.10+ for enhanced school metadata crawling. `/home-ops init` attempts sidecar setup automatically and can use `winget` to install Python 3.12 on Windows when Python is missing.
 
 ## First-Time Setup
 
-### 1. Install dependencies
+### 1. Bootstrap dependencies
 
 ```bash
-npm install
-npx playwright install chromium
+npm run bootstrap
 ```
+
+This is also run automatically by the browser-session npm scripts used by `/home-ops init`. It runs `npm install` when project packages are missing and `npx playwright install chromium` when Playwright Chromium is missing. During init it also attempts Python sidecar setup with `npm run bootstrap:python`. Node.js and npm still need to be installed first because they are the runtime used to run the bootstrap.
 
 Create the reusable repo-local hosted browser session after you configure `portals.yml`:
 
@@ -128,35 +130,6 @@ Use these files for buyer-specific changes:
 - `portals.yml`: search URLs and source configuration
 
 Do not put buyer-specific rules into `modes/_shared.md`.
-
-## Dashboard Build
-
-If Go is installed, the simplest repo-level launcher is:
-
-```bash
-npm run dashboard
-```
-
-This command resolves Go from PATH or common Windows install locations, then runs the dashboard against the current repository.
-
-To build a standalone dashboard binary, run:
-
-```bash
-npm run dashboard:build
-```
-
-If you prefer the direct Go commands, build the terminal dashboard with:
-
-```bash
-cd dashboard
-go build -o home-ops-dashboard .
-```
-
-Run it from the dashboard directory with:
-
-```bash
-./home-ops-dashboard --path ..
-```
 
 ## Recommended Checks Before Use
 

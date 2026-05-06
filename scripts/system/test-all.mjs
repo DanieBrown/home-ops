@@ -151,23 +151,7 @@ for (const script of scripts) {
   }
 }
 
-if (!QUICK) {
-  console.log('\n3. Dashboard build');
-
-  const hasGo = run('go version');
-  if (!hasGo.ok) {
-    warn('Go toolchain not installed; dashboard build skipped');
-  } else {
-    const build = run('go build ./...', { cwd: join(ROOT, 'dashboard') });
-    if (build.ok) {
-      pass('Dashboard compiles');
-    } else {
-      fail('Dashboard build failed');
-    }
-  }
-} else {
-  console.log('\n3. Dashboard build (skipped --quick)');
-}
+console.log(QUICK ? '\n3. Extended build checks (skipped --quick)' : '\n3. Extended build checks');
 
 console.log('\n4. Data contract validation');
 
@@ -243,7 +227,7 @@ const legacyPatterns = [
   ['cv', 'md'].join('.'),
 ];
 
-const textFiles = walk(ROOT, new Set(['.md', '.mjs', '.go', '.yml', '.yaml', '.json', '.sh']), skipDirs)
+const textFiles = walk(ROOT, new Set(['.md', '.mjs', '.yml', '.yaml', '.json', '.sh']), skipDirs)
   .filter((file) => !file.startsWith('reports/'));
 
 const legacyHits = scanForPatterns(textFiles, legacyPatterns)

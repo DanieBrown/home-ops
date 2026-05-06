@@ -2,7 +2,7 @@
 
 ## 1. Nature of the Project
 
-`home-ops` is a collection of Markdown prompts, Node.js scripts, and local dashboard utilities. It is a local execution tool. The maintainers do not host, deploy, or operate an AI system, and they do not provide direct API access to large language models.
+`home-ops` is a collection of Markdown prompts and Node.js scripts. It is a local execution tool. The maintainers do not host, deploy, or operate an AI system, and they do not provide direct API access to large language models.
 
 Users download the code, run it on their own machines, and connect it to their own AI provider (Anthropic, OpenAI, or any other). The maintainers have no visibility into, control over, or responsibility for how the tool is used after download.
 

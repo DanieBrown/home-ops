@@ -12,7 +12,6 @@ Open an issue first when the change is more than a small bug fix. That avoids pa
 
 - Better listing-evaluation prompts or score explanations
 - Safer tracker, merge, dedup, or verification scripts
-- Dashboard improvements for listing workflows
 - Documentation improvements
 - Better example scanner templates
 - Bug reports with a clear reproduction path
@@ -22,7 +21,6 @@ Open an issue first when the change is more than a small bug fix. That avoids pa
 - Keep buyer-specific data out of system-layer files.
 - Use `buyer-profile.md`, `config/profile.yml`, `modes/_profile.md`, and `portals.yml` for personalization.
 - Scripts should handle missing files gracefully.
-- Dashboard changes should still build with `go build ./...`.
 - Prefer small, focused PRs.
 
 ## Not Accepted
@@ -35,15 +33,11 @@ Open an issue first when the change is more than a small bug fix. That avoids pa
 ## Development
 
 ```bash
-npm install
-npx playwright install chromium
+npm run bootstrap
 npm run doctor
 npm run verify
 npm run sync-check
 node scripts/system/test-all.mjs --quick
-
-# optional dashboard build
-cd dashboard && go build ./...
 ```
 
 ## Data Safety

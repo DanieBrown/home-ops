@@ -45,7 +45,7 @@ function checkDependencies() {
     return passResult('Dependencies installed');
   }
 
-  return failResult('Dependencies not installed', 'Run: npm install');
+  return failResult('Dependencies not installed', 'Run: npm run bootstrap');
 }
 
 function pythonCandidatesForDoctor() {
@@ -56,8 +56,8 @@ function pythonCandidatesForDoctor() {
 
 function checkCrawl4ai() {
   const setupHint = process.platform === 'win32'
-    ? 'Run: py -3 -m pip install -r scripts/research/python/requirements.txt && py -3 -m playwright install chromium'
-    : 'Run: python3 -m pip install -r scripts/research/python/requirements.txt && python3 -m playwright install chromium';
+    ? 'Run: npm run bootstrap:python'
+    : 'Run: npm run bootstrap -- --python';
 
   let foundPython = null;
   for (const [bin, baseArgs] of pythonCandidatesForDoctor()) {
@@ -94,7 +94,7 @@ async function checkPlaywright() {
     // fall through to failure below
   }
 
-  return failResult('Playwright chromium not installed', 'Run: npx playwright install chromium');
+  return failResult('Playwright chromium not installed', 'Run: npm run bootstrap');
 }
 
 function checkFile(relativePath, label, fix) {
@@ -189,7 +189,7 @@ async function checkProfileAndPortalCoverage(dependenciesInstalled) {
   if (!dependenciesInstalled) {
     return [warnResult(
       'Advanced profile and portal coverage checks skipped',
-      'Run npm install, then rerun doctor to validate YAML-backed search area and source coverage.',
+      'Run npm run bootstrap, then rerun doctor to validate YAML-backed search area and source coverage.',
     )];
   }
 

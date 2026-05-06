@@ -4,7 +4,7 @@ This document defines which files belong to the **user layer** and which belong 
 
 User-layer files hold the buyer's identity, preferences, search history, and reports. They should never be overwritten by a system update.
 
-System-layer files hold prompts, scripts, dashboards, templates, and repo instructions. They can be revised as the tool evolves.
+System-layer files hold prompts, scripts, templates, and repo instructions. They can be revised as the tool evolves.
 
 ## User Layer (NEVER auto-updated)
 
@@ -41,7 +41,6 @@ System-layer files hold prompts, scripts, dashboards, templates, and repo instru
 | `CLAUDE.md` | Agent operating instructions |
 | `AGENTS.md` | Codex routing instructions |
 | `docs/*` | Documentation |
-| `dashboard/*` | Go TUI dashboard |
 | `*.mjs` | Utility scripts |
 | `.claude/skills/*` | Skill routers |
 | `.opencode/commands/*` | OpenCode command wrappers |

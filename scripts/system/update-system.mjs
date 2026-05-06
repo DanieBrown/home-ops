@@ -22,7 +22,6 @@ const SYSTEM_PATHS = [
   'CLAUDE.md',
   'AGENTS.md',
   'scripts/',
-  'dashboard/',
   'templates/',
   'fonts/',
   '.claude/skills/',

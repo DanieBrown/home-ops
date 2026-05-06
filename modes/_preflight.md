@@ -30,17 +30,19 @@ npm --version
   3. If they are using `nvm-windows`, run `nvm use lts` (or the version from `.nvmrc`).
 - If the version is below `9.0.0`, halt and ask the user to upgrade.
 
-## Step 3: Verify project dependencies are installed
+## Step 3: Bootstrap project dependencies
 
-Check whether `node_modules/` exists in the repo root. If it does not, run:
+For init/browser-session commands, run the checked-in bootstrap before launching the browser session:
 
 ```
-npm install
+npm run bootstrap
 ```
 
+- This installs project dependencies with `npm install` when `node_modules/`, `playwright`, or `yaml` are missing.
+- It installs Playwright Chromium with `npx playwright install chromium` when the browser binary is missing.
+- Init/browser setup runs bootstrap with Python sidecar setup enabled. If Python 3.10+ is present, it installs the crawl4ai requirements and browser assets. On Windows, it can attempt Python 3.12 installation through `winget` when Python is missing.
 - Do not silently skip this. The buyer profile and browser session flows depend on `playwright` and `yaml`; if they are missing, every downstream `npm run ...` in init or profile will fail.
-- After `npm install` completes, also verify the Playwright browsers are installed. If the install log mentions a missing Chromium, run `npx playwright install chromium`.
 
 ## Step 4: Proceed with the rest of the mode
 
-Only continue into the mode's main instructions once all three checks pass. If any check failed and the user declined to fix it, halt and do not run any `node` or `npm run ...` commands.
+Only continue into the mode's main instructions once Node, npm, and bootstrap pass. If Node or npm is missing, halt and surface the install guidance because Home-Ops cannot self-install the runtime it is running on.

@@ -141,16 +141,3 @@ Canonical statuses come from `templates/states.yml` and currently cover:
 | `scripts/pipeline/dedup-tracker.mjs` | Removes duplicate listings keyed by address and city |
 | `scripts/pipeline/merge-tracker.mjs` | Merges staged tracker additions into `data/listings.md` |
 | `scripts/browser/check-liveness.mjs` | Uses Playwright to verify listing activity |
-
-## Dashboard
-
-The `dashboard/` folder contains a Go terminal UI for the listing tracker.
-
-Current behavior:
-
-- Reads `data/listings.md`
-- Groups listings by canonical status
-- Shows score, address, city, price, and core facts
-- Opens markdown reports from `reports/`
-- Opens the original listing URL when the report header includes one
-- Lets the user update tracker status inline

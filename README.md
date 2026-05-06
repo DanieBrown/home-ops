@@ -4,14 +4,21 @@ A dedicated home hunting application that takes in your preferences and applys t
 ## Prerequisites
 - Node.js 18+
 - npm 9+
-- Playwright Chromium (`npx playwright install chromium`)
-- Optional: Go 1.21+ (For dashboard only)
+- Playwright Chromium (auto-installed by `/home-ops init` when missing)
+- Optional: Python 3.10+ for enhanced school metadata crawling (`/home-ops init` attempts setup automatically)
 
 ## Get started (run in order)
-1. Install dependencies:
+1. Optional manual dependency setup:
+```bash
+npm run bootstrap
+```
+`/home-ops init` and the browser-session npm scripts run this automatically. It installs the project packages and Playwright Chromium when they are missing. During init, Home-Ops also attempts Python sidecar setup; on Windows it can use `winget` to install Python 3.12 if Python is missing.
+
+Manual equivalent:
 ```bash
 npm install
 npx playwright install chromium
+npm run bootstrap:python
 ```
 2. Run setup checks:
 ```bash
@@ -24,7 +31,7 @@ npm run verify
 > Some commands are still being utilized with copilot, if you are using vs code make sure to enable the "Use Claude Hooks" in the vs code settings for optimal performance.
 > On Windows PowerShell, use `npm.cmd` instead of `npm` if `npm.ps1` is blocked.
 
-3. Create/update buyer files (Recommend using the dashboard wizard). This also regenerates `portals.yml` from your source picks:
+3. Create/update buyer files. This also regenerates `portals.yml` from your source picks:
 ```bash
 /home-ops profile
 ```

@@ -14,7 +14,7 @@ Launch or confirm the repo-local hosted browser session that Home-Ops will reuse
 
 ## Prerequisites
 
-Run the environment preflight in `modes/_preflight.md` before anything else. This mode calls `npm run browser:status`, `npm run browser:setup`, and `npm run browser:session`, so Node.js and npm must both be on PATH with `node_modules/` present. If any preflight step fails, halt and surface the install guidance to the user instead of attempting to launch the browser session.
+Run the environment preflight in `modes/_preflight.md` before anything else. This mode calls `npm run browser:status`, `npm run browser:setup`, and `npm run browser:session`, so Node.js and npm must both be on PATH. The browser/init npm scripts run `scripts/system/bootstrap.mjs` first; if `node_modules/`, `playwright`, `yaml`, or Playwright Chromium are missing, bootstrap installs them automatically. Init and browser-session setup also attempt Python sidecar setup for crawl4ai-backed school metadata; on Windows bootstrap can use `winget` to install Python 3.12 when Python is missing. Python setup is non-fatal because the Node pipeline has a fallback path. If Node.js or npm itself is missing, halt and surface the install guidance because the repo cannot self-install its primary runtime.
 
 ## Goal
 

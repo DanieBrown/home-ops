@@ -8,15 +8,17 @@ If your Codex client reads project instructions automatically, `AGENTS.md` plus 
 
 - A Codex client that honors `AGENTS.md`
 - Node.js 18+
-- Playwright Chromium installed
-- Go 1.21+ if you want the dashboard
+- npm 9+
+- Playwright Chromium installed, or available for `/home-ops init` to install automatically
+- Optional: Python 3.10+ for enhanced school metadata crawling; `/home-ops init` attempts sidecar setup automatically
 
 ## Install
 
 ```bash
-npm install
-npx playwright install chromium
+npm run bootstrap
 ```
+
+The browser-session commands used by `/home-ops init` run this bootstrap automatically when dependencies or Playwright Chromium are missing. Init also runs Python sidecar setup and can attempt a Windows Python install through `winget` when Python is missing.
 
 ## Recommended Starting Prompts
 
@@ -59,8 +61,4 @@ npx playwright install chromium
 npm run doctor
 npm run sync-check
 npm run verify
-npm run dashboard:build
-
-# optional dashboard build
-cd dashboard && go build ./...
 ```
