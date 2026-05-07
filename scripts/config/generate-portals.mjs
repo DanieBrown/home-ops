@@ -11,14 +11,16 @@
  * time config/profile.yml changes. The profile mode invokes it automatically.
  */
 
-import { existsSync, readFileSync, writeFileSync } from 'fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
 import { join } from 'path';
 import YAML from 'yaml';
 
 import { slugify as slugifyLower } from '../shared/text-utils.mjs';
-import { ROOT, PROFILE_PATH, PORTALS_PATH } from '../shared/paths.mjs';
+import { ROOT, OUTPUT_DIR, PROFILE_PATH, PORTALS_PATH } from '../shared/paths.mjs';
 
 const REGISTRY_PATH = join(ROOT, 'config', 'city-registry.yml');
+const DEVELOPMENT_SOURCES_OUTPUT = join(OUTPUT_DIR, 'development-sources.json');
+const STATE_SOURCES_OUTPUT = join(OUTPUT_DIR, 'state-sources.json');
 
 const STATE_RESEARCH_DEFAULTS = {
   NC: {
@@ -31,6 +33,18 @@ const STATE_RESEARCH_DEFAULTS = {
       {
         name: 'NCDOT STIP Projects',
         url: 'https://www.ncdot.gov/projects/state-transportation-improvement-program/Pages/default.aspx',
+        layers: [
+          {
+            name: 'NCDOT STIP points',
+            url: 'https://gis11.services.ncdot.gov/arcgis/rest/services/NCDOT_STIP/MapServer/0',
+            geometryType: 'point',
+          },
+          {
+            name: 'NCDOT STIP lines',
+            url: 'https://gis11.services.ncdot.gov/arcgis/rest/services/NCDOT_STIP/MapServer/1',
+            geometryType: 'line',
+          },
+        ],
       },
       {
         name: 'CAMPO (Capital Area MPO)',
@@ -68,16 +82,19 @@ const STATE_RESEARCH_DEFAULTS = {
         name: 'Holly Springs Interactive Development Activity Map',
         url: 'https://hollyspringsnc.gov/321/Maps',
         note: 'Use the Development Activity Map / Interactive Development Activity Map for proposed, approved, and under-construction projects.',
+        lookupMethods: ['address', 'parcel', 'project-name', 'nearby-road'],
       },
       'fuquay-varina': {
         name: 'Fuquay-Varina Interactive Development Map',
         url: 'https://fuquay-varina.org/304/Whats-Coming-to-Fuquay-Varina',
         note: 'Use the interactive development map and project tabs for proposed, approved, under-construction, and completed projects.',
+        lookupMethods: ['address', 'parcel', 'project-name', 'nearby-road'],
       },
       apex: {
         name: 'Apex Interactive Development Map',
         url: 'https://www.apexnc.org/659/View',
         note: 'Use the development map for proposed, approved, and under-construction projects.',
+        lookupMethods: ['address', 'parcel', 'project-name', 'nearby-road'],
       },
       cary: {
         name: 'Cary Planning & Development Services',
@@ -98,6 +115,61 @@ const STATE_RESEARCH_DEFAULTS = {
       'wake forest': {
         name: 'Wake Forest Planning',
         url: 'https://www.wakeforestnc.gov/departments/planning',
+      },
+    },
+    property_permits: {
+      Wake: [
+        {
+          name: 'Wake County Permit Search (pre-2018)',
+          url: 'https://permitsearch.wake.gov/',
+          jurisdiction: 'Wake County',
+          lookupMethods: ['address', 'pin', 'owner', 'permit-number'],
+          note: 'Historical Wake County permit search. Page states post-7/1/2018 records should be checked in the Wake County Permit Portal.',
+        },
+        {
+          name: 'Wake County Planning, Development & Inspections',
+          url: 'https://www.wake.gov/departments-government/planning-development-inspections',
+          jurisdiction: 'Wake County',
+          lookupMethods: ['address', 'pin', 'permit-number'],
+          note: 'Use for current county-issued permit and inspection portal routing; municipal addresses may be handled by the city instead.',
+        },
+      ],
+    },
+    municipal_property_permits: {
+      'holly springs': {
+        name: 'Holly Springs CityView Portal',
+        url: 'https://cityview.hollyspringsnc.us/portal',
+        jurisdiction: 'Town of Holly Springs',
+        lookupMethods: ['service-address', 'permit-number', 'application-search', 'property-search'],
+        note: 'Public portal exposes Building & UDO permit application search and property search.',
+      },
+      'fuquay-varina': {
+        name: 'Fuquay-Varina ePermits',
+        url: 'https://esuite.fuquay-varina.org/esuite.permits/',
+        jurisdiction: 'Town of Fuquay-Varina',
+        lookupMethods: ['service-address', 'permit-number'],
+        note: 'Public Information Search supports service-address and permit-number lookups.',
+      },
+      apex: {
+        name: 'Apex ePermits Public Information Search',
+        url: 'https://apexnc.org/183/Building-Inspections-Permits',
+        jurisdiction: 'Town of Apex',
+        lookupMethods: ['address', 'permit-number'],
+        note: 'Town guidance says public users can search by permit number or address for issued permits and inspection results.',
+      },
+      cary: {
+        name: 'Cary Click2Gov Permit Portal',
+        url: 'https://www.carync.gov/services-publications/click2gov-landing-page',
+        jurisdiction: 'Town of Cary',
+        lookupMethods: ['address', 'permit-number', 'inspection-results'],
+        note: 'Cary Click2Gov provides permit search, inspection scheduling, and inspection results.',
+      },
+      durham: {
+        name: 'Durham LDO Application/Permit Search',
+        url: 'https://ldo4.durhamnc.gov/DurhamWeb/Search/ApplicationSearchResults',
+        jurisdiction: 'City of Durham',
+        lookupMethods: ['application-permit', 'related-permit-summary', 'parcel-address-pin-owner', 'inspection'],
+        note: 'Search does not require login. Use Application/Permit for direct permit records, Parcel by Parcel ID/PIN/Address/Owner Name when address search is thin, and Inspection for inspection history.',
       },
     },
   },
@@ -426,6 +498,128 @@ function buildResearchSources(areas, profile) {
   return { sentimentSources, schoolSources, developmentSources };
 }
 
+function buildGeneratedResearchInventories(areas, profile, research) {
+  const states = [...new Set(areas.map((area) => area.state || 'NC'))];
+  const generatedAt = new Date().toISOString();
+
+  const stateSources = {
+    generatedAt,
+    states: {},
+  };
+
+  for (const state of states) {
+    const defaults = STATE_RESEARCH_DEFAULTS[state] ?? {};
+    stateSources.states[state] = {
+      transportation: (defaults.transportation ?? []).map((source) => ({
+        ...source,
+        sourceLevel: 'state',
+        recommendedUse: /ncdot|stip/i.test(`${source.name ?? ''} ${source.url ?? ''}`)
+          ? 'Spatially query official STIP layers near the home, then cite TIP/SPOT ID, route, description, right-of-way year, construction year, and comment.'
+          : 'Use as a regional transportation planning context source after direct spatial matches are checked.',
+      })),
+    };
+  }
+
+  const municipalityDefaults = {};
+  const countyDefaults = {};
+  const propertyPermitDefaults = {};
+  const municipalPropertyPermitDefaults = {};
+  for (const state of states) {
+    const defaults = STATE_RESEARCH_DEFAULTS[state] ?? {};
+    Object.assign(municipalityDefaults, defaults.municipalities ?? {});
+    Object.assign(countyDefaults, defaults.counties ?? {});
+    Object.assign(propertyPermitDefaults, defaults.property_permits ?? {});
+    Object.assign(municipalPropertyPermitDefaults, defaults.municipal_property_permits ?? {});
+  }
+
+  const profileResearch = profile?.research_sources?.development ?? {};
+  const developmentSources = {
+    generatedAt,
+    enabled: {
+      stateDot: profileResearch.state_dot === true,
+      countyPlanning: profileResearch.county_planning === true,
+      municipalPlanning: profileResearch.municipal_planning === true,
+    },
+    profileAreas: areas.map((area) => ({
+      name: area.name,
+      state: area.state,
+      county: area.county,
+      rank: area.rank ?? null,
+    })),
+    counties: [],
+    municipalities: [],
+    propertyPermitSources: [],
+    sourceNotes: [
+      'Development maps are for nearby project pressure; property permit sources are for work permitted on the specific home/address.',
+      'When searching home permit history, use service address, permit number, PIN/parcel, and owner names where supported. Older and newer permits may live in different systems.',
+    ],
+  };
+
+  const countySeen = new Set();
+  const municipalitySeen = new Set();
+  const propertyPermitSeen = new Set();
+
+  for (const area of areas) {
+    const countyKey = String(area.county ?? '').trim();
+    const countyDefault = countyDefaults[countyKey];
+    if (countyDefault && !countySeen.has(countyKey)) {
+      countySeen.add(countyKey);
+      developmentSources.counties.push({
+        key: countyKey.toLowerCase(),
+        state: area.state,
+        ...countyDefault,
+        sourceLevel: 'county',
+        lookupMethods: ['address', 'parcel', 'pin', 'case-id', 'subdivision', 'nearby-road'],
+      });
+    }
+
+    const countyPermitSources = propertyPermitDefaults[countyKey] ?? [];
+    for (const source of countyPermitSources) {
+      const key = `${source.name}|${source.url}`;
+      if (!propertyPermitSeen.has(key)) {
+        propertyPermitSeen.add(key);
+        developmentSources.propertyPermitSources.push({
+          ...source,
+          sourceLevel: 'county',
+          appliesTo: countyKey,
+        });
+      }
+    }
+
+    const municipalityKey = String(area.name ?? '').trim().toLowerCase();
+    const municipalityDefault = municipalityDefaults[municipalityKey];
+    if (municipalityDefault && !municipalitySeen.has(municipalityKey)) {
+      municipalitySeen.add(municipalityKey);
+      developmentSources.municipalities.push({
+        key: municipalityKey,
+        city: area.name,
+        state: area.state,
+        ...municipalityDefault,
+        sourceLevel: 'municipal',
+      });
+    }
+
+    const municipalPermitDefault = municipalPropertyPermitDefaults[municipalityKey];
+    if (municipalPermitDefault) {
+      const key = `${municipalPermitDefault.name}|${municipalPermitDefault.url}`;
+      if (!propertyPermitSeen.has(key)) {
+        propertyPermitSeen.add(key);
+        developmentSources.propertyPermitSources.push({
+          ...municipalPermitDefault,
+          sourceLevel: 'municipal',
+          appliesTo: area.name,
+        });
+      }
+    }
+  }
+
+  // Keep the exact generated portals development sources here too so consumers
+  // can cite the profile-selected inventory without reparsing YAML.
+  developmentSources.portalInventory = research.developmentSources;
+
+  return { developmentSources, stateSources };
+}
+
 function buildSearchQueries(areas, hardRequirements, selection, scanKeywords = [], scanNegativeKeywords = []) {
   const priceMin = Number.parseInt(hardRequirements?.price_min ?? 0, 10);
   const priceMax = Number.parseInt(hardRequirements?.price_max ?? 0, 10);
@@ -507,6 +701,7 @@ function buildPortalsDocument(profile, registry) {
     );
   }
   const research = buildResearchSources(areas, profile);
+  const generatedInventories = buildGeneratedResearchInventories(areas, profile, research);
   const scanKeywords = Array.isArray(profile.search?.scan_keywords) ? profile.search.scan_keywords : [];
   const scanNegativeKeywords = Array.isArray(profile.search?.scan_negative_keywords) ? profile.search.scan_negative_keywords : [];
   const queries = buildSearchQueries(
@@ -525,7 +720,7 @@ function buildPortalsDocument(profile, registry) {
     search_queries: queries,
   };
 
-  return { document, warnings };
+  return { document, warnings, generatedInventories };
 }
 
 function serialize(document) {
@@ -550,14 +745,18 @@ function serialize(document) {
 function main() {
   const profile = readYaml(PROFILE_PATH);
   const registry = optionalYaml(REGISTRY_PATH);
-  const { document, warnings } = buildPortalsDocument(profile, registry);
+  const { document, warnings, generatedInventories } = buildPortalsDocument(profile, registry);
   const yamlText = serialize(document);
   writeFileSync(PORTALS_PATH, yamlText, 'utf8');
+  mkdirSync(OUTPUT_DIR, { recursive: true });
+  writeFileSync(DEVELOPMENT_SOURCES_OUTPUT, `${JSON.stringify(generatedInventories.developmentSources, null, 2)}\n`, 'utf8');
+  writeFileSync(STATE_SOURCES_OUTPUT, `${JSON.stringify(generatedInventories.stateSources, null, 2)}\n`, 'utf8');
 
   const platformKeys = Object.keys(document.platforms);
   const areaCount = platformKeys.length > 0 ? document.platforms[platformKeys[0]].search_urls.length : 0;
   const platformSummary = platformKeys.length > 0 ? platformKeys.join(', ') : '(none enabled)';
   console.log(`Wrote portals.yml with ${areaCount} area(s) across platforms: ${platformSummary}.`);
+  console.log('Wrote output/development-sources.json and output/state-sources.json.');
   if (warnings.length > 0) {
     console.log('\nWarnings:');
     for (const warning of warnings) {

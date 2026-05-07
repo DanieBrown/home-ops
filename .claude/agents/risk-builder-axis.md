@@ -20,6 +20,7 @@ For each home (identified by `slug`), expect:
 - `output/permits/{slug}.json` — county-permits spatial query results
 - `output/builder/{slug}.json` — builder reputation lookup (may be missing if no builder detected)
 - `output/source-plan/{slug}.json` — sources the planner targeted
+- `output/deep-packets/{slug}.json` — includes `sourcePlans.development.propertyPermitGuides` for buyer-facing manual permit lookup links
 - `buyer-profile.md`, `config/profile.yml` — buyer commute destinations, weights
 
 Also accept any explicit paths the parent agent passes you.
@@ -73,13 +74,19 @@ Also accept any explicit paths the parent agent passes you.
   "sourceCoverage": {
     "ncdot":   "captured|missing|fallback-capture|fallback-failed",
     "county":  "...",
-    "builder": "captured|not-applicable|missing|fallback-capture|fallback-failed"
+    "builder": "captured|not-applicable|missing|fallback-capture|fallback-failed",
+    "manualPropertyPermits": "provided|missing"
   },
+  "manualPropertyPermitLookup": [
+    { "name": "...", "url": "...", "jurisdiction": "...", "howToSearch": ["..."], "note": "..." }
+  ],
   "confidence": "high|medium|low"
 }
 ```
 
 When no builder is detected, omit the `builder` block and set `sourceCoverage.builder = "not-applicable"`. Always cite specific NCDOT or permit case IDs when present in the captured data.
+
+For property permit history on the specific home, do not invent automated results. If `propertyPermitGuides` exist in the deep packet, return them in `manualPropertyPermitLookup` with concise buyer-facing search instructions. Treat this as a self-check link separate from county radius permits and nearby development pressure.
 
 ## Risk level rubric
 

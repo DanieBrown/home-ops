@@ -324,6 +324,15 @@ function summarizeConstruction(record) {
     matchCount: Array.isArray(record.matches) ? record.matches.length : 0,
     sourcesChecked: record.sourcesChecked ?? [],
     matches: (record.matches ?? []).slice(0, 5),
+    spatialStip: record.spatialStip
+      ? {
+        status: record.spatialStip.status,
+        radiusMeters: record.spatialStip.radiusMeters,
+        matchCount: Array.isArray(record.spatialStip.matches) ? record.spatialStip.matches.length : 0,
+        sourcesChecked: record.spatialStip.sourcesChecked ?? [],
+        matches: (record.spatialStip.matches ?? []).slice(0, 10),
+      }
+      : null,
     roadHints: record.roadHints ?? [],
     counties: record.counties ?? [],
     note: record.reviewed
@@ -386,6 +395,7 @@ async function buildPacket(target, researchContext) {
         subdivisionHints: developmentPlan.subdivisionHints,
         roadHints: developmentPlan.roadHints,
         entries: decorateGenericPlan(developmentPlan.entries),
+        propertyPermitGuides: developmentPlan.propertyPermitGuides ?? [],
       },
       school: {
         minimumRating: schoolPlan.minimumRating,
@@ -431,6 +441,11 @@ async function buildPacket(target, researchContext) {
       avidRatingsReviewCount: builderRecord?.reviews?.avidRatings?.reviewCount ?? null,
       avidRatingsCategories: builderRecord?.reviews?.avidRatings?.categories ?? null,
       eliantOverall: builderRecord?.reviews?.eliant?.overall ?? null,
+      bbbRating: builderRecord?.reviews?.bbb?.rating ?? null,
+      bbbAccredited: builderRecord?.reviews?.bbb?.accredited ?? null,
+      builder100Rank: builderRecord?.reviews?.builderOnline?.rank ?? null,
+      builder100Year: builderRecord?.reviews?.builderOnline?.year ?? null,
+      builderStanding: builderRecord?.standing ?? null,
     },
     reportSections: {
       neighborhoodSentiment: target.sections['Neighborhood Sentiment'],
@@ -448,6 +463,8 @@ async function buildPacket(target, researchContext) {
       'After the main agent collects schoolMetadata from all workers, write it to output/school-metadata/<slug>.json (slug matches the sentiment and construction sidecars). The briefing PDF reads that file to render the Schools & Metadata table.',
       'Do not claim browser-backed neighborhood sentiment if sentimentEvidence.status is not captured.',
       'Do not give full development confidence when NCDOT or local planning sources were not reviewed directly.',
+      'For property permit history, use sourcePlans.development.propertyPermitGuides as a manual lookup guide. Include the portal URL and 2-4 sentence instructions for the buyer to search the address themselves when automation is not reliable.',
+      'Separate property permit history from nearby development pressure. A clean or missing address permit search does not prove there are no nearby rezonings, road projects, or subdivision cases.',
       'Treat constructionEvidence.level as a resale-risk modifier: "high" should lower the deep rerank unless the pressure is clearly benign (e.g. completed projects only).',
       'If constructionEvidence.status is "not-reviewed" or "unreachable", flag construction risk as an open question rather than claiming clear air.',
       'Include builder reputation in the Risk & Builder Quality section when builderEvidence.status is "found". If status is "not-found" or "no-builder-detected", omit the builder section rather than speculating.',

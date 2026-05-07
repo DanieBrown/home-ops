@@ -31,6 +31,7 @@ const CONSTRUCTION_DIR = join(ROOT, 'output', 'construction');
 const PERMITS_DIR = join(ROOT, 'output', 'permits');
 const COMMUNITY_DIR = join(ROOT, 'output', 'communities');
 const DEEP_PACKET_DIR = join(ROOT, 'output', 'deep-packets');
+const BUILDER_DIR = join(ROOT, 'output', 'builder');
 const SCHOOL_METADATA_DIR = join(ROOT, 'output', 'school-metadata');
 const LISTING_DIR = join(ROOT, 'output', 'listings');
 
@@ -385,6 +386,9 @@ function buildGapList(report, finalist, profile) {
   if (finalist.permitsMismatch) {
     gaps.push(finalist.permitsMismatch);
   }
+  if (finalist.builderMismatch) {
+    gaps.push(finalist.builderMismatch);
+  }
   if (finalist.packetMismatch) {
     gaps.push(finalist.packetMismatch);
   }
@@ -500,6 +504,11 @@ function collectSourceLinks(finalist) {
   for (const source of finalist.permits?.sourcesChecked ?? []) {
     addSourceLink(collector, source.name || source.service || 'Permit source', source.url, source.ok === false ? 'unreachable' : 'checked');
   }
+  const builderReviews = finalist.builder?.reviews ?? {};
+  addSourceLink(collector, 'Avid Ratings builder reviews', builderReviews.avidRatings?.url, finalist.builder?.status);
+  addSourceLink(collector, 'Eliant builder reviews', builderReviews.eliant?.url, finalist.builder?.status);
+  addSourceLink(collector, 'BBB builder profile', builderReviews.bbb?.url, finalist.builder?.status);
+  addSourceLink(collector, 'Builder 100 list', builderReviews.builderOnline?.url, finalist.builder?.status);
 
   for (const source of finalist.sentiment?.sourceCoverage ?? []) {
     addSourceLink(collector, source.name || source.key || 'Sentiment source', source.url, source.status);
@@ -757,6 +766,113 @@ function buildDevelopmentInfrastructureSection({ construction, permits, developm
       <h4>Road / Infrastructure Signals</h4>
       <ul class="infra-list">${constructionRows || '<li class="muted">No matched NCDOT/STIP project snippets captured for this home.</li>'}</ul>
       ${sourceRows ? `<ul class="resource-list compact">${sourceRows}</ul>` : ''}
+    </div>`;
+}
+
+function formatScoreWithCount(score, count, unit) {
+  const scoreText = score == null || score === '' ? '--' : `${score}/5`;
+  const countText = count == null || count === '' ? '' : ` from ${Number(count).toLocaleString()} ${unit}${Number(count) === 1 ? '' : 's'}`;
+  return `${scoreText}${countText}`;
+}
+
+function standingLabel(value) {
+  return String(value ?? '')
+    .replace(/[-_]+/g, ' ')
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function sourceLink(label, url) {
+  return url ? `<a href="${escapeHtml(url)}">${escapeHtml(label)}</a>` : escapeHtml(label);
+}
+
+function buildBuilderReputationCard(finalist) {
+  const builder = finalist.builder;
+  const packetBuilder = finalist.packet?.builderEvidence ?? {};
+  const listingBuilderName = finalist.listing?.builderName;
+  const builderName = firstNonEmpty(builder?.builderName, packetBuilder.builderName, listingBuilderName);
+  if (!builderName) return '';
+
+  const status = firstNonEmpty(builder?.status, packetBuilder.status, listingBuilderName ? 'detected-not-reviewed' : '');
+  if (status === 'no-builder-detected') return '';
+
+  const avid = builder?.reviews?.avidRatings;
+  const eliant = builder?.reviews?.eliant;
+  const bbb = builder?.reviews?.bbb;
+  const builderOnline = builder?.reviews?.builderOnline;
+  const hasReviewData = Boolean(avid || eliant || bbb || builderOnline || packetBuilder.avidRatingsOverall || packetBuilder.eliantOverall);
+  const detectedBy = firstNonEmpty(builder?.detectionSource, packetBuilder.detectionSource);
+  const confidence = firstNonEmpty(builder?.detectionConfidence, packetBuilder.detectionConfidence);
+
+  const rows = [];
+  if (builder?.standing?.label) {
+    rows.push(['Overall standing', standingLabel(builder.standing.label)]);
+  }
+  if (avid || packetBuilder.avidRatingsOverall) {
+    const value = [
+      formatScoreWithCount(avid?.overall ?? packetBuilder.avidRatingsOverall, avid?.reviewCount ?? packetBuilder.avidRatingsReviewCount, 'survey'),
+      avid?.standing?.label ? standingLabel(avid.standing.label) : '',
+    ].filter(Boolean).join(' - ');
+    rows.push([sourceLink('Avid Ratings', avid?.url), value]);
+    const categories = avid?.categories ?? packetBuilder.avidRatingsCategories;
+    if (categories?.qualityOfHome != null) rows.push(['Avid quality of home', `${categories.qualityOfHome}/5`]);
+    if (categories?.responsiveness != null) rows.push(['Avid responsiveness', `${categories.responsiveness}/5`]);
+  }
+  if (eliant || packetBuilder.eliantOverall) {
+    const value = [
+      formatScoreWithCount(eliant?.overall ?? packetBuilder.eliantOverall, eliant?.reviewCount, 'review'),
+      eliant?.standing?.label ? standingLabel(eliant.standing.label) : '',
+    ].filter(Boolean).join(' - ');
+    rows.push([sourceLink('Eliant', eliant?.url), value]);
+  }
+  if (bbb) {
+    rows.push([sourceLink('BBB rating', bbb.url), [bbb.rating ?? '--', bbb.standing?.label ? standingLabel(bbb.standing.label) : ''].filter(Boolean).join(' - ')]);
+    rows.push(['BBB accreditation', bbb.accredited ? 'Accredited' : 'Not shown as accredited']);
+    if (bbb.customerRating != null) rows.push(['BBB customer rating', formatScoreWithCount(bbb.customerRating, bbb.reviewCount, 'review')]);
+    if (bbb.complaintsClosedLast3Years != null) rows.push(['BBB complaints', `${bbb.complaintsClosedLast3Years} closed in 3 years${bbb.complaintsClosedLast12Months != null ? `; ${bbb.complaintsClosedLast12Months} in 12 months` : ''}`]);
+  }
+  if (builderOnline) {
+    const rank = builderOnline.rank ? `#${builderOnline.rank}` : 'Listed';
+    const prior = builderOnline.priorYearRank ? `prior #${builderOnline.priorYearRank}` : '';
+    rows.push([sourceLink(`Builder 100 ${builderOnline.year ?? ''}`.trim(), builderOnline.url), [rank, builderOnline.standing?.label ? standingLabel(builderOnline.standing.label) : '', prior].filter(Boolean).join(' - ')]);
+    if (builderOnline.totalClosings != null) rows.push(['Builder 100 closings', `${Number(builderOnline.totalClosings).toLocaleString()} closings${builderOnline.grossRevenueMillions != null ? `; $${Number(builderOnline.grossRevenueMillions).toLocaleString()}M revenue` : ''}`]);
+  }
+  if (detectedBy || confidence) {
+    rows.push(['Detection', [confidence, detectedBy].filter(Boolean).join(', ')]);
+  }
+
+  const rowHtml = rows.map(([label, value]) => `
+    <tr>
+      <th>${label}</th>
+      <td>${escapeHtml(value)}</td>
+    </tr>
+  `).join('');
+
+  const snippets = (avid?.snippets ?? []).slice(0, 2).map((snippet) => `
+    <li>${escapeHtml(summarizeSection(snippet, 180))}</li>
+  `).join('');
+
+  const reviewLinks = [
+    avid?.url ? `<a href="${escapeHtml(avid.url)}">Avid Ratings</a>` : '',
+    eliant?.url ? `<a href="${escapeHtml(eliant.url)}">Eliant</a>` : '',
+    bbb?.url ? `<a href="${escapeHtml(bbb.url)}">BBB</a>` : '',
+    builderOnline?.url ? `<a href="${escapeHtml(builderOnline.url)}">Builder 100</a>` : '',
+  ].filter(Boolean).join(' ');
+
+  const statusNote = hasReviewData
+    ? 'Public builder reputation data was captured from the sources below. Treat it as a directional quality signal, not a substitute for inspection and warranty review.'
+    : status === 'not-found'
+      ? 'Builder was detected, but no matching public Avid Ratings or Eliant score was found.'
+      : 'Builder was detected from the listing/report, but the reputation lookup has not populated a review sidecar yet.';
+
+  return `
+    <div class="panel builder wide">
+      <h3>Builder Reputation</h3>
+      <p><strong>${escapeHtml(builderName)}</strong></p>
+      ${rowHtml ? `<table class="builder-status"><tbody>${rowHtml}</tbody></table>` : ''}
+      ${builder?.standing?.summary ? `<p class="muted">${escapeHtml(builder.standing.summary)}</p>` : ''}
+      <p class="muted">${escapeHtml(statusNote)}</p>
+      ${snippets ? `<ul class="builder-snippets">${snippets}</ul>` : ''}
+      ${reviewLinks ? `<p class="builder-links">${reviewLinks}</p>` : ''}
     </div>`;
 }
 
@@ -1259,6 +1375,7 @@ function buildFinalistSection(finalist, profile, options = {}) {
   const developmentText = summarizeSection(report.sections['Development and Infrastructure'], 850);
   const buyerFitBlock = buildBuyerFitChecks(report, profile);
   const infrastructureBlock = buildDevelopmentInfrastructureSection({ construction, permits, developmentText });
+  const builderBlock = buildBuilderReputationCard(finalist);
 
   const topKpi = (sentiment?.kpiRollup ?? []).slice(0, 5).map((row) => `
     <tr>
@@ -1324,6 +1441,7 @@ function buildFinalistSection(finalist, profile, options = {}) {
           <p>${escapeHtml(summarizeSection(plainText(recommendationText), 1500))}</p>
         </div>
         ${buyerFitBlock}
+        ${builderBlock}
         <div class="panel concerns wide">
           <h3>Top Concerns</h3>
           <ul>${(concerns.length ? concerns : ['(none captured)']).map((s) => `<li>${escapeHtml(s)}</li>`).join('')}</ul>
@@ -1577,6 +1695,34 @@ function buildHtml(finalists, profile, mode = 'batch') {
   }
   .construction .resource-list a { color: #1d4ed8; }
   .infrastructure h3 { color: #075985; }
+  .builder {
+    background: #f8fafc;
+    border-color: #cbd5e1;
+  }
+  .builder h3 { color: #334155; }
+  .builder-status {
+    width: 100%;
+    margin: 6px 0 8px;
+    table-layout: fixed;
+  }
+  .builder-status th {
+    width: 38%;
+    text-transform: none;
+    letter-spacing: 0;
+    font-size: 8.5pt;
+    background: #f3f4f6;
+  }
+  .builder-status td { font-size: 9pt; font-weight: 600; color: #111827; }
+  .builder-snippets {
+    margin-top: 7px;
+    padding-left: 14px;
+    font-size: 8.5pt;
+  }
+  .builder-links a {
+    color: #1d4ed8;
+    margin-right: 10px;
+    font-size: 8.5pt;
+  }
   .risk-none th { border-left: 4px solid #16a34a; }
   .risk-low th { border-left: 4px solid #84cc16; }
   .risk-med th { border-left: 4px solid #f59e0b; }
@@ -1773,6 +1919,7 @@ function loadFinalist(reportPath, rank = 1) {
   const permitsCompanion = loadCompanionForReport(report, PERMITS_DIR, 'Permits');
   const sentimentCompanion = loadCompanionForReport(report, SENTIMENT_DIR, 'Sentiment');
   const packetCompanion = loadCompanionForReport(report, DEEP_PACKET_DIR, 'Deep packet');
+  const builderCompanion = loadCompanionForReport(report, BUILDER_DIR, 'Builder');
   const listing = loadListingFacts(report);
   const communityPayload = findCompanionJson(report, COMMUNITY_DIR);
   const community = communityPayload && communityPayload.community
@@ -1785,12 +1932,14 @@ function loadFinalist(reportPath, rank = 1) {
     construction: constructionCompanion.data,
     permits: permitsCompanion.data,
     sentiment: sentimentCompanion.data,
+    builder: builderCompanion.data,
     packet: packetCompanion.data,
     listing,
     community,
     constructionMismatch: constructionCompanion.mismatchMessage,
     permitsMismatch: permitsCompanion.mismatchMessage,
     sentimentMismatch: sentimentCompanion.mismatchMessage,
+    builderMismatch: builderCompanion.mismatchMessage,
     packetMismatch: packetCompanion.mismatchMessage,
   };
 }

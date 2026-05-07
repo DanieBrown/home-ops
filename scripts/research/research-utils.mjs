@@ -1,4 +1,4 @@
-import { readFileSync } from 'fs';
+import { existsSync, readFileSync } from 'fs';
 import { isAbsolute, join, relative } from 'path';
 import YAML from 'yaml';
 import {
@@ -97,6 +97,15 @@ export function resolveWorkspacePath(projectRoot, rawPath) {
 
 export function readUtf8(filePath) {
   return readFileSync(filePath, 'utf8');
+}
+
+function readJsonIfExists(filePath) {
+  if (!existsSync(filePath)) return null;
+  try {
+    return JSON.parse(readUtf8(filePath));
+  } catch {
+    return null;
+  }
 }
 
 function parseMarkdownTable(lines, startHeader) {
@@ -415,6 +424,8 @@ export function loadResearchConfig(projectRoot = ROOT) {
   return {
     profile: YAML.parse(readUtf8(join(projectRoot, 'config', 'profile.yml'))) ?? {},
     portals: YAML.parse(readUtf8(join(projectRoot, 'portals.yml'))) ?? {},
+    generatedDevelopmentSources: readJsonIfExists(join(projectRoot, 'output', 'development-sources.json')),
+    generatedStateSources: readJsonIfExists(join(projectRoot, 'output', 'state-sources.json')),
   };
 }
 
@@ -510,6 +521,14 @@ function buildDevelopmentQueries(source, report, areaContext) {
     return dedupeStrings(targets);
   }
 
+  if (sourceName.includes('permit') || sourceName.includes('epermit') || sourceName.includes('cityview') || sourceName.includes('click2gov')) {
+    appendQuery(targets, report.address);
+    appendQuery(targets, `${report.address} permit`);
+    appendQuery(targets, `${report.city} permit search`);
+    appendQuery(targets, `${report.city} service address permit`);
+    return dedupeStrings(targets);
+  }
+
   if (sourceName.includes('planning') || sourceName.includes('development') || sourceName.includes('zoning') || sourceName.includes('inspections')) {
     subdivisionHints.forEach((hint) => appendQuery(targets, `${hint} site plan`));
     subdivisionHints.forEach((hint) => appendQuery(targets, `${hint} rezoning`));
@@ -531,6 +550,76 @@ function buildDevelopmentQueries(source, report, areaContext) {
   subdivisionHints.forEach((hint) => appendQuery(targets, hint));
   appendQuery(targets, `${report.city} development`);
   return dedupeStrings(targets);
+}
+
+function methodLabel(method) {
+  const labels = {
+    address: 'address',
+    'service-address': 'service address',
+    pin: 'PIN',
+    parcel: 'parcel ID',
+    owner: 'owner name',
+    'permit-number': 'permit number',
+    'application-search': 'application search',
+    'property-search': 'property search',
+    'inspection-results': 'inspection results',
+    'application-permit': 'application/permit search',
+    'related-permit-summary': 'related permit summary',
+    'parcel-address-pin-owner': 'parcel search by parcel ID, PIN, address, or owner name',
+    inspection: 'inspection search',
+  };
+  return labels[method] ?? String(method ?? '').replace(/[-_]+/g, ' ');
+}
+
+function buildPermitLookupInstructions(source, report) {
+  const methods = Array.isArray(source.lookupMethods) ? source.lookupMethods : [];
+  const labels = methods.map(methodLabel).filter(Boolean);
+  const city = report.city || 'the city';
+  const address = report.address || 'the listing address';
+
+  if (/durham/i.test(`${source.name ?? ''} ${source.jurisdiction ?? ''} ${source.url ?? ''}`)) {
+    return [
+      'Open the Durham LDO search link and choose "Perform a new search" if it lands on the results page.',
+      `Start with Application/Permit and search the service address: ${address}.`,
+      'If that is thin, use Parcel by Parcel ID, PIN, Address or Owner Name with the street address first, then parcel/PIN or owner if available from the listing or county record.',
+      'Use Permit/Related Permit Summary and Inspection to spot related permits, finaled inspections, or open items.',
+      'Record permit number, work type, status, issued/finaled dates, and inspection result; note "no matching record found" only after trying address plus parcel/PIN or owner.',
+    ];
+  }
+
+  const methodPhrase = labels.length
+    ? labels.join(', ')
+    : 'address, parcel/PIN, owner, and permit-number search where available';
+  return [
+    `Open the ${source.name ?? `${city} permit portal`}.`,
+    `Search for ${address} first, then try ${methodPhrase}.`,
+    'Record permit number, work type, status, issued/finaled dates, and inspection result when the portal exposes them.',
+    'If no match appears, note which lookup methods were tried instead of treating the home as permit-clear.',
+  ];
+}
+
+function buildPropertyPermitGuides(report, context, areaContext) {
+  const generated = context.generatedDevelopmentSources ?? {};
+  const cityNeedles = dedupeStrings([report.city, areaContext.matchedArea?.name]).map(normalizeLookupValue);
+  const countyNeedles = areaContext.counties.map(normalizeLookupValue);
+  const sources = Array.isArray(generated.propertyPermitSources)
+    ? generated.propertyPermitSources.filter((source) => {
+      const haystack = normalizeLookupValue(`${source?.appliesTo ?? ''} ${source?.jurisdiction ?? ''} ${source?.name ?? ''}`);
+      return cityNeedles.some((needle) => needle && haystack.includes(needle))
+        || countyNeedles.some((needle) => needle && haystack.includes(needle));
+    })
+    : [];
+
+  return dedupeSources(sources).map((source) => ({
+    name: source.name ?? 'Property permit lookup',
+    url: source.url ?? '',
+    jurisdiction: source.jurisdiction ?? source.appliesTo ?? '',
+    sourceLevel: source.sourceLevel ?? '',
+    lookupMethods: source.lookupMethods ?? [],
+    note: source.note ?? '',
+    recommendedQueries: buildDevelopmentQueries(source, report, areaContext),
+    instructions: buildPermitLookupInstructions(source, report),
+  }));
 }
 
 function buildSchoolQueries(key, report) {
@@ -614,6 +703,7 @@ function buildSentimentQueries(key, report, areaContext) {
 function mapDevelopmentSources(report, context) {
   const areaContext = resolveAreaContext(report, context);
   const developmentSources = context.portals.development_sources ?? {};
+  const generatedDevelopment = context.generatedDevelopmentSources ?? {};
   const sources = [];
 
   const countySources = [
@@ -655,6 +745,23 @@ function mapDevelopmentSources(report, context) {
   sources.push(...(Array.isArray(developmentSources.transportation) ? developmentSources.transportation : []));
   sources.push(...(Array.isArray(developmentSources.mpo) ? developmentSources.mpo : []));
 
+  const generatedMunicipalitySources = Array.isArray(generatedDevelopment.municipalities)
+    ? generatedDevelopment.municipalities.filter((source) => {
+      const haystack = normalizeLookupValue(`${source?.city ?? ''} ${source?.name ?? ''} ${source?.url ?? ''}`);
+      return cityNeedles.some((needle) => needle && haystack.includes(needle));
+    })
+    : [];
+  sources.push(...generatedMunicipalitySources);
+
+  const generatedPermitSources = Array.isArray(generatedDevelopment.propertyPermitSources)
+    ? generatedDevelopment.propertyPermitSources.filter((source) => {
+      const haystack = normalizeLookupValue(`${source?.appliesTo ?? ''} ${source?.jurisdiction ?? ''} ${source?.name ?? ''}`);
+      return cityNeedles.some((needle) => needle && haystack.includes(needle))
+        || areaContext.counties.some((county) => haystack.includes(normalizeLookupValue(county)));
+    })
+    : [];
+  sources.push(...generatedPermitSources);
+
   return {
     areaContext,
     sources: dedupeSources(sources),
@@ -663,10 +770,12 @@ function mapDevelopmentSources(report, context) {
 
 export function buildDevelopmentSourcePlan(report, context) {
   const mapped = mapDevelopmentSources(report, context);
+  const propertyPermitGuides = buildPropertyPermitGuides(report, context, mapped.areaContext);
   return {
     areaContext: mapped.areaContext,
     subdivisionHints: extractSubdivisionHints(report),
     roadHints: extractRoadHints(report),
+    propertyPermitGuides,
     entries: mapped.sources.map((source) => ({
       name: source.name ?? 'Unnamed development source',
       url: source.url ?? '',

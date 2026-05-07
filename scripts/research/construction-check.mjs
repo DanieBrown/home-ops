@@ -19,7 +19,7 @@ import { existsSync, readFileSync } from 'fs';
 import { mkdir, writeFile } from 'fs/promises';
 import { join } from 'path';
 import { fileURLToPath } from 'url';
-import { ROOT } from '../shared/paths.mjs';
+import { OUTPUT_DIR as ROOT_OUTPUT_DIR, ROOT } from '../shared/paths.mjs';
 import {
   extractRoadHints,
   loadResearchConfig,
@@ -32,6 +32,7 @@ import { ensureGeocode } from './geocode.mjs';
 import { slugify } from '../shared/text-utils.mjs';
 
 const OUTPUT_DIR = join(ROOT, 'output', 'construction');
+const STATE_SOURCES_PATH = join(ROOT_OUTPUT_DIR, 'state-sources.json');
 const DEFAULT_TIMEOUT_MS = 20000;
 const DEFAULT_STIP_RADIUS_METERS = 32187; // 20 miles
 
@@ -54,6 +55,21 @@ const NCDOT_STIP_LAYERS = [
     url: 'https://gis11.services.ncdot.gov/arcgis/rest/services/NCDOT_STIP/MapServer/1',
   },
 ];
+
+function loadStipLayers() {
+  if (!existsSync(STATE_SOURCES_PATH)) return NCDOT_STIP_LAYERS;
+  try {
+    const inventory = JSON.parse(readFileSync(STATE_SOURCES_PATH, 'utf8'));
+    const layers = Object.values(inventory.states ?? {})
+      .flatMap((state) => state.transportation ?? [])
+      .filter((source) => /ncdot|stip/i.test(`${source.name ?? ''} ${source.url ?? ''}`))
+      .flatMap((source) => source.layers ?? [])
+      .filter((layer) => layer?.url);
+    return layers.length > 0 ? layers : NCDOT_STIP_LAYERS;
+  } catch {
+    return NCDOT_STIP_LAYERS;
+  }
+}
 
 // Match project-phase keywords inside a result snippet so the score reflects
 // active vs. planned vs. complete.
@@ -242,7 +258,7 @@ async function queryStipNearTarget(target, areaContext, radiusMeters) {
   }
 
   const layerResults = [];
-  for (const layer of NCDOT_STIP_LAYERS) {
+  for (const layer of loadStipLayers()) {
     layerResults.push(await queryStipLayer(layer, geocode.lng, geocode.lat, radiusMeters, areaContext.counties ?? []));
   }
 

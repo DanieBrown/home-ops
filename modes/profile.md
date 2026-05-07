@@ -29,7 +29,7 @@ If any of those files are missing, create them from the checked-in example or te
 
 ## Flow -- Always Use The Web Wizard
 
-The web wizard at `tools/profile-wizard/` is the only supported interview path. It mirrors the filter fields on Zillow, Redfin, Realtor.com, and Homes.com and includes slider tiles for sentiment and school weights. The user completes it in a browser and clicks Submit; the answers are written to `.home-ops/profile-wizard-submission.json`.
+The web wizard at `tools/profile-wizard/` is the only supported interview path. It presents the flow like a real estate agent's buyer consult, then maps the answers back to the portal filters used by Zillow, Redfin, Realtor.com, and Homes.com plus sentiment and school weighting. The user completes it in a browser and clicks Submit; the answers are written to `.home-ops/profile-wizard-submission.json`.
 
 Do not offer an in-chat Q&A alternative, and do not fall back to `vscode_askQuestions` for the question flow. If the user asks to "just ask me" or to skip the wizard, tell them the wizard is now the only supported path and explain that partial edits can still be made by editing `config/profile.yml` or `buyer-profile.md` by hand afterward.
 
@@ -143,9 +143,9 @@ Preserve any existing nuanced notes that the user did not override.
 
 After updating the files, run:
 
-- `node scripts/config/generate-portals.mjs` -- regenerates `portals.yml` from the updated `config/profile.yml` and `config/city-registry.yml`. Always run this when search areas change so Zillow, Redfin, and Realtor.com base URLs stay in sync with the profile.
+- `node scripts/config/generate-portals.mjs` -- regenerates `portals.yml` from the updated `config/profile.yml` and `config/city-registry.yml`. It also writes `output/development-sources.json` and `output/state-sources.json` so deep/evaluate scripts can cite profile-selected municipal development maps, property-permit portals, county planning sources, and state transportation layers. Always run this when search areas change so Zillow, Redfin, Realtor.com, and research inventories stay in sync with the profile.
 - `node scripts/config/profile-sync-check.mjs`
-- **County GIS discovery** (if `research_sources.development.county_planning` is `true`): run `node scripts/research/county-services-discover.mjs --all`. This queries the ArcGIS REST catalog for each county in the buyer's search areas that has an entry in `config/county-arcgis-registry.yml`, discovers planning/permits/zoning feature layers by field scoring, and writes `config/county-sources.json`. The permits check (`county-permits-check.mjs`) loads this file automatically on every run. If a county is not in the registry, note it in the output summary and tell the user to add its ArcGIS base URL to `config/county-arcgis-registry.yml`.
+- **County GIS discovery** (if `research_sources.development.county_planning` is `true`): run `node scripts/research/county-services-discover.mjs --all`. This queries the ArcGIS REST catalog for each county in the buyer's search areas that has an entry in `config/county-arcgis-registry.yml`, discovers planning/permits/zoning feature layers by field scoring, and writes `output/county-sources.json`. The permits check (`county-permits-check.mjs`) loads this file automatically on every run. If a county is not in the registry, note it in the output summary and tell the user to add its ArcGIS base URL to `config/county-arcgis-registry.yml`.
 
 If `scripts/config/generate-portals.mjs` emits a warning for an unmatched city, add the missing `redfin_city_id` and `primary_zip` to `config/city-registry.yml` and rerun the generator before continuing.
 

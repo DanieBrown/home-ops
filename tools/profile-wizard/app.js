@@ -1,13 +1,13 @@
 /* Home-Ops Profile Wizard client
  *
- * Renders a progress-based questionnaire that mirrors the filter fields used
- * by Zillow, Redfin, Realtor.com, and Homes.com, plus sentiment and school
- * weight sliders. On submit, POSTs the full answer payload to /api/submit.
+ * Renders a consult-style buyer questionnaire that still maps cleanly to the
+ * portal filters used by Zillow, Redfin, Realtor.com, and Homes.com. On
+ * submit, POSTs the full answer payload to /api/submit.
  *
- * Step 1 is a State -> County -> Cities drill-down that pulls lists from
- * Wikipedia (proxied through the local server with an on-disk cache). The
- * wizard also saves answers to the server after each step so re-opening the
- * flow preserves prior selections.
+ * The search-area step is a State -> County -> Cities drill-down that pulls
+ * lists from Wikipedia (proxied through the local server with an on-disk
+ * cache). The wizard also saves answers to the server after each step so
+ * re-opening the flow preserves prior selections.
  */
 
 const state = {
@@ -30,16 +30,23 @@ const state = {
 
 const STEPS = [
   {
+    id: 'narrative',
+    title: 'Start with the home you are picturing',
+    hint: 'Tell me what daily life should feel like there. Use the chips if they help, but plain language is perfect.',
+    render: renderNarrative,
+    read: readNarrative,
+  },
+  {
     id: 'areas',
-    title: 'Where do you want to move?',
-    hint: 'Pick the state, the counties you want to search inside, and then the specific cities. Lists are pulled from Wikipedia and cached locally.',
+    title: 'Where should I be looking?',
+    hint: 'Pick the state, counties, and cities that should stay in the search conversation.',
     render: renderAreasStep,
     read: () => ({ areas_selection: state.answers.areas_selection ?? {} }),
   },
   {
     id: 'price',
-    title: 'What price range fits your plan?',
-    hint: 'Typed in dollars. Leave current values to keep them.',
+    title: 'What budget should I respect?',
+    hint: 'Give me the range you want listings filtered against. Leave a side blank if it is intentionally open.',
     render: () => renderRangeInputs({
       field: 'price',
       minLabel: 'Price minimum ($)',
@@ -51,9 +58,9 @@ const STEPS = [
     read: () => ({ price: state.answers.price ?? {} }),
   },
   {
-    id: 'beds-baths',
-    title: 'Minimum bedrooms and bathrooms?',
-    hint: 'Pick your floor. Portal filters will be seeded from these values.',
+    id: 'must-haves',
+    title: 'What are the non-negotiables?',
+    hint: 'These are the basics a listing should clear before we spend time researching it.',
     render: () => renderMultipleSingleChoice({
       questions: [
         {
@@ -76,16 +83,6 @@ const STEPS = [
           inputMin: 0,
           placeholder: 'e.g. 2.5',
         },
-      ],
-    }),
-    read: () => ({ beds_min: state.answers.beds_min, baths_min: state.answers.baths_min }),
-  },
-  {
-    id: 'size',
-    title: 'House and lot size',
-    hint: 'What floor keeps a listing in contention for your family?',
-    render: () => renderMultipleSingleChoice({
-      questions: [
         {
           field: 'sqft_min',
           label: 'Minimum square footage',
@@ -118,70 +115,6 @@ const STEPS = [
           placeholder: 'e.g. 0.25 (leave blank for no minimum)',
           unit: 'acres',
         },
-      ],
-    }),
-    read: () => ({
-      sqft_min: state.answers.sqft_min,
-      garage_min: state.answers.garage_min,
-      lot_min: state.answers.lot_min,
-    }),
-  },
-  {
-    id: 'home-type',
-    title: 'Home type and age',
-    hint: 'Used on every portal filter. Pick what applies.',
-    render: () => renderMultipleSingleChoice({
-      questions: [
-        {
-          field: 'home_type_preference',
-          label: 'Home type preference',
-          options: ['Resale only', 'New construction ok', 'New construction preferred', 'No preference'],
-          current: state.profile?.search?.hard_requirements?.home_type_preference,
-          includeCustom: false,
-        },
-        {
-          field: 'year_built_min',
-          label: 'Year built minimum',
-          current: state.profile?.search?.soft_preferences?.year_built_min,
-          inputOnly: true,
-          inputType: 'number',
-          inputStep: 1,
-          inputMin: 1800,
-          inputMax: 2100,
-          placeholder: 'e.g. 2000 (leave blank for no preference)',
-        },
-        {
-          field: 'stories_preferred',
-          label: 'Stories preferred',
-          current: state.profile?.search?.soft_preferences?.stories_preferred,
-          inputOnly: true,
-          inputType: 'number',
-          inputStep: 1,
-          inputMin: 1,
-          inputMax: 5,
-          placeholder: 'e.g. 2 (leave blank for no preference)',
-        },
-      ],
-      propertyTypesField: {
-        field: 'property_types',
-        label: 'Which property types should stay in the results?',
-        options: ['Single-family detached', 'Townhome', 'Condo', 'Multi-family', 'Land'],
-        current: state.profile?.search?.soft_preferences?.property_types,
-      },
-    }),
-    read: () => ({
-      home_type_preference: state.answers.home_type_preference,
-      year_built_min: state.answers.year_built_min,
-      stories_preferred: state.answers.stories_preferred,
-      property_types: state.answers.property_types ?? [],
-    }),
-  },
-  {
-    id: 'financial',
-    title: 'HOA maximum',
-    hint: 'HOA cap on monthly dues. Feeds the hard-requirement gate on every listing.',
-    render: () => renderMultipleSingleChoice({
-      questions: [
         {
           field: 'hoa_max',
           label: 'HOA max monthly',
@@ -195,12 +128,69 @@ const STEPS = [
         },
       ],
     }),
-    read: () => ({ hoa_max: state.answers.hoa_max }),
+    read: () => ({
+      beds_min: state.answers.beds_min,
+      baths_min: state.answers.baths_min,
+      sqft_min: state.answers.sqft_min,
+      garage_min: state.answers.garage_min,
+      lot_min: state.answers.lot_min,
+      hoa_max: state.answers.hoa_max,
+    }),
+  },
+  {
+    id: 'home-type',
+    title: 'What kind of home feels right?',
+    hint: 'Now we can talk style, age, construction, and the property types you actually want to see.',
+    render: () => renderMultipleSingleChoice({
+      questions: [
+        {
+          field: 'home_type_preference',
+          label: 'Resale vs. new construction',
+          options: ['Resale only', 'New construction ok', 'New construction preferred', 'No preference'],
+          current: state.profile?.search?.hard_requirements?.home_type_preference,
+          includeCustom: false,
+        },
+        {
+          field: 'year_built_min',
+          label: 'Oldest year built you would consider',
+          current: state.profile?.search?.soft_preferences?.year_built_min,
+          inputOnly: true,
+          inputType: 'number',
+          inputStep: 1,
+          inputMin: 1800,
+          inputMax: 2100,
+          placeholder: 'e.g. 2000 (leave blank for no preference)',
+        },
+        {
+          field: 'stories_preferred',
+          label: 'Preferred number of stories',
+          current: state.profile?.search?.soft_preferences?.stories_preferred,
+          inputOnly: true,
+          inputType: 'number',
+          inputStep: 1,
+          inputMin: 1,
+          inputMax: 5,
+          placeholder: 'e.g. 2 (leave blank for no preference)',
+        },
+      ],
+      propertyTypesField: {
+        field: 'property_types',
+        label: 'Property types to keep in the search',
+        options: ['Single-family detached', 'Townhome', 'Condo', 'Multi-family', 'Land'],
+        current: state.profile?.search?.soft_preferences?.property_types,
+      },
+    }),
+    read: () => ({
+      home_type_preference: state.answers.home_type_preference,
+      year_built_min: state.answers.year_built_min,
+      stories_preferred: state.answers.stories_preferred,
+      property_types: state.answers.property_types ?? [],
+    }),
   },
   {
     id: 'schools',
-    title: 'Schools and listing freshness',
-    hint: 'Used for the hard-requirement gate and scan freshness.',
+    title: 'How should I treat schools and timing?',
+    hint: 'Set the school bar and how fresh a listing should be before it feels worth attention.',
     render: () => renderMultipleSingleChoice({
       questions: [
         {
@@ -234,22 +224,15 @@ const STEPS = [
   },
   {
     id: 'commute',
-    title: 'Commute destinations',
-    hint: 'For each destination, pick the state and county. An address is optional -- if you leave it blank the drive-time link will point at the county; add a street or neighborhood for a more precise comparison.',
+    title: 'Which drives need to work?',
+    hint: 'Add work, school, family, daycare, or regular errands that matter to the buying decision.',
     render: renderCommuteStep,
     read: () => ({ commute: state.answers.commute ?? [] }),
   },
   {
-    id: 'research-sources',
-    title: 'Which sources should power your research?',
-    hint: 'Pick the listing portals and background-research sites Home-Ops should use. Nothing is pre-checked -- select only what you want. If you leave a group empty, that stage of the pipeline is skipped (except listing portals, where empty means "use them all").',
-    render: renderResearchSources,
-    read: () => ({ research_sources: state.answers.research_sources ?? {} }),
-  },
-  {
     id: 'sentiment-weights',
-    title: 'Neighborhood weight preferences',
-    hint: 'Slide each factor to show how strongly it matters. 0 = not important, 100 = critical.',
+    title: 'When homes have tradeoffs, what wins?',
+    hint: 'Slide each factor to show how much it should influence recommendations.',
     render: () => renderSliders({
       field: 'sentiment_weights',
       factors: [
@@ -264,16 +247,16 @@ const STEPS = [
     read: () => ({ sentiment_weights: state.answers.sentiment_weights ?? {} }),
   },
   {
-    id: 'narrative',
-    title: 'Describe the house you want in your own words',
-    hint: 'Write freely. Mention features you want, things you\'d avoid, family context, and how aggressive to be. The chips below insert common phrases -- Home-Ops maps them into search filters and listing keywords automatically.',
-    render: renderNarrative,
-    read: readNarrative,
+    id: 'research-sources',
+    title: 'Where should I do the homework?',
+    hint: 'Pick the listing portals and background sources Home-Ops should use for scans and deeper evaluations.',
+    render: renderResearchSources,
+    read: () => ({ research_sources: state.answers.research_sources ?? {} }),
   },
   {
     id: 'review',
-    title: 'Review and submit',
-    hint: 'Scan the summary. If anything is wrong, go back and adjust. Submit writes to .home-ops/profile-wizard-submission.json.',
+    title: 'Does this sound like you?',
+    hint: 'Review the buyer brief. If something feels off, jump back and adjust it before submitting.',
     render: renderReview,
     read: () => ({}),
     isReview: true,
@@ -1062,6 +1045,7 @@ function renderRangeInputs({ field, minLabel, maxLabel, currentMin, currentMax, 
   target.innerHTML = `
     <h2>${escapeHtml(CURRENT_STEP.title)}</h2>
     <p class="tile-hint">${escapeHtml(CURRENT_STEP.hint ?? '')}</p>
+    <div class="agent-note">As your agent, I would use this as the first filter: anything outside the range needs a very good reason to stay in the conversation.</div>
     <div class="range-grid">
       <label>${escapeHtml(minLabel)}
         <input class="number-input" type="number" id="range-min" step="${step}" value="${escapeAttr(resolvedMin)}" placeholder="${escapeAttr(minHint)}" />
@@ -1096,6 +1080,7 @@ function renderMultipleSingleChoice({ questions, propertyTypesField }) {
   target.innerHTML = `
     <h2>${escapeHtml(CURRENT_STEP.title)}</h2>
     <p class="tile-hint">${escapeHtml(CURRENT_STEP.hint ?? '')}</p>
+    ${CURRENT_STEP.id === 'must-haves' ? '<div class="agent-note">Think of these as the quick screening questions before we fall in love with photos.</div>' : ''}
     ${blocks}
     ${propertyBlock}
     <div class="validation" id="validation"></div>
@@ -1243,6 +1228,7 @@ function renderSliders({ field, factors, currentValues }) {
   target.innerHTML = `
     <h2>${escapeHtml(CURRENT_STEP.title)}</h2>
     <p class="tile-hint">${escapeHtml(CURRENT_STEP.hint ?? '')}</p>
+    <div class="agent-note">This tells Home-Ops how to rank a pretty good house in a great area against a gorgeous house with daily-life friction.</div>
     <div class="slider-wrap">${rows}</div>
   `;
   target.querySelectorAll('.slider-row').forEach((row) => {
@@ -1295,7 +1281,7 @@ const RESEARCH_SOURCE_GROUPS = [
     note: 'Drives construction-pressure checks for road projects, rezonings, and subdivisions near a listing.',
     sources: [
       { key: 'state_dot', label: 'State DOT project list' },
-      { key: 'county_planning', label: 'County GIS permits and subdivision cases (5-mile spatial query, auto-discovered from ArcGIS catalog during profile setup — currently configured for Wake County, NC)' },
+      { key: 'county_planning', label: 'County GIS permits and subdivision cases (5-mile spatial query, auto-discovered from ArcGIS catalog during profile setup - currently configured for Wake County, NC)' },
     ],
   },
 ];
@@ -1337,6 +1323,7 @@ function renderResearchSources() {
   target.innerHTML = `
     <h2>${escapeHtml(CURRENT_STEP.title)}</h2>
     <p class="tile-hint">${escapeHtml(CURRENT_STEP.hint ?? '')}</p>
+    <div class="agent-note">Leave a source off if you do not want it used. Listing portals are special: leaving that group empty means use every supported portal.</div>
     ${blocks}
   `;
   target.querySelectorAll('.option[data-source-id]').forEach((node) => {
@@ -1410,30 +1397,31 @@ function renderNarrative() {
   target.innerHTML = `
     <h2>${escapeHtml(CURRENT_STEP.title)}</h2>
     <p class="tile-hint">${escapeHtml(CURRENT_STEP.hint)}</p>
+    <div class="agent-note">I am listening for two things here: the home that would make you excited to tour, and the hidden negatives that should make us pass quickly.</div>
 
-    <label style="display:flex; flex-direction:column; gap:6px; color: var(--ink-soft); font-size: 13px;">
-      What you want in the home
+    <label class="conversation-field">
+      What should the home make possible?
       <div class="tile-tray" id="tray-features"></div>
       <div class="tile-grid" id="grid-features"></div>
       <textarea class="text-input" id="n-wants" rows="4"
-        placeholder="e.g. Open floor plan, fenced yard, updated kitchen, cul-de-sac lot...">${escapeHtml(wants)}</textarea>
+        placeholder="e.g. Space for kids to play, a kitchen that feels connected, quiet streets, room to work from home...">${escapeHtml(wants)}</textarea>
     </label>
 
-    <label style="display:flex; flex-direction:column; gap:6px; color: var(--ink-soft); font-size: 13px; margin-top: 16px;">
-      What would make you skip a listing
+    <label class="conversation-field">
+      What would make you say no?
       <div class="tile-tray" id="tray-deal-breakers"></div>
       <div class="tile-grid" id="grid-deal-breakers"></div>
       <textarea class="text-input" id="n-avoids" rows="4"
-        placeholder="e.g. Busy roads, floodplain, tiny yards...">${escapeHtml(avoids)}</textarea>
+        placeholder="e.g. Busy roads, floodplain risk, awkward layout, tiny yard, weak schools, too much maintenance...">${escapeHtml(avoids)}</textarea>
     </label>
 
-    <label style="display:flex; flex-direction:column; gap:6px; color: var(--ink-soft); font-size: 13px; margin-top: 16px;">
-      Family and household context
+    <label class="conversation-field">
+      Who needs this home to work for?
       <textarea class="text-input" id="n-family" rows="3"
         placeholder="Kids, pets, work-from-home, multi-generational...">${escapeHtml(state.answers.narrative?.family ?? '')}</textarea>
     </label>
 
-    <label style="display:flex; flex-direction:column; gap:6px; color: var(--ink-soft); font-size: 13px; margin-top: 12px;">
+    <label class="conversation-field compact">
       How aggressive should we be in a tight market?
       <select class="text-input" id="n-aggr">
         ${['Wait for the perfect fit', 'Move on strong fits', 'Compete hard', 'Keep current'].map((v) => `
@@ -1442,8 +1430,8 @@ function renderNarrative() {
       </select>
     </label>
 
-    <label style="display:flex; flex-direction:column; gap:6px; color: var(--ink-soft); font-size: 13px; margin-top: 12px;">
-      Anything else we should know
+    <label class="conversation-field">
+      Anything else I should know before we search?
       <textarea class="text-input" id="n-notes" rows="3"
         placeholder="Free-form notes for the buyer profile">${escapeHtml(state.answers.narrative?.notes ?? '')}</textarea>
     </label>
@@ -1455,7 +1443,7 @@ function renderNarrative() {
   const preDealBreakers = extractLabelsFromText(avoids, DEAL_BREAKER_CHIPS);
 
   if (typeof window.TileManager !== 'function') {
-    console.error('renderNarrative: TileManager not loaded — tiles.js must load before app.js');
+    console.error('renderNarrative: TileManager not loaded - tiles.js must load before app.js');
     return;
   }
 
@@ -1510,7 +1498,7 @@ function renderReview() {
   target.innerHTML = `
     <h2>${escapeHtml(CURRENT_STEP.title)}</h2>
     <p class="tile-hint">${escapeHtml(CURRENT_STEP.hint)}</p>
-    <pre style="white-space:pre-wrap; background:var(--panel-alt); border:1px solid var(--border); border-radius:12px; padding:16px; font-size:13px; color:var(--ink); max-height:60vh; overflow:auto;">${escapeHtml(summary)}</pre>
+    <pre style="white-space:pre-wrap; background:var(--panel-alt); border:1px solid var(--border); border-radius:8px; padding:16px; font-size:13px; color:var(--ink); max-height:60vh; overflow:auto;">${escapeHtml(summary)}</pre>
   `;
 }
 
@@ -1587,7 +1575,7 @@ function renderStep() {
     void tileEl.offsetWidth; // force reflow so re-adding the class re-triggers
     tileEl.classList.add('step-enter');
   }
-  document.getElementById('step-label').textContent = `Step ${state.stepIndex + 1} -- ${CURRENT_STEP.title.replace(/\.$/, '')}`;
+  document.getElementById('step-label').textContent = `Step ${state.stepIndex + 1}: ${CURRENT_STEP.title.replace(/\.$/, '')}`;
   document.getElementById('step-total').textContent = `of ${STEPS.length}`;
   document.getElementById('progress-fill').style.width = `${((state.stepIndex + 1) / STEPS.length) * 100}%`;
   renderBreadcrumbs();
@@ -1597,6 +1585,9 @@ function renderStep() {
   const nextBtn = document.getElementById('next-btn');
   if (backBtn) backBtn.disabled = state.stepIndex === 0;
   if (nextBtn) nextBtn.hidden = onReview || state.stepIndex >= STEPS.length - 1;
+  if (nextBtn && !nextBtn.hidden) {
+    nextBtn.textContent = state.stepIndex === 0 ? 'Start filters ->' : 'Continue ->';
+  }
   restoreFocusSnapshot(focusSnapshot);
 
   // If the user was mid-typing in a commute county field when a data load
@@ -1726,13 +1717,13 @@ async function bootstrap() {
   // wizard lets you jump straight to a later step via breadcrumbs. We consider
   // a step "visited" if its primary answer key already has a value.
   const stepAnswerKeys = {
-    areas: 'areas_selection', price: 'price',
-    'beds-baths': 'beds_min', size: 'sqft_min',
-    'home-type': 'home_type_preference', financial: 'hoa_max',
-    schools: 'schools_min_rating', commute: 'commute',
-    'research-sources': 'research_sources',
-    'sentiment-weights': 'sentiment_weights',
     narrative: 'narrative',
+    areas: 'areas_selection', price: 'price',
+    'must-haves': 'beds_min',
+    'home-type': 'home_type_preference',
+    schools: 'schools_min_rating', commute: 'commute',
+    'sentiment-weights': 'sentiment_weights',
+    'research-sources': 'research_sources',
   };
   STEPS.forEach((step, index) => {
     const key = stepAnswerKeys[step.id];
