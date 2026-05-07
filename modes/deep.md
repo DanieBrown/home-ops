@@ -88,7 +88,7 @@ When each numbered step starts, announce it in one short sentence so the user se
 
 ## Single-Home Deep Run (`/home-ops deep <url>`)
 
-This is the primary single-URL path. It is fully scripted from URL to PDF — the AI does not fall back to WebSearch or WebFetch to fill primary listing facts.
+This is the primary single-URL path. It is fully scripted from URL to PDF — the AI does not fall back to WebSearch or WebFetch to fill primary listing facts. The listing extractor may use crawl4ai only as a supplemental fallback for missing fields or suspicious status conflicts; hosted-browser listing facts remain the primary source.
 
 ### Phase 0 — Pre-Eval: Listing Extraction
 
@@ -111,7 +111,7 @@ Read `output/listings/{slug}.json` and `output/school-metadata/{slug}.json`. Wri
 - Path: `reports/{N}-{slug}-{YYYY-MM-DD}.md`
 - Append a tracker row to `data/listings.md`
 
-Use the structured listing JSON as the source of truth for address, price, beds, baths, sqft, year built, HOA, builder, and schools. Do not WebSearch these fields.
+Use the structured listing JSON as the source of truth for address, price, beds, baths, sqft, year built, HOA, builder, and schools. Do not WebSearch these fields while writing the eval report. Builder discovery can run later through `builder-check`, which first uses listing/report fields, then permit-sidecar applicant/contractor/developer/builder fields when available, then an address + "builder" crawl4ai search fallback. It records its source URL in `output/builder/{slug}.json`.
 
 ### Phase 2 — Post-Eval: Data Capture
 
@@ -331,7 +331,7 @@ Use this evidence ladder for construction and permit research:
 2. **Transportation projects.** Treat NCDOT STIP point/line matches as the transportation backbone. Record TIP/SPOT ID, route, description, right-of-way year, construction year, phase/comment, and whether the project is immediate-road, same-town, or broader-corridor pressure.
 3. **County planning and permits.** Treat county GIS matches as nearby land-use pressure. Record case/permit ID, project or subdivision name, status, lots/acres when present, date, and approximate radius. If `county-permits-check` returns `unsupported-county`, run `npm.cmd run permits:discover -- --county <county> --base-url <arcgis-rest-base>` after finding the official county ArcGIS REST catalog.
 4. **Municipal development maps.** Read `output/development-sources.json` for profile-selected municipal development maps or project lists. For Apex, Holly Springs, Fuquay-Varina, Cary, and similar towns, use those official maps to validate whether a nearby project is proposed, approved, under construction, or complete. This is especially important when county GIS is thin or when the address sits inside municipal planning jurisdiction.
-5. **Property permit history for the specific home.** Use `output/development-sources.json` `propertyPermitSources` and the per-home `sourcePlans.development.propertyPermitGuides` in `output/deep-packets/{slug}.json` to surface official permit-history lookup links and buyer-facing instructions. This is distinct from nearby development pressure. Search by service address first, then permit number, PIN/parcel, and owner if the portal supports it. If the portal is too brittle to automate, include the official link and a short "how to search this home" blurb instead of claiming a result.
+5. **Property permit history for the specific home.** Use `output/development-sources.json` `propertyPermitSources` and the per-home `sourcePlans.development.propertyPermitGuides` in `output/deep-packets/{slug}.json` to surface official permit-history lookup links and buyer-facing instructions. This is distinct from nearby development pressure. Search by service address first, then permit number, PIN/parcel, and owner if the portal supports it. If the portal exposes builder, contractor, applicant, developer, or owner fields, use those as potential builder-detection evidence and cite the permit portal/case. If the portal is too brittle to automate, include the official link and a short "how to search this home" blurb instead of claiming a result.
 6. **Parcel/project detail lookup.** When a map match is material, search by address, parcel/PIN, subdivision name, case ID, and nearby road/intersection. Avoid relying on address-only search because large developments often use parent parcels, project names, or intersections instead of the listing address.
 7. **Fallback narrative sources.** Use news, agendas, public-hearing packets, MPO/CIP pages, and neighborhood posts only to explain context after the official project match is identified. If no official spatial match exists, classify narrative-only evidence as lower confidence.
 

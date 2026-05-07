@@ -14,8 +14,12 @@
  *      Next.js __NEXT_DATA__ / Redfin __REDFIN_INITIAL_STATE__.
  *   2. Fall back to a selector map for fields the structured data missed.
  *   3. Detect inactive/sold/redirect signals and set listingStatus.
+ *   4. Use crawl4ai as a fallback to supplement missing facts only when the
+ *      hosted browser extraction is low-confidence or internally inconsistent.
  *
- * Hard rule: no WebFetch / WebSearch / external API calls. Hosted Chrome only.
+ * Hosted Chrome remains the primary verification surface. Generic crawl output
+ * may supplement facts, but should not be the sole source for an inactive/sold
+ * listing decision.
  */
 
 import { mkdir, writeFile } from 'fs/promises';
@@ -29,11 +33,13 @@ import {
   navigateAndSettle,
   safeClose,
 } from '../browser/browser-extract-utils.mjs';
+import { crawl4aiFetchPage } from './crawl4ai-utils.mjs';
 
 const OUTPUT_DIR = join(ROOT, 'output', 'listings');
 const DEFAULT_PROFILE = 'chrome-host';
 const PAGE_TIMEOUT_MS = 35000;
 const SETTLE_MS = 2500;
+const CRAWL4AI_TIMEOUT_MS = 30000;
 
 const HELP_TEXT = `Usage:
   node extract-listing-details.mjs --url <listing-url> [--profile chrome-host] [--json]
@@ -192,13 +198,37 @@ export function normalizeListingStatus(raw, bodyText = '') {
   if (/instock|in-stock/i.test(rawStr)) return 'active';
   if (/active|for[\s-]sale|listed/i.test(rawStr)) return 'active';
 
-  const candidates = [rawStr, String(bodyText ?? '').toLowerCase()];
-  const flat = candidates.join(' ');
-  if (/(off[\s-]?market|delisted|removed|withdrawn)/i.test(flat)) return 'off-market';
-  if (/(pending|under\s+contract|contingent)/i.test(flat)) return 'pending';
-  if (/sold/i.test(flat)) return 'sold';
-  if (/active|for\s+sale|listed/i.test(flat)) return 'active';
+  // Treat short raw values as authoritative status fields. Full-page body text
+  // often includes "sold nearby" or historical price events, so never classify
+  // a page as sold from an unscoped body-wide match.
+  if (rawStr && rawStr.length <= 160) {
+    if (/(off[\s-]?market|delisted|removed|withdrawn|not\s+for\s+sale)/i.test(rawStr)) return 'off-market';
+    if (/(pending|under\s+contract|contingent)/i.test(rawStr)) return 'pending';
+    if (/(^|\b)(sold|closed)(\b|$)|sold\s+on/i.test(rawStr)) return 'sold';
+  }
+
+  const zone = statusSignalZone(bodyText);
+  if (hasActiveListingSignals(zone)) return 'active';
+  if (/(off[\s-]?market|delisted|removed|withdrawn|not\s+for\s+sale)/i.test(zone)) return 'off-market';
+  if (/(pending|under\s+contract|contingent)/i.test(zone)) return 'pending';
+  if (/(?:\bstatus\s*:?\s*sold\b|\bsold\s+on\b|\bsold\s+\d{1,2}\/\d{1,2}\/\d{2,4}\b|\bclosed\b)/i.test(zone)) return 'sold';
   return 'unconfirmed';
+}
+
+function statusSignalZone(text) {
+  return String(text ?? '')
+    .toLowerCase()
+    .slice(0, 2800);
+}
+
+function hasActiveListingSignals(text) {
+  const value = String(text ?? '').toLowerCase();
+  return /(?:\bfor\s+sale\b|\bactive\b|\blisted\s+by\b|\bschedule\s+(?:a\s+)?tour\b|\brequest\s+(?:a\s+)?tour\b|\bcontact\s+(?:agent|builder)\b|\bnew\s+construction\b|\bopen\s+house\b)/i.test(value);
+}
+
+function hasInactiveListingSignals(text) {
+  const value = statusSignalZone(text);
+  return /(?:off[\s-]?market|delisted|removed|withdrawn|not\s+for\s+sale|pending|under\s+contract|contingent|sold\s+on|\bclosed\b)/i.test(value);
 }
 
 function normalizeSchoolLevel(raw) {
@@ -705,6 +735,83 @@ async function extractGeneric(page, url) {
   return { findings, notes };
 }
 
+function parseJsonLdFromHtml(html) {
+  const items = [];
+  const pattern = /<script[^>]+type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi;
+  let match;
+  while ((match = pattern.exec(String(html ?? ''))) !== null) {
+    try {
+      const parsed = JSON.parse(match[1]);
+      if (Array.isArray(parsed)) items.push(...parsed);
+      else items.push(parsed);
+    } catch {
+      // ignore malformed markup
+    }
+  }
+  return items;
+}
+
+function htmlText(html) {
+  return String(html ?? '')
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'")
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function shouldUseCrawl4aiFallback(listing) {
+  if (listing.confidence === 'low') return true;
+  if (!listing.address || !listing.price) return true;
+  if (['sold', 'off-market', 'pending'].includes(listing.listingStatus)) return true;
+  return false;
+}
+
+function mergeSupplementalFindings(listing, findings) {
+  for (const [key, value] of Object.entries(findings)) {
+    if (value === null || value === undefined) continue;
+    if (key === 'assignedSchools' && Array.isArray(value) && value.length && !listing.assignedSchools.length) {
+      listing.assignedSchools = value;
+      continue;
+    }
+    if (key === 'photos' && value?.count && !listing.photos?.count) {
+      listing.photos = value;
+      continue;
+    }
+    if (listing[key] === null || listing[key] === undefined || listing[key] === '') {
+      listing[key] = value;
+    }
+  }
+}
+
+async function extractWithCrawl4ai(url) {
+  const page = await crawl4aiFetchPage(url, { timeoutMs: CRAWL4AI_TIMEOUT_MS });
+  if (!page.html) {
+    return {
+      findings: {},
+      notes: [`crawl4ai fallback unavailable: ${page.error || page.status || 'unknown error'}`],
+    };
+  }
+
+  const jsonLd = parseJsonLdFromHtml(page.html);
+  const residence = pickJsonLdResidence(jsonLd);
+  const findings = fromJsonLdResidence(residence);
+  const text = htmlText(page.html).slice(0, 12000);
+  const status = normalizeListingStatus('', text);
+  if (status !== 'unconfirmed') findings.listingStatus = status;
+  return {
+    findings,
+    notes: [`crawl4ai fallback checked ${page.finalUrl || url}${page.ok ? '' : ` (partial: ${page.error || page.status || 'limited capture'})`}`],
+    text,
+  };
+}
+
 const PORTAL_EXTRACTORS = {
   zillow: extractZillow,
   redfin: extractRedfin,
@@ -773,7 +880,36 @@ export async function extractListing(url, opts = {}) {
 
       // Body-text fallback for listingStatus when extractors don't set one
       if (!listing.listingStatus || listing.listingStatus === 'unconfirmed') {
-        listing.listingStatus = normalizeListingStatus('', meta.bodyText);
+        listing.listingStatus = normalizeListingStatus(meta.status, `${meta.title}\n${meta.description}\n${meta.bodyText}`);
+      }
+      listing.confidence = scoreConfidence(listing);
+
+      if (shouldUseCrawl4aiFallback(listing)) {
+        const crawl = await extractWithCrawl4ai(meta.canonical || meta.url || url);
+        mergeSupplementalFindings(listing, crawl.findings);
+        listing.coverageNotes.push(...crawl.notes);
+        if (
+          ['sold', 'off-market', 'pending'].includes(listing.listingStatus)
+          && hasActiveListingSignals(`${meta.title}\n${meta.description}\n${meta.bodyText}\n${crawl.text ?? ''}`)
+          && listing.address
+          && listing.price
+        ) {
+          listing.coverageNotes.push(`status reconciled from ${listing.listingStatus} to active due to active listing controls/facts`);
+          listing.listingStatus = 'active';
+        } else if (
+          listing.listingStatus === 'unconfirmed'
+          && crawl.findings.listingStatus
+          && crawl.findings.listingStatus !== 'unconfirmed'
+          && crawl.findings.listingStatus !== 'sold'
+        ) {
+          listing.listingStatus = crawl.findings.listingStatus;
+        } else if (
+          listing.listingStatus === 'sold'
+          && !hasInactiveListingSignals(`${meta.title}\n${meta.description}\n${meta.bodyText}`)
+        ) {
+          listing.coverageNotes.push('suppressed sold status because no explicit sold/off-market status zone was found');
+          listing.listingStatus = 'unconfirmed';
+        }
       }
     } finally {
       await safeClose({ page });

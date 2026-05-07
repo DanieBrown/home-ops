@@ -802,6 +802,7 @@ function buildBuilderReputationCard(finalist) {
   const hasReviewData = Boolean(avid || eliant || bbb || builderOnline || packetBuilder.avidRatingsOverall || packetBuilder.eliantOverall);
   const detectedBy = firstNonEmpty(builder?.detectionSource, packetBuilder.detectionSource);
   const confidence = firstNonEmpty(builder?.detectionConfidence, packetBuilder.detectionConfidence);
+  const detectionSourceUrl = firstNonEmpty(builder?.detectionSourceUrl, packetBuilder.detectionSourceUrl, finalist.listing?.canonicalUrl, finalist.listing?.url);
 
   const rows = [];
   if (builder?.standing?.label) {
@@ -838,6 +839,9 @@ function buildBuilderReputationCard(finalist) {
   }
   if (detectedBy || confidence) {
     rows.push(['Detection', [confidence, detectedBy].filter(Boolean).join(', ')]);
+  }
+  if (detectionSourceUrl) {
+    rows.push([sourceLink('Builder source', detectionSourceUrl), detectedBy || 'listing/source page']);
   }
 
   const rowHtml = rows.map(([label, value]) => `

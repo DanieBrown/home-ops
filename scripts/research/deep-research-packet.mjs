@@ -437,6 +437,7 @@ async function buildPacket(target, researchContext) {
       builderSlug: builderRecord?.builderSlug ?? null,
       detectionSource: builderRecord?.detectionSource ?? null,
       detectionConfidence: builderRecord?.detectionConfidence ?? null,
+      detectionSourceUrl: builderRecord?.detectionSourceUrl ?? null,
       avidRatingsOverall: builderRecord?.reviews?.avidRatings?.overall ?? null,
       avidRatingsReviewCount: builderRecord?.reviews?.avidRatings?.reviewCount ?? null,
       avidRatingsCategories: builderRecord?.reviews?.avidRatings?.categories ?? null,

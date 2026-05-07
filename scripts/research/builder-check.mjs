@@ -29,9 +29,11 @@ import { slugify } from '../shared/text-utils.mjs';
 
 const OUTPUT_DIR = join(ROOT, 'output', 'builder');
 const LISTING_DIR = join(ROOT, 'output', 'listings');
+const PERMITS_DIR = join(ROOT, 'output', 'permits');
 const DEFAULT_TIMEOUT_MS = 20000;
 const BBB_TIMEOUT_MS = 30000;
 const BUILDER_ONLINE_TIMEOUT_MS = 30000;
+const BUILDER_SEARCH_TIMEOUT_MS = 30000;
 
 // Well-known builder brands, ordered longest-first to prefer the more specific
 // match (e.g. "Smith Douglas Homes" before "Smith Douglas").
@@ -155,6 +157,21 @@ function readListingFactsForTarget(target) {
   }
 }
 
+function readPermitsRecordForTarget(target) {
+  const slug = slugify(`${target.address}-${target.city}-${target.state || 'NC'}`) || 'builder-target';
+  const filePath = join(PERMITS_DIR, `${slug}.json`);
+  if (!existsSync(filePath)) return null;
+  try {
+    const payload = JSON.parse(readFileSync(filePath, 'utf8'));
+    const sameAddress = String(payload.address ?? '').trim().toLowerCase() === String(target.address ?? '').trim().toLowerCase();
+    const sameCity = String(payload.city ?? '').trim().toLowerCase() === String(target.city ?? '').trim().toLowerCase();
+    if (!sameAddress || !sameCity) return null;
+    return payload;
+  } catch {
+    return null;
+  }
+}
+
 function resolveTargets(config) {
   if (config.shortlist || config.top3) {
     const shortlist = parseShortlist(ROOT);
@@ -206,11 +223,17 @@ function detectBuilder(target) {
   const listingBuilder = listingFacts?.builderName ?? listingFacts?.builder?.name ?? null;
   if (String(listingBuilder ?? '').trim().length >= 3) {
     const name = String(listingBuilder).trim();
-    return { builderName: BUILDER_CANONICAL[name] ?? name, detectionSource: 'listing_sidecar', detectionConfidence: 'high' };
+    return {
+      builderName: BUILDER_CANONICAL[name] ?? name,
+      detectionSource: 'listing_sidecar',
+      detectionConfidence: 'high',
+      detectionSourceUrl: listingFacts?.canonicalUrl || listingFacts?.url || null,
+    };
   }
 
   if (!text.trim()) {
-    return { builderName: null, detectionSource: null, detectionConfidence: null };
+    const permitDetection = detectBuilderFromPermits(target);
+    return permitDetection ?? { builderName: null, detectionSource: null, detectionConfidence: null };
   }
 
   // 1. Explicit metadata field: **Builder:** Value
@@ -219,7 +242,7 @@ function detectBuilder(target) {
   if (fieldMatch) {
     const name = fieldMatch[1].trim();
     if (name.length >= 3) {
-      return { builderName: BUILDER_CANONICAL[name] ?? name, detectionSource: 'report_field', detectionConfidence: 'high' };
+      return { builderName: BUILDER_CANONICAL[name] ?? name, detectionSource: 'report_field', detectionConfidence: 'high', detectionSourceUrl: null };
     }
   }
 
@@ -228,7 +251,7 @@ function detectBuilder(target) {
     const escaped = builder.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     if (new RegExp(`\\b${escaped}\\b`, 'i').test(text)) {
       const canonical = BUILDER_CANONICAL[builder] ?? builder;
-      return { builderName: canonical, detectionSource: 'known_brand', detectionConfidence: 'high' };
+      return { builderName: canonical, detectionSource: 'known_brand', detectionConfidence: 'high', detectionSourceUrl: null };
     }
   }
 
@@ -237,11 +260,225 @@ function detectBuilder(target) {
   if (builtByMatch) {
     const name = builtByMatch[1].trim().replace(/\s+/g, ' ');
     if (name.length >= 3) {
-      return { builderName: name, detectionSource: 'description', detectionConfidence: 'medium' };
+      return { builderName: name, detectionSource: 'description', detectionConfidence: 'medium', detectionSourceUrl: null };
     }
   }
 
-  return { builderName: null, detectionSource: null, detectionConfidence: null };
+  const permitDetection = detectBuilderFromPermits(target);
+  return permitDetection ?? { builderName: null, detectionSource: null, detectionConfidence: null };
+}
+
+function buildBuilderSearchQuery(target) {
+  return [target.address, target.city, target.state || 'NC', 'builder']
+    .filter(Boolean)
+    .join(', ')
+    .replace(/,\s*builder$/i, ' builder');
+}
+
+function buildBuilderSearchUrls(target) {
+  const query = buildBuilderSearchQuery(target);
+  return [
+    `https://www.google.com/search?q=${encodeURIComponent(query)}`,
+    `https://www.bing.com/search?q=${encodeURIComponent(query)}`,
+  ];
+}
+
+function extractSearchResultLinks(html) {
+  const links = [];
+  const seen = new Set();
+  const patterns = [
+    /href=["']\/url\?q=([^"'&]+)[^"']*["']/gi,
+    /href=["']https?:\/\/www\.google\.com\/url\?q=([^"'&]+)[^"']*["']/gi,
+    /href=["'](https?:\/\/[^"']+)["']/gi,
+  ];
+  for (const pattern of patterns) {
+    let match;
+    while ((match = pattern.exec(String(html ?? ''))) !== null) {
+      let url = decodeURIComponent(decodeHtmlEntities(match[1]));
+      url = url.replace(/&amp;.*$/i, '').replace(/[?&]utm_[^=]+=[^&]+/gi, '');
+      if (!/^https?:\/\//i.test(url)) continue;
+      let host = '';
+      try {
+        host = new URL(url).host.toLowerCase();
+      } catch {
+        continue;
+      }
+      if (/(google|gstatic|bing|microsoft|youtube|facebook|instagram|x\.com|twitter)\./i.test(host)) continue;
+      if (seen.has(url)) continue;
+      seen.add(url);
+      links.push(url);
+    }
+  }
+  return links.slice(0, 8);
+}
+
+function compactAddress(value) {
+  return normalizeSearchKey(value)
+    .replace(/\b(drive)\b/g, 'dr')
+    .replace(/\b(road)\b/g, 'rd')
+    .replace(/\b(street)\b/g, 'st')
+    .replace(/\b(court)\b/g, 'ct')
+    .replace(/\b(lane)\b/g, 'ln')
+    .replace(/\b(avenue)\b/g, 'ave')
+    .replace(/\b(circle)\b/g, 'cir')
+    .replace(/\b(place)\b/g, 'pl')
+    .replace(/\b(north)\b/g, 'n')
+    .replace(/\b(south)\b/g, 's')
+    .replace(/\b(east)\b/g, 'e')
+    .replace(/\b(west)\b/g, 'w')
+    .trim();
+}
+
+function addressMatchesPage(text, target) {
+  const body = compactAddress(text);
+  const address = compactAddress(target.address);
+  if (!address) return false;
+  const addressTerms = address.split(' ').filter((term) => term.length > 1 || /^\d+$/.test(term));
+  const streetNumber = addressTerms.find((term) => /^\d+$/.test(term));
+  const streetWords = addressTerms.filter((term) => !/^\d+$/.test(term) && !/^(n|s|e|w)$/.test(term));
+  const city = normalizeSearchKey(target.city);
+  const zip = normalizeSearchKey(target.zip);
+  const numberOk = !streetNumber || body.includes(streetNumber);
+  const streetHits = streetWords.filter((term) => body.includes(term)).length;
+  const locationOk = (city && body.includes(city)) || (zip && body.includes(zip)) || !city;
+  return numberOk && streetHits >= Math.min(2, streetWords.length) && locationOk;
+}
+
+function cleanBuilderCandidate(value) {
+  const cleaned = String(value ?? '')
+    .replace(/\s+/g, ' ')
+    .replace(/\b(?:homes?|builder|builders?|construction|inc|llc)\b\.?\s*$/i, (suffix) => suffix.trim())
+    .replace(/[|•].*$/g, '')
+    .replace(/\s+-\s+.*$/g, '')
+    .trim();
+  if (cleaned.length < 3 || cleaned.length > 80) return null;
+  if (/(realty|realtor|listing|broker|mls|zillow|redfin|homes\.com|property|school|county)/i.test(cleaned)) return null;
+  return BUILDER_CANONICAL[cleaned] ?? cleaned;
+}
+
+function permitCandidateName(value) {
+  const cleaned = cleanBuilderCandidate(value);
+  if (!cleaned) return null;
+  if (/(trust|bank|mortgage|holdings|properties|realty|hoa|homeowners|town of|county|city of)/i.test(cleaned)) return null;
+  return cleaned;
+}
+
+function detectBuilderFromPermits(target) {
+  const permits = readPermitsRecordForTarget(target);
+  if (!permits) return null;
+
+  for (const match of permits.matches ?? []) {
+    const fields = [
+      ['builder', match.builder],
+      ['contractor', match.contractor],
+      ['developer', match.developer],
+      ['applicant', match.applicant],
+    ];
+    for (const [field, value] of fields) {
+      const builderName = permitCandidateName(value);
+      if (!builderName) continue;
+      return {
+        builderName,
+        detectionSource: `permit_${field}`,
+        detectionConfidence: field === 'builder' || field === 'contractor' ? 'high' : 'medium',
+        detectionSourceUrl: (permits.sourcesChecked ?? []).find((source) => source?.url)?.url ?? null,
+        detectionNotes: {
+          permitCaseId: match.caseId ?? null,
+          permitKind: match.kind ?? null,
+          permitStatus: match.status ?? null,
+          permitSource: match.service ?? null,
+        },
+      };
+    }
+  }
+  return null;
+}
+
+function extractBuilderNameFromPage(html, target) {
+  const text = compactPlainText(html);
+  const patterns = [
+    /\bBuilder\s*Name\s*:?\s*([A-Z][A-Za-z0-9'&./ -]{2,80})/i,
+    /\bBuilder\s*:?\s*([A-Z][A-Za-z0-9'&./ -]{2,80})/i,
+    /\bBuilt\s+by\s+([A-Z][A-Za-z0-9'&./ -]{2,80})/i,
+    /\bHome\s+by\s+([A-Z][A-Za-z0-9'&./ -]{2,80})/i,
+    /\bNew\s+home\s+by\s+([A-Z][A-Za-z0-9'&./ -]{2,80})/i,
+  ];
+  for (const pattern of patterns) {
+    const candidate = cleanBuilderCandidate(text.match(pattern)?.[1]);
+    if (candidate) return candidate;
+  }
+
+  for (const builder of KNOWN_BUILDERS) {
+    const escaped = builder.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    if (new RegExp(`\\b${escaped}\\b`, 'i').test(text)) {
+      return BUILDER_CANONICAL[builder] ?? builder;
+    }
+  }
+
+  const titleMatch = String(html ?? '').match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+  const title = titleMatch ? decodeHtmlEntities(stripHtml(titleMatch[1])) : '';
+  const titleCandidate = cleanBuilderCandidate(title.match(/\b(?:by|builder)\s+([A-Z][A-Za-z0-9'&./ -]{2,80})/i)?.[1]);
+  if (titleCandidate && addressMatchesPage(`${title} ${text}`, target)) return titleCandidate;
+  return null;
+}
+
+async function lookupBuilderFromAddressSearch(target) {
+  if (!target.address || !target.city) {
+    return { builderName: null, detectionSource: null, detectionConfidence: null };
+  }
+
+  const checkedSearches = [];
+  const checkedPages = [];
+  for (const searchUrl of buildBuilderSearchUrls(target)) {
+    const searchPage = await crawl4aiFetchPage(searchUrl, { timeoutMs: BUILDER_SEARCH_TIMEOUT_MS });
+    checkedSearches.push({
+      url: searchUrl,
+      finalUrl: searchPage.finalUrl || searchUrl,
+      ok: searchPage.ok,
+      status: searchPage.status,
+      error: searchPage.error ?? null,
+    });
+    if (!searchPage.html) continue;
+    const resultLinks = extractSearchResultLinks(searchPage.html);
+    for (const resultUrl of resultLinks.slice(0, 8)) {
+      const page = await crawl4aiFetchPage(resultUrl, { timeoutMs: BUILDER_SEARCH_TIMEOUT_MS });
+      checkedPages.push({
+        url: resultUrl,
+        finalUrl: page.finalUrl || resultUrl,
+        ok: page.ok,
+        status: page.status,
+        error: page.error ?? null,
+      });
+      if (!page.html) continue;
+      const text = compactPlainText(page.html);
+      if (!addressMatchesPage(text, target)) continue;
+      const builderName = extractBuilderNameFromPage(page.html, target);
+      if (!builderName) continue;
+      return {
+        builderName,
+        detectionSource: 'address_builder_search',
+        detectionConfidence: 'medium',
+        detectionSourceUrl: page.finalUrl || resultUrl,
+        detectionNotes: {
+          searchQuery: buildBuilderSearchQuery(target),
+          checkedSearches,
+          checkedPages,
+        },
+      };
+    }
+  }
+
+  return {
+    builderName: null,
+    detectionSource: null,
+    detectionConfidence: null,
+    detectionSourceUrl: null,
+    detectionNotes: {
+      searchQuery: buildBuilderSearchQuery(target),
+      checkedSearches,
+      checkedPages,
+    },
+  };
 }
 
 function toBuilderSlug(builderName) {
@@ -784,7 +1021,7 @@ async function lookupEliant(builderSlug) {
 }
 
 function buildRecord(target, detection, reviews) {
-  const { builderName, detectionSource, detectionConfidence } = detection;
+  const { builderName, detectionSource, detectionConfidence, detectionSourceUrl, detectionNotes } = detection;
 
   if (!builderName) {
     return {
@@ -797,6 +1034,8 @@ function buildRecord(target, detection, reviews) {
       builderSlug: null,
       detectionSource: null,
       detectionConfidence: null,
+      detectionSourceUrl: null,
+      detectionNotes: detectionNotes ?? null,
       reviews: {},
       status: 'no-builder-detected',
     };
@@ -819,6 +1058,8 @@ function buildRecord(target, detection, reviews) {
     builderSlug,
     detectionSource,
     detectionConfidence,
+    detectionSourceUrl: detectionSourceUrl ?? null,
+    detectionNotes: detectionNotes ?? null,
     reviews: {
       ...(avidFound ? {
         avidRatings: {
@@ -874,9 +1115,9 @@ function printSummary(records) {
   for (const record of records) {
     console.log(`${record.address} | ${record.city}, ${record.state}`);
     if (record.status === 'no-builder-detected') {
-      console.log('  Builder: not detected in report text');
+      console.log('  Builder: not detected from listing/report text or address search');
     } else if (record.status === 'not-found') {
-      console.log(`  Builder: ${record.builderName} — no review data found on Avid Ratings or Eliant`);
+      console.log(`  Builder: ${record.builderName} — no review data found on Avid Ratings, Eliant, BBB, or Builder 100`);
     } else {
       console.log(`  Builder: ${record.builderName} (${record.detectionConfidence} confidence, source: ${record.detectionSource})`);
       const avid = record.reviews.avidRatings;
@@ -913,7 +1154,10 @@ async function run() {
   const records = [];
 
   for (const target of targets) {
-    const detection = detectBuilder(target);
+    let detection = detectBuilder(target);
+    if (!detection.builderName) {
+      detection = await lookupBuilderFromAddressSearch(target);
+    }
     let reviews = {};
 
     if (detection.builderName) {

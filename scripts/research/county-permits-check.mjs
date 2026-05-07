@@ -222,6 +222,11 @@ function summarizeFeatures(features, service) {
     const status = a.PLAN_STATUS || a.STATUS || a.STAGE || '';
     const desc = a.DESCRIPTION || a.PROJECT_NAME || a.NAME || '';
     const subdivision = a.SUBDIVISION_NAME || '';
+    const applicant = a.APPLICANT || a.APPLICANT_NAME || a.APPLICANTNAME || a.CONTACT_NAME || a.CONTACT || '';
+    const contractor = a.CONTRACTOR || a.CONTRACTOR_NAME || a.CONTRACTORNAME || a.LICENSED_CONTRACTOR || '';
+    const builder = a.BUILDER || a.BUILDER_NAME || a.BUILDERNAME || a.HOME_BUILDER || '';
+    const developer = a.DEVELOPER || a.DEVELOPER_NAME || a.DEVELOPERNAME || a.OWNER_DEVELOPER || '';
+    const owner = a.OWNER || a.OWNER_NAME || a.OWNERNAME || a.PROPERTY_OWNER || '';
     const phase = classifyPhase(`${status} ${desc}`);
     const phaseWeight = PHASE_WEIGHTS[phase] ?? 0;
     pressure += phaseWeight;
@@ -235,6 +240,11 @@ function summarizeFeatures(features, service) {
       proposedLots: Number.isFinite(Number(a.PROPOSED_NO_LOTS)) ? Number(a.PROPOSED_NO_LOTS) : null,
       acres: Number.isFinite(Number(a.NUMBER_OF_ACRES)) ? Number(a.NUMBER_OF_ACRES) : null,
       applicationDate: a.APPLICATIONDATE ? new Date(a.APPLICATIONDATE).toISOString() : null,
+      applicant: applicant ? String(applicant).trim() : null,
+      contractor: contractor ? String(contractor).trim() : null,
+      builder: builder ? String(builder).trim() : null,
+      developer: developer ? String(developer).trim() : null,
+      owner: owner ? String(owner).trim() : null,
       status,
       description: desc ? String(desc).slice(0, 360) : '',
       phase,
