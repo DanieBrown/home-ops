@@ -3,11 +3,14 @@
 This directory holds Python scripts that the Node-based home-ops pipeline shells
 out to when stealth Playwright + schema extraction beats raw `fetch()`.
 
-Currently scoped to **one pilot script**:
+Currently scoped to these sidecar scripts:
 
 - `school_metadata_crawl.py` — fetches Niche.com school pages and extracts grades,
   enrollment, ratio, proficiency, salary, ethnicity, and gender. Called per school
   by [`scripts/research/school-metadata-fetch.mjs`](../school-metadata-fetch.mjs).
+- `crawl4ai_portal_extract.py` — attaches to the existing hosted Chrome CDP
+  session and extracts portal search cards or detail-page listing facts for the
+  scan, evaluate, and single-listing extraction flows.
 
 If Python or crawl4ai are not available the Node script automatically falls back
 to its legacy `fetch()` path. The pipeline degrades; it does not break.
@@ -66,6 +69,26 @@ python scripts/research/python/school_metadata_crawl.py \
 
 Expected: a JSON record on stdout with non-null `nicheGrade.letter`, `enrollment`,
 and `studentTeacherRatio`.
+
+## Portal extraction sanity check
+
+The portal sidecar is normally called through Node because the Node bridge reads
+the hosted browser CDP URL from `output/browser-sessions/chrome-host/session-state.json`.
+For fixture-only parser checks that do not hit a live portal:
+
+```powershell
+py -3 scripts/research/python/crawl4ai_portal_extract.py `
+  --mode detail `
+  --platform realtor `
+  --url "https://www.realtor.com/example" `
+  --html-file scripts/tests/fixtures/crawl4ai-realtor-detail.html `
+  --json
+```
+
+Live portal extraction must reuse the hosted browser session created by
+`/home-ops init` or `npm.cmd run browser:setup`; blocked or rate-limited portal
+responses are reported as `captureStatus: "blocked"` rather than treated as
+active listings.
 
 ## Output schema
 

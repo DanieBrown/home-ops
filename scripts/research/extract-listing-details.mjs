@@ -33,7 +33,7 @@ import {
   navigateAndSettle,
   safeClose,
 } from '../browser/browser-extract-utils.mjs';
-import { crawl4aiFetchPage } from './crawl4ai-utils.mjs';
+import { crawl4aiFetchPage, crawl4aiPortalExtract } from './crawl4ai-utils.mjs';
 
 const OUTPUT_DIR = join(ROOT, 'output', 'listings');
 const DEFAULT_PROFILE = 'chrome-host';
@@ -211,7 +211,7 @@ export function normalizeListingStatus(raw, bodyText = '') {
   if (hasActiveListingSignals(zone)) return 'active';
   if (/(off[\s-]?market|delisted|removed|withdrawn|not\s+for\s+sale)/i.test(zone)) return 'off-market';
   if (/(pending|under\s+contract|contingent)/i.test(zone)) return 'pending';
-  if (/(?:\bstatus\s*:?\s*sold\b|\bsold\s+on\b|\bsold\s+\d{1,2}\/\d{1,2}\/\d{2,4}\b|\bclosed\b)/i.test(zone)) return 'sold';
+  if (/(?:\bstatus\s*:?\s*sold\b|\bsold\s+on\b|\bsold\s+\d{1,2}\/\d{1,2}\/\d{2,4}\b|\bproperty\s+has\s+been\s+sold\b|\bhome\s+has\s+been\s+sold\b|\bclosed\b)/i.test(zone)) return 'sold';
   return 'unconfirmed';
 }
 
@@ -849,78 +849,37 @@ export async function extractListing(url, opts = {}) {
   const platform = detectPlatform(url);
 
   const listing = buildEmptyListing(url);
-  let attached = null;
   try {
-    attached = await attachHostedBrowser(ROOT, profileName);
-    const { context, browser } = attached;
-    const { page, error } = await navigateAndSettle(context, url, {
-      navigationTimeoutMs: PAGE_TIMEOUT_MS,
-      settleMs: SETTLE_MS,
+    const result = await crawl4aiPortalExtract({
+      mode: 'detail',
+      platform,
+      url,
+      profileName,
+      timeoutMs: CRAWL4AI_TIMEOUT_MS,
     });
-    if (!page) {
-      listing.coverageNotes.push(`navigation failed: ${error?.message || 'unknown error'}`);
-      listing.confidence = 'low';
+
+    if (result.listing) {
+      mergeSupplementalFindings(listing, result.listing);
+      listing.platform = result.listing.platform || platform;
+      listing.url = url;
+      listing.canonicalUrl = result.listing.canonicalUrl || result.finalUrl || null;
+      if (result.listing.listingStatus) {
+        listing.listingStatus = result.listing.listingStatus;
+      }
+      listing.coverageNotes.push(...(result.listing.coverageNotes ?? []));
+    }
+
+    listing.coverageNotes.push(...result.notes);
+    if (result.captureStatus === 'blocked') {
+      listing.coverageNotes.push('crawl4ai detail extraction was blocked or rate-limited');
       listing.listingStatus = 'unconfirmed';
-      await safeClose({ browser });
-      return listing;
+    } else if (result.captureStatus === 'empty') {
+      listing.coverageNotes.push('crawl4ai detail extraction found no usable listing facts');
+    } else if (result.captureStatus === 'error') {
+      listing.coverageNotes.push(`crawl4ai detail extraction error: ${result.error || 'unknown error'}`);
     }
-
-    try {
-      const meta = await readPageMeta(page);
-      if (meta.canonical) listing.canonicalUrl = meta.canonical;
-      // Update platform if redirect changed it (e.g. ?from=srp-list-card → final URL)
-      if (meta.url) {
-        const finalPlatform = detectPlatform(meta.url);
-        if (finalPlatform !== 'other') listing.platform = finalPlatform;
-      }
-      const extractor = PORTAL_EXTRACTORS[listing.platform] || PORTAL_EXTRACTORS.other;
-      const { findings, notes } = await extractor(page, listing.platform);
-      Object.assign(listing, findings);
-      listing.coverageNotes.push(...notes);
-
-      // Body-text fallback for listingStatus when extractors don't set one
-      if (!listing.listingStatus || listing.listingStatus === 'unconfirmed') {
-        listing.listingStatus = normalizeListingStatus(meta.status, `${meta.title}\n${meta.description}\n${meta.bodyText}`);
-      }
-      listing.confidence = scoreConfidence(listing);
-
-      if (shouldUseCrawl4aiFallback(listing)) {
-        const crawl = await extractWithCrawl4ai(meta.canonical || meta.url || url);
-        mergeSupplementalFindings(listing, crawl.findings);
-        listing.coverageNotes.push(...crawl.notes);
-        if (
-          ['sold', 'off-market', 'pending'].includes(listing.listingStatus)
-          && hasActiveListingSignals(`${meta.title}\n${meta.description}\n${meta.bodyText}\n${crawl.text ?? ''}`)
-          && listing.address
-          && listing.price
-        ) {
-          listing.coverageNotes.push(`status reconciled from ${listing.listingStatus} to active due to active listing controls/facts`);
-          listing.listingStatus = 'active';
-        } else if (
-          listing.listingStatus === 'unconfirmed'
-          && crawl.findings.listingStatus
-          && crawl.findings.listingStatus !== 'unconfirmed'
-          && crawl.findings.listingStatus !== 'sold'
-        ) {
-          listing.listingStatus = crawl.findings.listingStatus;
-        } else if (
-          listing.listingStatus === 'sold'
-          && !hasInactiveListingSignals(`${meta.title}\n${meta.description}\n${meta.bodyText}`)
-        ) {
-          listing.coverageNotes.push('suppressed sold status because no explicit sold/off-market status zone was found');
-          listing.listingStatus = 'unconfirmed';
-        }
-      }
-    } finally {
-      await safeClose({ page });
-    }
-
-    await safeClose({ browser });
   } catch (error) {
-    listing.coverageNotes.push(`extractor error: ${error.message}`);
-    if (attached?.browser) {
-      await safeClose({ browser: attached.browser });
-    }
+    listing.coverageNotes.push(`crawl4ai detail extractor error: ${error.message}`);
   }
 
   listing.confidence = scoreConfidence(listing);

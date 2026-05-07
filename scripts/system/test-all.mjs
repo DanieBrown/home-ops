@@ -115,14 +115,14 @@ const scripts = [
   'scripts/browser/browser-session.mjs --status',
   'scripts/browser/review-tabs.mjs --help',
   'scripts/research/research-coverage-audit.mjs',
-  'scripts/research/research-source-plan.mjs --top3 --type development',
-  'scripts/research/research-source-plan.mjs --top3 --type sentiment',
+  'scripts/research/research-source-plan.mjs --address "100 Test Dr" --city "Apex" --type development',
+  'scripts/research/research-source-plan.mjs --address "100 Test Dr" --city "Apex" --type sentiment',
   'scripts/research/sentiment-browser-extract.mjs --help',
   'scripts/research/construction-check.mjs --help',
   'scripts/reports/briefing-pdf.mjs --help',
   'scripts/system/cache-utils.mjs --help',
   'scripts/system/test-cache-loop.mjs',
-  'scripts/research/deep-research-packet.mjs --top3',
+  'scripts/research/deep-research-packet.mjs --help',
   'scripts/research/shortlist-finalist-gate.mjs --help',
   'scripts/system/doctor.mjs',
   'scripts/config/profile-sync-check.mjs',
@@ -148,6 +148,15 @@ for (const script of scripts) {
     pass('extract-listing-details parser unit tests');
   } else {
     fail(`extract-listing-details parser unit tests\n${result.output}`);
+  }
+}
+
+{
+  const result = run('node scripts/tests/test-crawl4ai-portal-extract.mjs');
+  if (result.ok) {
+    pass('crawl4ai portal extraction fixture tests');
+  } else {
+    fail(`crawl4ai portal extraction fixture tests\n${result.output}`);
   }
 }
 

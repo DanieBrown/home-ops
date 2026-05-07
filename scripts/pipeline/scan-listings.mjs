@@ -2,9 +2,9 @@
 
 import { appendFileSync, existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'fs';
 import { join } from 'path';
-import { chromium } from 'playwright';
 import YAML from 'yaml';
 import { readSessionState } from '../browser/browser-session.mjs';
+import { crawl4aiPortalExtract } from '../research/crawl4ai-utils.mjs';
 import {
   normalizeAddress,
   normalizeCity,
@@ -1421,46 +1421,23 @@ async function extractRawItems(page, platform) {
   }, platform);
 }
 
-async function scanSearchPage(context, platform, platformName, area, url, loginPrompt, requirements, seenUrls, seenTrackedAddressKeys, seenPendingSourceAddressKeys, historyRows, remainingSlots = Number.POSITIVE_INFINITY) {
-  let preparedPage;
-  try {
-    preparedPage = await openOrRefreshSearchPage(context, platform, url);
-  } catch (error) {
-    const fallbackPage = findReusableSearchPage(context, platform, url);
-    await fallbackPage?.bringToFront().catch(() => {});
+async function scanSearchPage(profileName, platform, platformName, area, url, loginPrompt, requirements, seenUrls, seenTrackedAddressKeys, seenPendingSourceAddressKeys, historyRows, remainingSlots = Number.POSITIVE_INFINITY) {
+  const extracted = await crawl4aiPortalExtract({
+    mode: 'search',
+    platform,
+    url,
+    profileName,
+    timeoutMs: Math.max(15000, SEARCH_PAGE_BUDGET_MS - 5000),
+  });
 
-    historyRows.push({
-      url,
-      firstSeen: new Date().toISOString().slice(0, 10),
-      platform: platformName,
-      area,
-      address: '',
-      status: 'skipped_blocked',
-    });
-    return {
-      extracted: 0,
-      duplicates: 0,
-      filtered: 0,
-      added: [],
-      blockers: [`${platformName} | ${area} | ${error.message.split('\n')[0]}`],
-      pageAction: 'manual-review-needed',
-      manualActionRequired: {
-        platform,
-        platformName,
-        area,
-        url,
-        message: buildManualActionMessage(platform, platformName, area, loginPrompt),
-      },
-    };
-  }
-
-  const page = preparedPage.page;
-  await scrollToRevealListings(page);
-  const extracted = await extractRawItems(page, platform);
-  const blockMatch = detectBlockedOrChallenged({ title: extracted.title, bodyText: extracted.bodyText });
-  if (blockMatch || extracted.items.length === 0) {
-    const bodyPreview = normalizeText(extracted.bodyText).slice(0, 140);
-    await page.bringToFront().catch(() => {});
+  if (extracted.captureStatus !== 'captured' || extracted.items.length === 0) {
+    const bodyPreview = normalizeText([
+      extracted.snapshot?.title,
+      extracted.snapshot?.description,
+      extracted.snapshot?.excerpt,
+      extracted.notes.join(' '),
+      extracted.error,
+    ].filter(Boolean).join(' ')).slice(0, 140);
 
     historyRows.push({
       url,
@@ -1471,18 +1448,16 @@ async function scanSearchPage(context, platform, platformName, area, url, loginP
       status: 'skipped_blocked',
     });
 
-    // A confirmed bot-detection block kills the whole platform to avoid wasting time.
-    // Zero listing cards without a detected block pattern means the page loaded but
-    // had no matching results (or selectors missed) — only skip this area, not all
-    // remaining areas, so other cities for this platform still get scanned.
-    const isPlatformKillingBlock = Boolean(blockMatch);
+    // A confirmed bot-detection or rate-limit block kills the whole platform to
+    // avoid repeated portal hits. Empty extraction only skips the current area.
+    const isPlatformKillingBlock = extracted.captureStatus === 'blocked';
     return {
       extracted: 0,
       duplicates: 0,
       filtered: 0,
       added: [],
-      blockers: [`${platformName} | ${area} | ${blockMatch ? 'bot/captcha: ' : ''}${bodyPreview || extracted.title || 'no listing cards found'}`],
-      pageAction: preparedPage.action,
+      blockers: [`${platformName} | ${area} | ${isPlatformKillingBlock ? 'bot/rate-limit: ' : ''}${bodyPreview || 'no listing cards found'}`],
+      pageAction: `crawl4ai-${extracted.captureStatus}`,
       manualActionRequired: isPlatformKillingBlock
         ? {
             platform,
@@ -1575,7 +1550,7 @@ async function scanSearchPage(context, platform, platformName, area, url, loginP
     filtered,
     added,
     blockers: [],
-    pageAction: preparedPage.action,
+    pageAction: 'crawl4ai-captured',
   };
 }
 
@@ -1651,124 +1626,112 @@ async function main() {
   const manualActionsRequired = [];
   const blockedPlatforms = new Set();
 
-  const browser = await chromium.connectOverCDP(session.cdpUrl, { timeout: 30000, isLocal: true });
-  try {
-    console.log(`Connected to hosted Chrome session at ${session.cdpUrl}`);
-    const context = browser.contexts()[0];
-    if (!context) {
-      throw new Error('Hosted browser session is running, but no default context was exposed.');
+  console.log(`Crawl4AI portal extraction will attach to hosted Chrome at ${session.cdpUrl}.`);
+
+  for (const platform of selectedPlatforms) {
+    if (blockedPlatforms.has(platform)) {
+      continue;
     }
 
-    context.setDefaultTimeout(DEFAULT_ACTION_TIMEOUT_MS);
-    context.setDefaultNavigationTimeout(NAVIGATION_TIMEOUT_MS);
+    const config = portals[platform];
+    const sourceKey = canonicalPlatformKey(platform);
+    const platformStartedAt = Date.now();
+    for (const search of config.searchUrls) {
+      if (Date.now() - platformStartedAt > PLATFORM_BUDGET_MS) {
+        const areaLabel = search.area || 'Unknown area';
+        const blockerMessage = `${config.name} | ${areaLabel} | platform wall-clock budget of ${PLATFORM_BUDGET_MS}ms exceeded -- skipping remaining areas`;
+        blockers.push(blockerMessage);
+        historyRows.push({
+          url: search.url,
+          firstSeen: new Date().toISOString().slice(0, 10),
+          platform: config.name,
+          area: areaLabel,
+          address: '',
+          status: 'skipped_blocked',
+        });
+        manualActionsRequired.push({
+          platform,
+          platformName: config.name,
+          area: areaLabel,
+          url: search.url,
+          message: buildManualActionMessage(platform, config.name, areaLabel, config.loginPrompt),
+        });
+        blockedPlatforms.add(platform);
+        console.log(`Skipping remaining ${config.name} areas for this scan after exceeding the ${PLATFORM_BUDGET_MS}ms platform budget.`);
+        break;
+      }
 
-    for (const platform of selectedPlatforms) {
-      if (blockedPlatforms.has(platform)) {
+      const areaLabel = search.area || 'Unknown area';
+      const bucketKey = buildPendingBucketKey(sourceKey, areaLabel);
+      let pendingCount = bucketKey ? (pendingCountsByBucket.get(bucketKey)?.count ?? 0) : 0;
+      const addedCount = bucketKey ? (addedCountsByBucket.get(bucketKey) ?? 0) : 0;
+
+      if (bucketKey && pendingCount >= DEFAULT_MAX_PENDING_PER_SOURCE_AREA && targetBuckets.has(bucketKey)) {
+        const bucketRefreshResult = refreshPendingBuckets(
+          new Map([[bucketKey, targetBuckets.get(bucketKey)]]),
+          DEFAULT_MAX_PENDING_PER_SOURCE_AREA,
+          new Set([bucketKey]),
+        );
+        pendingCountsByBucket = bucketRefreshResult.pendingCounts;
+        pendingCount = pendingCountsByBucket.get(bucketKey)?.count ?? 0;
+
+        const refreshedBucket = bucketRefreshResult.refreshedBuckets.get(bucketKey);
+        if (refreshedBucket) {
+          const noun = refreshedBucket.removedCount === 1 ? 'entry' : 'entries';
+          console.log(`Refreshing ${refreshedBucket.platformLabel} | ${refreshedBucket.areaLabel}: removed ${refreshedBucket.removedCount} pending ${noun} before scanning this area bucket.`);
+        }
+      }
+
+      const remainingSlots = DEFAULT_MAX_PENDING_PER_SOURCE_AREA - pendingCount - addedCount;
+
+      if (remainingSlots <= 0) {
+        console.log(`Skipping ${config.name} | ${areaLabel} because ${config.name} already has ${DEFAULT_MAX_PENDING_PER_SOURCE_AREA} pending slots filled for that area.`);
         continue;
       }
 
-      const config = portals[platform];
-      const sourceKey = canonicalPlatformKey(platform);
-      const platformStartedAt = Date.now();
-      for (const search of config.searchUrls) {
-        if (Date.now() - platformStartedAt > PLATFORM_BUDGET_MS) {
-          const areaLabel = search.area || 'Unknown area';
-          const blockerMessage = `${config.name} | ${areaLabel} | platform wall-clock budget of ${PLATFORM_BUDGET_MS}ms exceeded -- skipping remaining areas`;
-          blockers.push(blockerMessage);
-          historyRows.push({
-            url: search.url,
-            firstSeen: new Date().toISOString().slice(0, 10),
-            platform: config.name,
-            area: areaLabel,
-            address: '',
-            status: 'skipped_blocked',
-          });
-          manualActionsRequired.push({
-            platform,
-            platformName: config.name,
-            area: areaLabel,
-            url: search.url,
-            message: buildManualActionMessage(platform, config.name, areaLabel, config.loginPrompt),
-          });
-          blockedPlatforms.add(platform);
-          console.log(`Skipping remaining ${config.name} areas for this scan after exceeding the ${PLATFORM_BUDGET_MS}ms platform budget.`);
-          break;
+      console.log(`Scanning ${config.name} | ${areaLabel} | remaining slots: ${remainingSlots}`);
+      const scanPromise = scanSearchPage(
+        options.profileName,
+        platform,
+        config.name,
+        areaLabel,
+        search.url,
+        config.loginPrompt,
+        requirements,
+        seenUrls,
+        seenTrackedAddressKeys,
+        seenPendingSourceAddressKeys,
+        historyRows,
+        remainingSlots,
+      );
+      let result = await raceWithBudget(scanPromise, SEARCH_PAGE_BUDGET_MS);
+      if (result === null) {
+        console.log(`Scan of ${config.name} | ${areaLabel} exceeded the ${SEARCH_PAGE_BUDGET_MS}ms per-page budget -- treating as a navigation block.`);
+        result = buildBudgetTimeoutResult(platform, config.name, areaLabel, search.url, config.loginPrompt, SEARCH_PAGE_BUDGET_MS);
+      }
+
+      extractedCount += result.extracted;
+      duplicateCount += result.duplicates;
+      filteredCount += result.filtered;
+      blockers.push(...result.blockers);
+      addedCandidates.push(...result.added.map((candidate) => ({ ...candidate, platformName: config.name })));
+      if (bucketKey) {
+        addedCountsByBucket.set(bucketKey, addedCount + result.added.length);
+      }
+
+      if (result.manualActionRequired) {
+        manualActionsRequired.push(result.manualActionRequired);
+        blockedPlatforms.add(platform);
+        console.log(`Skipping remaining ${config.name} areas for this scan after blocker in ${areaLabel}.`);
+        // Write a session-level flag so the next scan auto-skips Zillow (24-hour TTL)
+        if (platform === 'zillow') {
+          try {
+            writeFileSync(ZILLOW_BLOCKED_PATH, JSON.stringify({ blocked_at: new Date().toISOString(), area: areaLabel }));
+          } catch { /* non-fatal */ }
         }
-
-        const areaLabel = search.area || 'Unknown area';
-        const bucketKey = buildPendingBucketKey(sourceKey, areaLabel);
-        let pendingCount = bucketKey ? (pendingCountsByBucket.get(bucketKey)?.count ?? 0) : 0;
-        const addedCount = bucketKey ? (addedCountsByBucket.get(bucketKey) ?? 0) : 0;
-
-        if (bucketKey && pendingCount >= DEFAULT_MAX_PENDING_PER_SOURCE_AREA && targetBuckets.has(bucketKey)) {
-          const bucketRefreshResult = refreshPendingBuckets(
-            new Map([[bucketKey, targetBuckets.get(bucketKey)]]),
-            DEFAULT_MAX_PENDING_PER_SOURCE_AREA,
-            new Set([bucketKey]),
-          );
-          pendingCountsByBucket = bucketRefreshResult.pendingCounts;
-          pendingCount = pendingCountsByBucket.get(bucketKey)?.count ?? 0;
-
-          const refreshedBucket = bucketRefreshResult.refreshedBuckets.get(bucketKey);
-          if (refreshedBucket) {
-            const noun = refreshedBucket.removedCount === 1 ? 'entry' : 'entries';
-            console.log(`Refreshing ${refreshedBucket.platformLabel} | ${refreshedBucket.areaLabel}: removed ${refreshedBucket.removedCount} pending ${noun} before scanning this area bucket.`);
-          }
-        }
-
-        const remainingSlots = DEFAULT_MAX_PENDING_PER_SOURCE_AREA - pendingCount - addedCount;
-
-        if (remainingSlots <= 0) {
-          console.log(`Skipping ${config.name} | ${areaLabel} because ${config.name} already has ${DEFAULT_MAX_PENDING_PER_SOURCE_AREA} pending slots filled for that area.`);
-          continue;
-        }
-
-        console.log(`Scanning ${config.name} | ${areaLabel} | remaining slots: ${remainingSlots}`);
-        const scanPromise = scanSearchPage(
-          context,
-          platform,
-          config.name,
-          areaLabel,
-          search.url,
-          config.loginPrompt,
-          requirements,
-          seenUrls,
-          seenTrackedAddressKeys,
-          seenPendingSourceAddressKeys,
-          historyRows,
-          remainingSlots,
-        );
-        let result = await raceWithBudget(scanPromise, SEARCH_PAGE_BUDGET_MS);
-        if (result === null) {
-          console.log(`Scan of ${config.name} | ${areaLabel} exceeded the ${SEARCH_PAGE_BUDGET_MS}ms per-page budget -- treating as a navigation block.`);
-          result = buildBudgetTimeoutResult(platform, config.name, areaLabel, search.url, config.loginPrompt, SEARCH_PAGE_BUDGET_MS);
-        }
-
-        extractedCount += result.extracted;
-        duplicateCount += result.duplicates;
-        filteredCount += result.filtered;
-        blockers.push(...result.blockers);
-        addedCandidates.push(...result.added.map((candidate) => ({ ...candidate, platformName: config.name })));
-        if (bucketKey) {
-          addedCountsByBucket.set(bucketKey, addedCount + result.added.length);
-        }
-
-        if (result.manualActionRequired) {
-          manualActionsRequired.push(result.manualActionRequired);
-          blockedPlatforms.add(platform);
-          console.log(`Skipping remaining ${config.name} areas for this scan after blocker in ${areaLabel}.`);
-          // Write a session-level flag so the next scan auto-skips Zillow (24-hour TTL)
-          if (platform === 'zillow') {
-            try {
-              writeFileSync(ZILLOW_BLOCKED_PATH, JSON.stringify({ blocked_at: new Date().toISOString(), area: areaLabel }));
-            } catch { /* non-fatal */ }
-          }
-          break;
-        }
+        break;
       }
     }
-  } finally {
-    await closeBrowserConnection(browser);
   }
 
   const newPipelineLines = addedCandidates.map((candidate) => buildPipelineLine(candidate, candidate.platformName));
@@ -1784,7 +1747,7 @@ async function main() {
   }
 
   console.log(`Platforms scanned: ${selectedPlatforms.map((platform) => portals[platform].name).join(', ')}`);
-  console.log('Session bootstrap actions taken: reused existing hosted Chrome session and refreshed reusable search tabs');
+  console.log('Session bootstrap actions taken: reused existing hosted Chrome session through crawl4ai CDP extraction');
   console.log(`Candidate listings found: ${extractedCount}`);
   console.log(`Duplicates skipped: ${duplicateCount}`);
   console.log(`Filtered-out listings: ${filteredCount}`);

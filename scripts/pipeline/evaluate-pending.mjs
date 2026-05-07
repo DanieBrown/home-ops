@@ -5,9 +5,9 @@ import { existsSync, readdirSync } from 'fs';
 import { mkdir, readFile, writeFile } from 'fs/promises';
 import { basename, dirname, join } from 'path';
 import {
-  connectToSavedBrowserSession,
   readSessionState,
 } from '../browser/browser-session.mjs';
+import { crawl4aiPortalExtract } from '../research/crawl4ai-utils.mjs';
 import {
   extractRoadHints,
   extractSchoolNames,
@@ -1176,15 +1176,23 @@ function getNextReportNumber(reportMap, trackerMap) {
 
 async function ensureHostedSession(profileName) {
   const savedState = await readSessionState(ROOT, profileName);
-  if (!savedState?.data?.cdpUrl || savedState?.data?.mode !== 'hosted') {
+  if (!savedState?.data?.cdpUrl || savedState?.data?.mode !== 'hosted' || savedState.data.status !== 'open') {
     throw new Error(`Hosted browser session ${profileName} is not available. Run /home-ops init or npm.cmd run browser:setup first.`);
   }
 
-  return connectToSavedBrowserSession({
-    projectRoot: ROOT,
+  try {
+    const response = await fetch(`${savedState.data.cdpUrl}/json/version`);
+    if (!response.ok) {
+      throw new Error(`CDP endpoint returned HTTP ${response.status}`);
+    }
+  } catch (error) {
+    throw new Error(`Hosted browser session ${profileName} is not reachable: ${error.message}`);
+  }
+
+  return {
     profileName,
-    targets: ['about:blank'],
-  });
+    cdpUrl: savedState.data.cdpUrl,
+  };
 }
 
 function summarizeSnapshot(snapshot) {
@@ -1220,7 +1228,122 @@ function reviveCachedAttempt(cached, entry) {
   };
 }
 
-async function extractFromBrowserCached(context, entry, cacheState) {
+function summarizePortalSnapshot(result) {
+  const snapshot = result.snapshot ?? {};
+  const bodyText = String(snapshot.bodyText ?? snapshot.excerpt ?? '');
+  return {
+    title: snapshot.title ?? '',
+    url: snapshot.url ?? result.finalUrl ?? result.url ?? '',
+    headings: Array.isArray(snapshot.headings) ? snapshot.headings : [],
+    description: chooseFirst(snapshot.description, snapshot.meta?.description, snapshot.meta?.['og:description'], ''),
+    excerpt: bodyText.slice(0, 1200),
+  };
+}
+
+function buildFactsFromPortalResult(result, entry) {
+  const listing = result.listing ?? {};
+  const snapshot = result.snapshot ?? {};
+  const text = [
+    listing.description,
+    snapshot.title,
+    Array.isArray(snapshot.headings) ? snapshot.headings.join('\n') : '',
+    snapshot.description,
+    snapshot.excerpt,
+    snapshot.bodyText,
+  ].filter(Boolean).join('\n');
+
+  const addressParts = {
+    address: chooseFirst(listing.address, entry.address),
+    city: chooseFirst(listing.city, entry.city, entry.area),
+    state: chooseFirst(listing.state, entry.state, 'NC'),
+    zip: chooseFirst(listing.zip, entry.zip, ''),
+  };
+
+  if (!addressParts.address || !addressParts.city) {
+    const explicitAddressMatch = text.match(FULL_ADDRESS_PATTERN) ?? text.match(INLINE_ADDRESS_PATTERN);
+    if (explicitAddressMatch) {
+      addressParts.address ||= explicitAddressMatch[1].trim();
+      addressParts.city ||= explicitAddressMatch[2].trim();
+      addressParts.state ||= explicitAddressMatch[3].trim().toUpperCase();
+      addressParts.zip ||= explicitAddressMatch[4] ?? '';
+    }
+  }
+
+  const priceNumber = chooseFirst(safeParseNumber(listing.price), parseCurrency(text), parseCurrency(entry.price));
+  const hoaFromText = parseHoa(text);
+  const hoaMonthly = safeParseNumber(listing.hoaMonthly);
+  const daysOnMarket = Number.isFinite(safeParseNumber(listing.daysOnMarket))
+    ? { days: safeParseNumber(listing.daysOnMarket), text: `${Math.round(safeParseNumber(listing.daysOnMarket))} days on market` }
+    : parseDaysOnMarket(text);
+  const lotText = chooseFirst(
+    Number.isFinite(safeParseNumber(listing.lotAcres)) ? `${listing.lotAcres} acres` : '',
+    Number.isFinite(safeParseNumber(listing.lotSqft)) ? `${formatSqft(listing.lotSqft)} sq ft` : '',
+    parseLot(text),
+    '',
+  );
+  const schoolRatings = Array.isArray(listing.assignedSchools)
+    ? listing.assignedSchools
+      .map((school) => ({
+        name: String(school?.name ?? '').trim(),
+        rating: safeParseNumber(school?.rating),
+      }))
+      .filter((school) => school.name && Number.isFinite(school.rating))
+    : parseSchoolRatings(text);
+
+  return {
+    address: addressParts.address || '',
+    city: addressParts.city || '',
+    state: addressParts.state || 'NC',
+    zip: addressParts.zip || '',
+    fullAddress: formatFullAddress(addressParts),
+    priceNumber: Number.isFinite(priceNumber) ? priceNumber : null,
+    priceText: Number.isFinite(priceNumber) ? formatCurrency(priceNumber) : String(entry.price ?? '').trim() || 'Unknown',
+    beds: Number.isFinite(safeParseNumber(listing.beds)) ? safeParseNumber(listing.beds) : parseBedsBaths(text).beds,
+    baths: Number.isFinite(safeParseNumber(listing.baths)) ? safeParseNumber(listing.baths) : parseBedsBaths(text).baths,
+    sqft: Number.isFinite(safeParseNumber(listing.sqftFinished)) ? safeParseNumber(listing.sqftFinished) : safeParseNumber(text.match(/([\d,]+)\s*(?:sq\.?\s*ft|sqft|square feet)/i)?.[1]),
+    lotText,
+    yearBuilt: Number.isFinite(safeParseNumber(listing.yearBuilt)) ? safeParseNumber(listing.yearBuilt) : safeParseNumber(text.match(/(?:built\s+in|year built[:\s]+)(\d{4})/i)?.[1]),
+    garageSpaces: Number.isFinite(safeParseNumber(listing.garage)) ? safeParseNumber(listing.garage) : parseGarageSpaces(text),
+    hoaText: Number.isFinite(hoaMonthly) ? `${formatCurrency(hoaMonthly)}/mo` : hoaFromText.text,
+    hoaMonthly: Number.isFinite(hoaMonthly) ? hoaMonthly : hoaFromText.monthly,
+    daysOnMarketText: daysOnMarket.text,
+    daysOnMarket: Number.isFinite(daysOnMarket.days) ? daysOnMarket.days : null,
+    schoolRatings,
+    propertyType: normalizePropertyType(listing.propertyType, text),
+    subdivision: String(chooseFirst(listing.communityName, '')).trim(),
+    description: String(chooseFirst(listing.description, snapshot.description, '')).trim(),
+    rawText: text,
+  };
+}
+
+function classifyPortalVerification(result, facts) {
+  if (result.captureStatus === 'blocked') {
+    return { status: 'blocked', reason: 'portal access or rate-limit challenge blocked the detail page' };
+  }
+
+  if (result.captureStatus === 'error') {
+    return { status: 'blocked', reason: result.error ? `crawl4ai extraction error: ${String(result.error).split('\n')[0]}` : 'crawl4ai extraction error' };
+  }
+
+  const listingStatus = String(result.listing?.listingStatus ?? '').toLowerCase();
+  if (['sold', 'off-market', 'pending'].includes(listingStatus)) {
+    return { status: 'inactive', reason: `listing status from portal: ${listingStatus}` };
+  }
+
+  const hasAddress = Boolean(facts.address && facts.city);
+  const hasCoreFacts = countCoreFacts(facts) >= 2;
+  if (result.captureStatus === 'captured' && (hasAddress || hasCoreFacts)) {
+    return { status: 'active', reason: 'crawl4ai captured listing details from hosted browser session' };
+  }
+
+  if (result.captureStatus === 'empty') {
+    return { status: 'blocked', reason: 'crawl4ai reached the page but extracted no usable listing detail' };
+  }
+
+  return { status: 'blocked', reason: 'insufficient listing detail detected' };
+}
+
+async function extractFromBrowserCached(profileName, entry, cacheState) {
   const key = buildExtractionCacheKey(entry);
   const cache = cacheState?.cache;
 
@@ -1233,7 +1356,7 @@ async function extractFromBrowserCached(context, entry, cacheState) {
     }
   }
 
-  const attempt = await extractFromBrowser(context, entry);
+  const attempt = await extractFromBrowser(profileName, entry);
   cacheState.misses += 1;
 
   if (cache && !cacheState.disabled && key && attempt?.verification?.status) {
@@ -1251,40 +1374,30 @@ async function extractFromBrowserCached(context, entry, cacheState) {
   return attempt;
 }
 
-async function extractFromBrowser(context, entry) {
-  const page = await context.newPage();
-  let response = null;
-  let navigationError = null;
+async function extractFromBrowser(profileName, entry) {
+  const result = await crawl4aiPortalExtract({
+    mode: 'detail',
+    platform: entry.platformKey,
+    url: entry.url,
+    profileName,
+    timeoutMs: NAVIGATION_TIMEOUT_MS + SETTLE_TIMEOUT_MS + 10000,
+  });
+  const facts = buildFactsFromPortalResult(result, entry);
+  const verification = classifyPortalVerification(result, facts);
 
-  try {
-    try {
-      response = await page.goto(entry.url, { waitUntil: 'domcontentloaded', timeout: NAVIGATION_TIMEOUT_MS });
-    } catch (error) {
-      navigationError = error;
-    }
-
-    await page.waitForTimeout(SETTLE_TIMEOUT_MS);
-    await scrollToFullyLoad(page);
-    const snapshot = await capturePageSnapshot(page, entry.platformKey);
-    const facts = parseListingFacts(snapshot, entry);
-    const verification = classifyVerification(snapshot, response, navigationError, facts, entry);
-
-    return {
-      inputType: 'url',
-      platformKey: entry.platformKey,
-      platformLabel: entry.platformLabel,
-      url: entry.url,
-      canonicalUrl: entry.canonicalUrl,
-      finalUrl: snapshot.url || entry.url,
-      verification,
-      responseStatus: response?.status() ?? 0,
-      navigationError: navigationError ? navigationError.message.split('\n')[0] : '',
-      facts,
-      snapshot: summarizeSnapshot(snapshot),
-    };
-  } finally {
-    await page.close().catch(() => {});
-  }
+  return {
+    inputType: 'url',
+    platformKey: entry.platformKey,
+    platformLabel: entry.platformLabel,
+    url: entry.url,
+    canonicalUrl: entry.canonicalUrl,
+    finalUrl: result.finalUrl || entry.url,
+    verification,
+    responseStatus: result.statusCode ?? 0,
+    navigationError: result.error ? String(result.error).split('\n')[0] : '',
+    facts,
+    snapshot: summarizePortalSnapshot(result),
+  };
 }
 
 function parseReportMetadataNumber(value) {
@@ -2317,7 +2430,7 @@ async function main() {
       if (entry.inputType === 'local-report') {
         attempt = await extractFromLocalReport(entry, portals);
       } else {
-        attempt = await extractFromBrowserCached(session.context, entry, cacheState);
+        attempt = await extractFromBrowserCached(session.profileName, entry, cacheState);
       }
 
       attempts.push(attempt);
@@ -2480,9 +2593,6 @@ async function main() {
     if (!config.noCache) {
       console.log(`Extraction cache: ${cacheState.hits} hit(s), ${cacheState.misses} miss(es)`);
     }
-    if (session?.browser) {
-      await session.browser.close();
-    }
     return;
   }
 
@@ -2534,10 +2644,6 @@ async function main() {
 
   if (!config.skipReviewTabs && shortlist.top10.length > 0) {
     await runNodeScript('scripts/browser/review-tabs.mjs', ['shortlist-top10', '--profile', config.profileName, '--group', 'Top 10'], false);
-  }
-
-  if (session?.browser) {
-    await session.browser.close();
   }
 
   console.log('');
