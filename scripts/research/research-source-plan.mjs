@@ -206,6 +206,12 @@ function formatSourceEntry(entry) {
   if (entry.recommendedQueries.length > 0) {
     lines.push(`  Queries: ${entry.recommendedQueries.join(' | ')}`);
   }
+  if (Array.isArray(entry.instructions) && entry.instructions.length > 0) {
+    lines.push('  Instructions:');
+    for (const instruction of entry.instructions) {
+      lines.push(`  - ${instruction}`);
+    }
+  }
   return lines.join('\n');
 }
 
@@ -246,6 +252,7 @@ function serializeTarget(target, context, config) {
       subdivisionHints: developmentPlan.subdivisionHints,
       roadHints: developmentPlan.roadHints,
       sources: developmentPlan.entries,
+      propertyPermitGuides: developmentPlan.propertyPermitGuides,
     },
     school: {
       minimumRating: schoolPlan.minimumRating,
@@ -303,6 +310,10 @@ function printTarget(serialized, config) {
       lines.push('- No development sources resolved from portals.yml.');
     } else {
       serialized.development.sources.forEach((entry) => lines.push(formatSourceEntry(entry)));
+    }
+    if (serialized.development.propertyPermitGuides.length > 0) {
+      lines.push('Property permit lookups');
+      serialized.development.propertyPermitGuides.forEach((entry) => lines.push(formatSourceEntry(entry)));
     }
   }
 

@@ -293,25 +293,225 @@ def score_confidence(listing: dict[str, Any]) -> str:
     return "low"
 
 
+def clean_school_name(value: Any) -> str:
+    name = normalize_space(value)
+    name = re.sub(r"^(?:Places|Transit|School Information|Information)\s+", "", name, flags=re.I)
+    name = re.sub(r"^(?:Chatham|Wake)\s*[-:]\s*", "", name, flags=re.I)
+    name = re.sub(r"^N\s+Chatham\s+Middle$", "North Chatham Middle School", name, flags=re.I)
+    name = re.sub(r"\bHigh$", "High School", name, flags=re.I)
+    name = re.sub(r"\bMiddle$", "Middle School", name, flags=re.I)
+    name = re.sub(r"\bElementary$", "Elementary School", name, flags=re.I)
+    name = normalize_space(name)
+    if re.fullmatch(r"(?:Additional\s+)?(?:Elementary|Middle|High)(?:\s+School)?", name, re.I):
+        return ""
+    if re.fullmatch(r"Information\s+Elementary\s+School", name, re.I):
+        return ""
+    return name
+
+
 def normalize_school(entry: dict[str, Any], source: str) -> dict[str, Any] | None:
-    name = pick_first(entry.get("name"), entry.get("schoolName"), entry.get("officialName"))
+    name = clean_school_name(pick_first(entry.get("name"), entry.get("schoolName"), entry.get("officialName")))
     if not name:
         return None
     raw_level = normalize_space(pick_first(entry.get("level"), entry.get("gradeLevel"), entry.get("type"), entry.get("gradeRange")))
     level = None
-    if re.search(r"elementary|primary", raw_level, re.I):
+    level_haystack = f"{raw_level} {name}"
+    if re.search(r"elementary|primary", level_haystack, re.I):
         level = "elementary"
-    elif re.search(r"middle|junior", raw_level, re.I):
+    elif re.search(r"middle|junior", level_haystack, re.I):
         level = "middle"
-    elif re.search(r"high|senior", raw_level, re.I):
+    elif re.search(r"high|senior", level_haystack, re.I):
         level = "high"
     return {
-        "name": normalize_space(name),
+        "name": name,
         "level": level or raw_level or None,
         "district": pick_first(entry.get("district"), entry.get("schoolDistrict")),
         "rating": as_number(pick_first(entry.get("rating"), entry.get("greatSchoolsRating"), entry.get("score"))),
         "source": source,
     }
+
+
+def clean_entity_name(value: Any) -> str:
+    text = normalize_space(value)
+    text = re.split(r"\s+in\s+[A-Z][A-Za-z0-9'& -]{2,80}(?:\.|$)", text, maxsplit=1)[0]
+    text = FULL_ADDRESS_RE.split(text, maxsplit=1)[0]
+    text = re.split(
+        r"\b(?:Community|Subdivision|Neighborhood|Schools?|School Information|"
+        r"Property Details?|Listing Details?|Overview|New Construction|Interior|Exterior|Parking|Garage|"
+        r"HOA|MLS|Contact|Schedule|Tour|For Sale|Price|Beds?|Baths?)\b",
+        text,
+        maxsplit=1,
+        flags=re.I,
+    )[0]
+    text = re.sub(r"^[\s:;-]+|[\s:;.,-]+$", "", text)
+    if len(text) < 3 or len(text) > 90:
+        return ""
+    if re.search(r"\b(?:homes\.com|listing|details?|information|property|school|rating)\b", text, re.I):
+        return ""
+    return text
+
+
+def clean_builder_name(value: Any) -> str:
+    text = clean_entity_name(value)
+    text = re.sub(r"\b(?:Builder\s+Model|Model\s+Home|Home\s+Builder|Builder)\b.*$", "", text, flags=re.I)
+    return clean_entity_name(text)
+
+
+def clean_community_name(value: Any) -> str:
+    text = clean_entity_name(value)
+    text = re.sub(r"^(?:in|at|the)\s+", "", text, flags=re.I).strip()
+    text = re.sub(r"\b(?:community|subdivision|neighborhood)\b.*$", "", text, flags=re.I).strip(" ,.;:-")
+    if not text or re.search(r"\b(?:county|school district|top[- ]rated|builder|model|homes? for sale)\b", text, re.I):
+        return ""
+    return text if 3 <= len(text) <= 80 else ""
+
+
+def value_name(value: Any) -> str:
+    if isinstance(value, dict):
+        return clean_entity_name(pick_first(value.get("name"), value.get("displayName"), value.get("title")))
+    if isinstance(value, list):
+        for item in value:
+            name = value_name(item)
+            if name:
+                return name
+        return ""
+    return clean_entity_name(value)
+
+
+def dedupe_schools(schools: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    unique: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for school in schools:
+        normalized = normalize_school(school, school.get("source") or "listing")
+        if not normalized:
+            continue
+        key = f"{normalized.get('name', '').lower()}|{normalized.get('level') or ''}"
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append(normalized)
+    rated_levels = {school.get("level") for school in unique if school.get("level") and school.get("rating") is not None}
+    if rated_levels:
+        unique = [
+            school for school in unique
+            if school.get("rating") is not None or school.get("level") not in rated_levels
+        ]
+    return unique[:12]
+
+
+def extract_structured_enrichment(html: str, platform: str) -> dict[str, Any]:
+    data = [*parse_json_scripts(html), *parse_json_scripts(html, next_data=True)]
+    if not data:
+        return {}
+
+    patch: dict[str, Any] = {}
+    schools: list[dict[str, Any]] = []
+    objects = collect_objects(data, [])
+    for obj in objects:
+        if not isinstance(obj, dict):
+            continue
+
+        for key, value in obj.items():
+            normalized_key = str(key).lower()
+            if "builder" in normalized_key and not patch.get("builderName"):
+                name = clean_builder_name(value_name(value))
+                if name:
+                    patch["builderName"] = name
+            if normalized_key in {"community", "communityname", "subdivision", "subdivisionname", "neighborhood"} and not patch.get("communityName"):
+                name = clean_community_name(value_name(value))
+                if name:
+                    patch["communityName"] = name
+
+        typ = obj.get("@type")
+        typ_text = " ".join(typ) if isinstance(typ, list) else str(typ or "")
+        name = pick_first(obj.get("name"), obj.get("schoolName"), obj.get("officialName"))
+        has_school_shape = bool(
+            re.search(r"\bSchool\b", typ_text, re.I)
+            or "schoolName" in obj
+            or "greatSchoolsRating" in obj
+            or re.search(r"\b(?:Elementary|Middle|High)\b", str(name or ""), re.I)
+        )
+        if has_school_shape and name:
+            normalized = normalize_school(obj, platform)
+            if normalized:
+                schools.append(normalized)
+
+    if schools:
+        patch["assignedSchools"] = dedupe_schools(schools)
+    return patch
+
+
+def html_sections_after_headings(html: str, heading_pattern: str) -> list[str]:
+    sections: list[str] = []
+    heading_re = re.compile(r"(?is)<h[1-5]\b[^>]*>(.*?)</h[1-5]>", re.I)
+    matches = list(heading_re.finditer(html or ""))
+    for index, match in enumerate(matches):
+        heading = strip_tags(match.group(1))
+        if not re.search(heading_pattern, heading, re.I):
+            continue
+        start = match.end()
+        end = matches[index + 1].start() if index + 1 < len(matches) else min(len(html), start + 12000)
+        sections.append(html[start:end])
+    return sections
+
+
+def parse_school_names_from_text(text: str, source: str) -> list[dict[str, Any]]:
+    schools: list[dict[str, Any]] = []
+    name_pattern = r"([A-Z][A-Za-z0-9.' &-]{2,80}?\b(?:Elementary|Middle|High|Magnet|Academy)(?:\s+School)?)"
+    def clean_text_school_name(raw: str) -> str:
+        name = normalize_space(raw)
+        parts = re.split(r"(?:[.!?]\s+|\bSchools?\s+)", name, flags=re.I)
+        return clean_school_name(parts[-1] if parts else name)
+    for match in re.finditer(name_pattern, text or ""):
+        name = clean_text_school_name(match.group(1))
+        window = text[match.start():match.end() + 80]
+        rating = as_number(first_match(r"(\d{1,2})\s*/\s*10", window))
+        schools.append({"name": name, "rating": rating, "source": source})
+    for match in re.finditer(r"(\d{1,2})\s*/\s*10\s+" + name_pattern, text or ""):
+        name = clean_text_school_name(match.group(2))
+        schools.append({"name": name, "rating": as_number(match.group(1)), "source": source})
+    return dedupe_schools(schools)
+
+
+def extract_text_enrichment(html: str, body_text: str, platform: str) -> dict[str, Any]:
+    patch: dict[str, Any] = {}
+    listing_detail_text = " ".join(strip_tags(section) for section in html_sections_after_headings(html, r"listing\s*details?|property\s*details?|overview|builder"))
+    search_text = normalize_space(f"{listing_detail_text} {body_text[:30000]}")
+
+    for pattern in (
+        r"\bBuilder\s*Name\s*:?\s*([A-Z][A-Za-z0-9'&./ -]{2,90})",
+        r"\bBuilder\s*:?\s*([A-Z][A-Za-z0-9'&./ -]{2,90})",
+        r"\bBuilt\s+by\s+([A-Z][A-Za-z0-9'&./ -]{2,90})",
+        r"\bNew\s+Construction(?:\s+Home)?\s+by\s+([A-Z][A-Za-z0-9'&./ -]{2,90})",
+        r"\bCommunity\s+by\s+([A-Z][A-Za-z0-9'&./ -]{2,90})",
+    ):
+        candidate = clean_builder_name(first_match(pattern, search_text))
+        if candidate:
+            patch["builderName"] = candidate
+            break
+
+    community = clean_community_name(first_match(
+        r"\bat\s+\d{1,5}\s+[A-Za-z0-9.'# -]{2,80}?\s+in\s+([A-Z][A-Za-z0-9'&./ -]{2,90})(?:[!.,;]|\s+a\s+)",
+        search_text,
+    ))
+    if not community:
+        community = clean_community_name(first_match(r"\bin\s+([A-Z][A-Za-z0-9'&./ -]{2,90}),?\s+a\s+(?:charming\s+)?(?:[A-Za-z]+\s+)?community", search_text))
+    if not community:
+        community = clean_community_name(first_match(r"\b(?:Community|Subdivision|Neighborhood)\s*:?\s*([A-Z][A-Za-z0-9'&./ -]{2,90})", search_text))
+    if community:
+        patch["communityName"] = community
+
+    mls = first_match(r"\bMLS(?:\s*Number|\s*#|#)\s*:?\s*([A-Z0-9-]{5,})", search_text)
+    if mls:
+        patch["mls"] = mls
+
+    school_texts = [strip_tags(section) for section in html_sections_after_headings(html, r"schools?|school information")]
+    school_texts.append(search_text)
+    schools = dedupe_schools([school for text in school_texts for school in parse_school_names_from_text(text, platform)])
+    if schools:
+        patch["assignedSchools"] = schools
+
+    return patch
 
 
 def extract_jsonld_listing(html: str, url: str, platform: str, body_text: str) -> dict[str, Any]:
@@ -527,6 +727,8 @@ def extract_detail(html: str, url: str, final_url: str, platform: str, notes: li
     merge_listing(listing, extract_jsonld_listing(html, url, platform, body_text))
     merge_listing(listing, extract_next_listing(html, platform, body_text))
     merge_listing(listing, extract_text_fallback(html, body_text))
+    merge_listing(listing, extract_structured_enrichment(html, platform))
+    merge_listing(listing, extract_text_enrichment(html, body_text, platform))
     listing["listingStatus"] = normalize_status(listing.get("listingStatus"), body_text)
     listing["confidence"] = score_confidence(listing)
     listing["coverageNotes"].extend(notes)
@@ -591,10 +793,18 @@ def extract_search_items(html: str, url: str, platform: str) -> list[dict[str, A
 
 
 def capture_status(html: str, status_code: int | None, mode: str, items: list[dict[str, Any]] | None, listing: dict[str, Any] | None) -> str:
-    if status_code in (401, 403, 429) or BLOCK_PATTERN.search(html or ""):
+    if status_code in (401, 403, 429):
         return "blocked"
     if not html:
         return "empty"
+    detail_has_core_facts = bool(
+        mode == "detail"
+        and listing
+        and (listing.get("address") or listing.get("price"))
+        and listing.get("confidence") in ("medium", "high")
+    )
+    if BLOCK_PATTERN.search(html or "") and not detail_has_core_facts:
+        return "blocked"
     if mode == "search" and not items:
         return "empty"
     if mode == "detail" and listing and listing.get("confidence") == "low" and not listing.get("address") and not listing.get("price"):

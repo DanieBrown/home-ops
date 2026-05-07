@@ -68,7 +68,7 @@ test('normalize: empty result stays empty', () => {
   const result = normalizeCrawl4aiPortalResult({
     mode: 'search',
     platform: 'zillow',
-    url: 'https://www.zillow.com/homes/Apex-NC/',
+    url: 'https://www.zillow.com/homes/Faketown-ZZ/',
     captureStatus: 'empty',
     items: [],
   });
@@ -80,7 +80,7 @@ test('normalize: 429 result is blocked', () => {
   const result = normalizeCrawl4aiPortalResult({
     mode: 'search',
     platform: 'realtor',
-    url: 'https://www.realtor.com/realestateandhomes-search/Apex_NC',
+    url: 'https://www.realtor.com/realestateandhomes-search/Faketown_ZZ',
     statusCode: 429,
     captureStatus: 'blocked',
     error: 'http-429',
@@ -107,7 +107,7 @@ test('fixture: blocked page is classified as blocked', () => {
     mode: 'search',
     platform: 'realtor',
     fixture: 'crawl4ai-blocked.html',
-    url: 'https://www.realtor.com/realestateandhomes-search/Apex_NC',
+    url: 'https://www.realtor.com/realestateandhomes-search/Faketown_ZZ',
   });
   assert.equal(result.captureStatus, 'blocked');
 });
@@ -116,11 +116,11 @@ test('fixture: zillow detail extracts JSON-LD facts', () => {
   const result = runSidecar({
     platform: 'zillow',
     fixture: 'crawl4ai-zillow-detail.html',
-    url: 'https://www.zillow.com/homedetails/123-Pine-View-Dr-Apex-NC-27502/111_zpid/',
+    url: 'https://www.zillow.com/homedetails/100-Example-Pine-Dr-Faketown-ZZ-00001/111_zpid/',
   });
   assert.equal(result.captureStatus, 'captured');
-  assert.equal(result.listing.address, '123 Pine View Dr');
-  assert.equal(result.listing.city, 'Apex');
+  assert.equal(result.listing.address, '100 Example Pine Dr');
+  assert.equal(result.listing.city, 'Faketown');
   assert.equal(result.listing.price, 650000);
   assert.equal(result.listing.beds, 4);
   assert.equal(result.listing.sqftFinished, 3050);
@@ -130,25 +130,32 @@ test('fixture: redfin detail extracts JSON-LD facts', () => {
   const result = runSidecar({
     platform: 'redfin',
     fixture: 'crawl4ai-redfin-detail.html',
-    url: 'https://www.redfin.com/NC/Cary/456-Oak-Meadow-Ln-27519/home/123',
+    url: 'https://www.redfin.com/ZZ/Faketown/200-Sample-Meadow-Ln-00002/home/123',
   });
   assert.equal(result.captureStatus, 'captured');
-  assert.equal(result.listing.address, '456 Oak Meadow Ln');
-  assert.equal(result.listing.city, 'Cary');
+  assert.equal(result.listing.address, '200 Sample Meadow Ln');
+  assert.equal(result.listing.city, 'Faketown');
   assert.equal(result.listing.baths, 3.5);
   assert.equal(result.listing.yearBuilt, 2017);
+  assert.equal(result.listing.builderName, 'Acme Homes');
+  assert.equal(result.listing.communityName, 'Mock Creek');
+  assert.deepEqual(result.listing.assignedSchools.map((school) => school.name), [
+    'North Sample Elementary School',
+    'Demo Ridge Middle School',
+    'Example High School',
+  ]);
 });
 
 test('fixture: realtor detail extracts __NEXT_DATA__ facts', () => {
   const result = runSidecar({
     platform: 'realtor',
     fixture: 'crawl4ai-realtor-detail.html',
-    url: 'https://www.realtor.com/realestateandhomes-detail/789-Jewell-Farm-Ln_Holly-Springs_NC_27540_M12345-67890',
+    url: 'https://www.realtor.com/realestateandhomes-detail/400-Synthetic-Farm-Ln_Test-Springs_ZZ_00004_M12345-67890',
   });
   assert.equal(result.captureStatus, 'captured');
-  assert.equal(result.listing.address, '789 Jewell Farm Ln');
+  assert.equal(result.listing.address, '400 Synthetic Farm Ln');
   assert.equal(result.listing.baths, 3.5);
-  assert.equal(result.listing.mls, 'NC10058399');
+  assert.equal(result.listing.mls, 'ZZ10058399');
   assert.equal(result.listing.listingAgent, 'Erica Anderson');
   assert.equal(result.listing.assignedSchools[0].rating, 8);
 });
@@ -157,14 +164,18 @@ test('fixture: homes detail extracts @graph JSON-LD facts', () => {
   const result = runSidecar({
     platform: 'homes',
     fixture: 'crawl4ai-homes-detail.html',
-    url: 'https://www.homes.com/property/4404-clarkdale-ct-fuquay-varina-nc/bm457fnk52lm0/',
+    url: 'https://www.homes.com/property/300-placeholder-ct-sampleton-zz/examplefixture/',
   });
   assert.equal(result.captureStatus, 'captured');
-  assert.equal(result.listing.address, '4404 Clarkdale Ct');
-  assert.equal(result.listing.city, 'Fuquay Varina');
+  assert.equal(result.listing.address, '300 Placeholder Ct');
+  assert.equal(result.listing.city, 'Sampleton');
   assert.equal(result.listing.price, 750000);
   assert.equal(result.listing.beds, 5);
   assert.equal(result.listing.sqftFinished, 3716);
+  assert.equal(result.listing.builderName, 'Acme Homes');
+  assert.equal(result.listing.assignedSchools.length, 3);
+  assert.equal(result.listing.assignedSchools[0].name, 'Sample Elementary School');
+  assert.equal(result.listing.assignedSchools[0].rating, 7);
 });
 
 test('fixture: search extraction returns detail-card items', () => {
@@ -172,7 +183,7 @@ test('fixture: search extraction returns detail-card items', () => {
     mode: 'search',
     platform: 'zillow',
     fixture: 'crawl4ai-zillow-search.html',
-    url: 'https://www.zillow.com/homes/Apex-NC/',
+    url: 'https://www.zillow.com/homes/Faketown-ZZ/',
   });
   assert.equal(result.captureStatus, 'captured');
   assert.equal(result.items.length, 2);

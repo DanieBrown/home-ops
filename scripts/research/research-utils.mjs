@@ -571,11 +571,45 @@ function methodLabel(method) {
   return labels[method] ?? String(method ?? '').replace(/[-_]+/g, ' ');
 }
 
+const WAKE_ENERGOV_PERMIT_SOURCE = {
+  name: 'Wake County Permit Portal (EnerGov SelfService)',
+  url: 'https://wakecountync-energovpub.tylerhost.net/apps/SelfService#/search',
+  note: 'Use for current Wake County permit records. Populate the search bar with the target service address before extracting permit, inspection, applicant, contractor, builder, or owner details.',
+};
+
+function normalizeWakePermitSource(source) {
+  const haystack = normalizeLookupValue(`${source?.appliesTo ?? ''} ${source?.jurisdiction ?? ''} ${source?.name ?? ''} ${source?.url ?? ''}`);
+  const isWakePermitSource = haystack.includes('wake')
+    && (haystack.includes('permit') || haystack.includes('planning development inspections'))
+    && !haystack.includes('pre 2018')
+    && !haystack.includes('permitsearch wake gov');
+  if (!isWakePermitSource) {
+    return source;
+  }
+  return {
+    ...source,
+    name: WAKE_ENERGOV_PERMIT_SOURCE.name,
+    url: WAKE_ENERGOV_PERMIT_SOURCE.url,
+    note: WAKE_ENERGOV_PERMIT_SOURCE.note,
+    lookupMethods: source.lookupMethods ?? ['address', 'pin', 'permit-number'],
+  };
+}
+
 function buildPermitLookupInstructions(source, report) {
   const methods = Array.isArray(source.lookupMethods) ? source.lookupMethods : [];
   const labels = methods.map(methodLabel).filter(Boolean);
   const city = report.city || 'the city';
   const address = report.address || 'the listing address';
+
+  if (/wakecountync-energovpub|EnerGov SelfService/i.test(`${source.name ?? ''} ${source.url ?? ''}`)) {
+    return [
+      'Open the Wake County EnerGov SelfService search page.',
+      `Populate the global search bar with the service address: ${address}.`,
+      'Wait for matching records before extracting permit or inspection details.',
+      'Record permit number, work type, status, issued/finaled dates, inspection result, applicant, contractor, builder, and owner when the portal exposes them.',
+      'If no match appears, note that the address search was tried, then retry PIN/parcel or permit number if available.',
+    ];
+  }
 
   if (/durham/i.test(`${source.name ?? ''} ${source.jurisdiction ?? ''} ${source.url ?? ''}`)) {
     return [
@@ -610,7 +644,7 @@ function buildPropertyPermitGuides(report, context, areaContext) {
     })
     : [];
 
-  return dedupeSources(sources).map((source) => ({
+  return dedupeSources(sources.map(normalizeWakePermitSource)).map((source) => ({
     name: source.name ?? 'Property permit lookup',
     url: source.url ?? '',
     jurisdiction: source.jurisdiction ?? source.appliesTo ?? '',
@@ -760,7 +794,7 @@ function mapDevelopmentSources(report, context) {
         || areaContext.counties.some((county) => haystack.includes(normalizeLookupValue(county)));
     })
     : [];
-  sources.push(...generatedPermitSources);
+  sources.push(...generatedPermitSources.map(normalizeWakePermitSource));
 
   return {
     areaContext,

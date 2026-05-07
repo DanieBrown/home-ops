@@ -548,6 +548,38 @@ function parseSchoolRatings(text) {
   return matches.slice(0, 5);
 }
 
+function normalizeAssignedSchools(schools = []) {
+  const seen = new Set();
+  const result = [];
+  for (const school of Array.isArray(schools) ? schools : []) {
+    const name = String(school?.name ?? school?.schoolName ?? school?.officialName ?? '').trim();
+    if (!name) {
+      continue;
+    }
+    const levelText = String(school?.level ?? school?.gradeLevel ?? school?.gradeRange ?? name).toLowerCase();
+    const level = /elementary|primary/.test(levelText)
+      ? 'elementary'
+      : /middle|junior/.test(levelText)
+        ? 'middle'
+        : /high|senior/.test(levelText)
+          ? 'high'
+          : String(school?.level ?? school?.gradeLevel ?? '').trim() || null;
+    const key = `${name.toLowerCase()}|${level ?? ''}`;
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    result.push({
+      name,
+      level,
+      district: String(school?.district ?? school?.schoolDistrict ?? '').trim() || null,
+      rating: safeParseNumber(school?.rating ?? school?.greatSchoolsRating ?? school?.score),
+      source: String(school?.source ?? school?.assignmentSource ?? '').trim() || 'listing',
+    });
+  }
+  return result.slice(0, 12);
+}
+
 function parseDaysOnMarket(text) {
   const content = String(text ?? '');
   const hoursMatch = content.match(/(\d+)\s+hours?\s+(?:on\s+(?:zillow|redfin|realtor|homes)|on\s+market|ago)/i);
@@ -696,6 +728,7 @@ function parseListingFacts(snapshot, entry) {
   const hoa = parseHoa(hoaSearchText);
   const daysOnMarket = parseDaysOnMarket(cardFacts);
   const schoolRatings = parseSchoolRatings(cardFacts);
+  const assignedSchools = normalizeAssignedSchools(schoolRatings.map((school) => ({ ...school, source: 'listing-text' })));
   const description = (chooseFirst(structured.description, extractMeta(snapshot, 'description'), extractMeta(snapshot, 'og:description')) ?? '').trim();
   const subdivisionMatch = cardFacts.match(/(?:subdivision|community|neighborhood)[:\s]+([A-Z][A-Za-z0-9'& -]+)/i);
 
@@ -718,6 +751,8 @@ function parseListingFacts(snapshot, entry) {
     daysOnMarketText: daysOnMarket.text,
     daysOnMarket: Number.isFinite(daysOnMarket.days) ? daysOnMarket.days : null,
     schoolRatings,
+    assignedSchools,
+    builderName: '',
     propertyType: normalizePropertyType(structured.propertyType, cardFacts),
     subdivision: subdivisionMatch ? subdivisionMatch[1].trim() : '',
     description,
@@ -1281,14 +1316,18 @@ function buildFactsFromPortalResult(result, entry) {
     parseLot(text),
     '',
   );
-  const schoolRatings = Array.isArray(listing.assignedSchools)
-    ? listing.assignedSchools
+  const assignedSchools = normalizeAssignedSchools(listing.assignedSchools);
+  const schoolRatings = assignedSchools.length > 0
+    ? assignedSchools
       .map((school) => ({
-        name: String(school?.name ?? '').trim(),
-        rating: safeParseNumber(school?.rating),
+        name: school.name,
+        rating: safeParseNumber(school.rating),
       }))
       .filter((school) => school.name && Number.isFinite(school.rating))
     : parseSchoolRatings(text);
+  const normalizedAssignedSchools = assignedSchools.length > 0
+    ? assignedSchools
+    : normalizeAssignedSchools(schoolRatings.map((school) => ({ ...school, source: 'listing-text' })));
 
   return {
     address: addressParts.address || '',
@@ -1309,6 +1348,8 @@ function buildFactsFromPortalResult(result, entry) {
     daysOnMarketText: daysOnMarket.text,
     daysOnMarket: Number.isFinite(daysOnMarket.days) ? daysOnMarket.days : null,
     schoolRatings,
+    assignedSchools: normalizedAssignedSchools,
+    builderName: String(chooseFirst(listing.builderName, '')).trim(),
     propertyType: normalizePropertyType(listing.propertyType, text),
     subdivision: String(chooseFirst(listing.communityName, '')).trim(),
     description: String(chooseFirst(listing.description, snapshot.description, '')).trim(),
@@ -1432,6 +1473,8 @@ function buildLocalReportFacts(report) {
     daysOnMarketText: metadata.daysOnMarket,
     daysOnMarket: parseDaysOnMarket(metadata.daysOnMarket).days,
     schoolRatings: [],
+    assignedSchools: [],
+    builderName: '',
     propertyType: '',
     subdivision: extractSubdivisionHints(report)[0] ?? '',
     description: report.sections['Quick Take'] || '',
@@ -1444,7 +1487,10 @@ function buildResearchTargets(facts, portals, existingReport = null) {
   const roadHints = existingReport ? extractRoadHints(existingReport) : [];
   const schoolNames = existingReport
     ? extractSchoolNames(existingReport)
-    : facts.schoolRatings.map((entry) => entry.name).filter(Boolean);
+    : [
+      ...(facts.assignedSchools ?? []).map((entry) => entry.name).filter(Boolean),
+      ...facts.schoolRatings.map((entry) => entry.name).filter(Boolean),
+    ];
 
   const neighborhood = [
     ...subdivisionHints,
@@ -1511,6 +1557,8 @@ async function extractFromLocalReport(entry, portals) {
         daysOnMarketText: '',
         daysOnMarket: null,
         schoolRatings: [],
+        assignedSchools: [],
+        builderName: '',
         propertyType: '',
         subdivision: '',
         description: '',
@@ -1943,7 +1991,9 @@ function buildSummaryCard(facts, result, areaMatch) {
   const areaText = areaMatch ? `${areaMatch.name} rank ${areaMatch.rank}` : `${facts.city || 'Unmapped city'} is outside the ranked area list`;
   const schoolText = facts.schoolRatings.length > 0
     ? facts.schoolRatings.map((entry) => `${entry.name}: ${entry.rating}/10`).join('; ')
-    : 'Assigned-school signal still needs direct confirmation.';
+    : (facts.assignedSchools?.length ?? 0) > 0
+      ? `Assigned schools visible: ${facts.assignedSchools.map((entry) => entry.name).join('; ')}. Ratings still need direct confirmation.`
+      : 'Assigned-school signal still needs direct confirmation.';
   return [
     ['Hard requirement fit', result.criticalMisses === 0 ? 'No visible critical miss' : `${result.criticalMisses} visible critical miss(es)`],
     ['Area fit', areaText],
@@ -1976,6 +2026,9 @@ function buildPropertyFit(facts, result, areaMatch) {
   if (facts.subdivision) {
     statements.push(`The page references ${facts.subdivision} as the neighborhood or subdivision context.`);
   }
+  if (facts.builderName) {
+    statements.push(`Builder signal from the listing: ${facts.builderName}.`);
+  }
   if (result.signals.fencedYard) {
     statements.push('Outdoor-use language suggests a fenced or otherwise family-usable yard, which fits the brief better than a nominal lot-size pass alone.');
   } else if (result.signals.usableYard) {
@@ -2004,6 +2057,10 @@ function buildNeighborhoodSection(facts, result) {
 function buildSchoolSection(facts) {
   if (facts.schoolRatings.length > 0) {
     return `The page exposes a usable GreatSchools-style signal: ${facts.schoolRatings.map((entry) => `${entry.name} ${entry.rating}/10`).join('; ')}. That is strong enough for triage, but it should still be confirmed against GreatSchools, Niche, or SchoolDigger before a tour commitment.`;
+  }
+
+  if ((facts.assignedSchools?.length ?? 0) > 0) {
+    return `The page exposes assigned-school names from the listing source: ${facts.assignedSchools.map((entry) => entry.name).join('; ')}. Ratings and current district assignment should still be confirmed through WCPSS and the configured school metadata sources.`;
   }
 
   return 'The current pass did not surface a reliable assigned-school rating. Before escalating, check GreatSchools, Niche, or SchoolDigger for the assigned schools and confirm the district assignment directly.';
@@ -2055,7 +2112,9 @@ function buildRisksAndQuestions(facts, result) {
     lines.push('- Confirm floodplain and drainage conditions before escalation.');
   }
   if (facts.schoolRatings.length === 0) {
-    lines.push('- Confirm the assigned schools and current ratings with direct sources.');
+    lines.push((facts.assignedSchools?.length ?? 0) > 0
+      ? '- Confirm the listed assigned schools and current ratings with WCPSS and configured school metadata sources.'
+      : '- Confirm the assigned schools and current ratings with direct sources.');
   }
   if (!facts.hoaText) {
     lines.push('- HOA terms and restrictions are still unclear from the extracted page data.');
@@ -2115,6 +2174,9 @@ function renderReport(home, reportNumber, reportDate, profile) {
   lines.push(`**Year Built:** ${Number.isFinite(facts.yearBuilt) ? Math.round(facts.yearBuilt) : 'Unknown'}`);
   lines.push(`**HOA:** ${facts.hoaText || 'Unknown'}`);
   lines.push(`**Days on Market:** ${facts.daysOnMarketText || 'Unknown'}`);
+  if (facts.builderName) {
+    lines.push(`**Builder:** ${facts.builderName}`);
+  }
   lines.push(`**Overall Score:** ${formatScore(result.score)}`);
   lines.push(`**Recommendation:** ${result.recommendation}`);
   lines.push(`**Confidence:** ${result.confidence}`);
@@ -2322,6 +2384,8 @@ function buildPacket(home, runId, profile, portals, existingContext) {
       daysOnMarket: facts.daysOnMarketText,
       propertyType: facts.propertyType,
       subdivision: facts.subdivision,
+      builderName: facts.builderName,
+      assignedSchools: facts.assignedSchools ?? [],
       schoolRatings: facts.schoolRatings,
       areaMatch: home.areaMatch,
     },
@@ -2470,6 +2534,8 @@ async function main() {
         city: '',
         address: '',
         schoolRatings: [],
+        assignedSchools: [],
+        builderName: '',
         subdivision: '',
       }, portals);
       blockedHomes.push(home);
