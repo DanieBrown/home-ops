@@ -124,6 +124,8 @@ const scripts = [
   'scripts/system/test-cache-loop.mjs',
   'scripts/research/deep-research-packet.mjs --help',
   'scripts/research/shortlist-finalist-gate.mjs --help',
+  'scripts/affordability/calculate-affordability.mjs --help',
+  'scripts/affordability/apply-affordability.mjs --help',
   'scripts/system/doctor.mjs',
   'scripts/config/profile-sync-check.mjs',
   'scripts/pipeline/verify-pipeline.mjs',
@@ -156,7 +158,16 @@ for (const script of scripts) {
   if (result.ok) {
     pass('crawl4ai portal extraction fixture tests');
   } else {
-    fail(`crawl4ai portal extraction fixture tests\n${result.output}`);
+  fail(`crawl4ai portal extraction fixture tests\n${result.output}`);
+  }
+}
+
+{
+  const result = run('node scripts/tests/test-affordability.mjs');
+  if (result.ok) {
+    pass('affordability calculation and profile patch tests');
+  } else {
+    fail(`affordability calculation and profile patch tests\n${result.output}`);
   }
 }
 
@@ -172,6 +183,7 @@ const systemFiles = [
   'modes/_profile.template.md',
   'modes/init.md',
   'modes/profile.md',
+  'modes/afford.md',
   'modes/hunt.md',
   'modes/evaluate.md',
   'modes/compare.md',

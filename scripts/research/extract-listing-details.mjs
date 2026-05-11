@@ -182,6 +182,14 @@ function toNumber(value) {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+function toRatingNumber(value) {
+  if (value === null || value === undefined) return null;
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  const slash = String(value).match(/\b(\d+(?:\.\d+)?)\s*\/\s*10\b/);
+  if (slash) return Number.parseFloat(slash[1]);
+  return toNumber(value);
+}
+
 function pickFirst(...values) {
   for (const value of values) {
     if (value === undefined || value === null) continue;
@@ -236,6 +244,9 @@ function normalizeSchoolLevel(raw) {
   if (/elementary|primary/.test(value)) return 'elementary';
   if (/middle|junior/.test(value)) return 'middle';
   if (/high|senior/.test(value)) return 'high';
+  if (/(?:pre[-\s]?k|pk|k|[0-5])\s*-\s*5\b|\bk\s*-\s*5\b/.test(value)) return 'elementary';
+  if (/\b6\s*-\s*8\b/.test(value)) return 'middle';
+  if (/\b9\s*-\s*12\b/.test(value)) return 'high';
   return value || null;
 }
 
@@ -249,7 +260,8 @@ function normalizeSchools(rawSchools = []) {
       name: String(name).trim(),
       level: normalizeSchoolLevel(entry.level || entry.gradeLevel || entry.type),
       district: pickFirst(entry.district, entry.schoolDistrict) || null,
-      rating: toNumber(entry.rating ?? entry.greatSchoolsRating ?? entry.score),
+      rating: toRatingNumber(entry.rating ?? entry.greatSchoolsRating ?? entry.score),
+      distance: pickFirst(entry.distance, entry.distanceText) || null,
       source: pickFirst(entry.source, entry.provider) || null,
     };
   }).filter(Boolean);
@@ -491,6 +503,24 @@ async function extractRedfin(page) {
   if (!findings.address && !findings.price) {
     notes.push('redfin: no structured data found; selectors not implemented yet');
   }
+
+  if (!Array.isArray(findings.assignedSchools) || findings.assignedSchools.length === 0) {
+    const visibleSchools = await page.evaluate(() => {
+      const rows = Array.from(document.querySelectorAll('.SchoolsListItem'));
+      return rows.map((row) => {
+        const name = row.querySelector('.SchoolsListItem__heading')?.textContent?.trim() || '';
+        const description = row.querySelector('.SchoolsListItem__description')?.textContent?.trim() || '';
+        const rating = row.querySelector('.SchoolsListItem__schoolRating')?.textContent?.trim() || '';
+        const distance = description.match(/(?:Assigned\s*[•|,]?\s*)?([0-9.]+\s*mi)/i)?.[1] || '';
+        return { name, gradeLevel: `${name} ${description}`, rating, distance, source: 'redfin-dom' };
+      }).filter((school) => school.name && /assigned/i.test(school.gradeLevel));
+    }).catch(() => []);
+    if (visibleSchools.length > 0) {
+      findings.assignedSchools = normalizeSchools(visibleSchools);
+      notes.push(`redfin: captured ${visibleSchools.length} visible assigned school rows from DOM`);
+    }
+  }
+
   return { findings, notes };
 }
 
@@ -820,6 +850,59 @@ const PORTAL_EXTRACTORS = {
   other: extractGeneric,
 };
 
+function withTimeout(promise, timeoutMs, label) {
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => {
+      reject(new Error(`${label} exceeded ${timeoutMs}ms`));
+    }, timeoutMs);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
+
+async function extractWithHostedBrowser(url, profileName, platform) {
+  let browser = null;
+  let page = null;
+  const notes = [];
+  try {
+    const attached = await attachHostedBrowser(ROOT, profileName);
+    browser = attached.browser;
+    const nav = await navigateAndSettle(attached.context, url, {
+      navigationTimeoutMs: PAGE_TIMEOUT_MS,
+      settleMs: SETTLE_MS,
+    });
+    page = nav.page;
+    if (!page) {
+      return {
+        findings: {},
+        notes: [`hosted browser extraction failed to navigate: ${nav.error?.message || 'unknown error'}`],
+      };
+    }
+
+    const extractor = PORTAL_EXTRACTORS[platform] ?? PORTAL_EXTRACTORS.other;
+    const result = await extractor(page, url);
+    const meta = await readPageMeta(page);
+    const findings = result.findings ?? {};
+    if (!findings.listingStatus || findings.listingStatus === 'unconfirmed') {
+      findings.listingStatus = normalizeListingStatus(meta.status || meta.title, meta.bodyText);
+    }
+    findings.canonicalUrl = meta.canonical || meta.url || null;
+    notes.push(...(result.notes ?? []));
+    notes.push('hosted browser fallback extraction checked page structured data');
+    if (hasInactiveListingSignals(meta.bodyText) && findings.listingStatus === 'active') {
+      notes.push('hosted browser page also contained inactive-status language; status confidence reduced');
+    }
+    return { findings, notes };
+  } catch (error) {
+    return {
+      findings: {},
+      notes: [`hosted browser fallback extraction error: ${error.message}`],
+    };
+  } finally {
+    await safeClose({ page, browser });
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Confidence scoring
 // ---------------------------------------------------------------------------
@@ -849,37 +932,47 @@ export async function extractListing(url, opts = {}) {
   const platform = detectPlatform(url);
 
   const listing = buildEmptyListing(url);
-  try {
-    const result = await crawl4aiPortalExtract({
-      mode: 'detail',
-      platform,
-      url,
-      profileName,
-      timeoutMs: CRAWL4AI_TIMEOUT_MS,
-    });
+  const browserResult = await extractWithHostedBrowser(url, profileName, platform);
+  mergeSupplementalFindings(listing, browserResult.findings);
+  listing.coverageNotes.push(...browserResult.notes);
 
-    if (result.listing) {
-      mergeSupplementalFindings(listing, result.listing);
-      listing.platform = result.listing.platform || platform;
-      listing.url = url;
-      listing.canonicalUrl = result.listing.canonicalUrl || result.finalUrl || null;
-      if (result.listing.listingStatus) {
-        listing.listingStatus = result.listing.listingStatus;
+  if (shouldUseCrawl4aiFallback(listing) && process.env.HOME_OPS_ENABLE_CRAWL4AI_LISTING === '1') {
+    try {
+      const result = await withTimeout(
+        crawl4aiPortalExtract({
+          mode: 'detail',
+          platform,
+          url,
+          profileName,
+          timeoutMs: CRAWL4AI_TIMEOUT_MS,
+        }),
+        CRAWL4AI_TIMEOUT_MS + 20000,
+        'crawl4ai detail extraction'
+      );
+
+      if (result.listing) {
+        mergeSupplementalFindings(listing, result.listing);
+        listing.platform = result.listing.platform || platform;
+        listing.url = url;
+        listing.canonicalUrl = result.listing.canonicalUrl || result.finalUrl || null;
+        if (result.listing.listingStatus) {
+          listing.listingStatus = result.listing.listingStatus;
+        }
+        listing.coverageNotes.push(...(result.listing.coverageNotes ?? []));
       }
-      listing.coverageNotes.push(...(result.listing.coverageNotes ?? []));
-    }
 
-    listing.coverageNotes.push(...result.notes);
-    if (result.captureStatus === 'blocked') {
-      listing.coverageNotes.push('crawl4ai detail extraction was blocked or rate-limited');
-      listing.listingStatus = 'unconfirmed';
-    } else if (result.captureStatus === 'empty') {
-      listing.coverageNotes.push('crawl4ai detail extraction found no usable listing facts');
-    } else if (result.captureStatus === 'error') {
-      listing.coverageNotes.push(`crawl4ai detail extraction error: ${result.error || 'unknown error'}`);
+      listing.coverageNotes.push(...result.notes);
+      if (result.captureStatus === 'blocked') {
+        listing.coverageNotes.push('crawl4ai detail extraction was blocked or rate-limited');
+        listing.listingStatus = 'unconfirmed';
+      } else if (result.captureStatus === 'empty') {
+        listing.coverageNotes.push('crawl4ai detail extraction found no usable listing facts');
+      } else if (result.captureStatus === 'error') {
+        listing.coverageNotes.push(`crawl4ai detail extraction error: ${result.error || 'unknown error'}`);
+      }
+    } catch (error) {
+      listing.coverageNotes.push(`crawl4ai detail extractor error: ${error.message}`);
     }
-  } catch (error) {
-    listing.coverageNotes.push(`crawl4ai detail extractor error: ${error.message}`);
   }
 
   listing.confidence = scoreConfidence(listing);

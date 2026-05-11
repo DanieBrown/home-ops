@@ -178,16 +178,16 @@ function main() {
       args: ['scripts/research/county-permits-check.mjs', reportArg],
     },
     {
-      contractId: 'school-metadata-fetch-single',
-      label: 'School metadata details',
-      cmd: NODE,
-      args: ['scripts/research/school-metadata-fetch.mjs', reportArg, '--profile', config.profileName],
-    },
-    {
       contractId: 'builder-check-single',
       label: 'Builder reputation lookup',
       cmd: NODE,
       args: ['scripts/research/builder-check.mjs', reportArg],
+    },
+    {
+      contractId: 'school-metadata-fetch-single',
+      label: 'School metadata details',
+      cmd: NODE,
+      args: ['scripts/research/school-metadata-fetch.mjs', reportArg, '--profile', config.profileName],
     },
     {
       contractId: 'deep-research-packet-single',

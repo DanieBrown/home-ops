@@ -91,6 +91,7 @@ node scripts/pipeline/verify-pipeline.mjs
 Typical entry points:
 
 - Run `/home-ops profile` when you want to create or refresh the buyer-layer files interactively.
+- Run `/home-ops afford` when you want a conservative affordability estimate before changing price filters.
 - Run `/home-ops init` before the first scan or whenever the portal login session needs to be refreshed.
 - Run `/home-ops hunt` when you want one command to reset generated state, scan fresh listings, and batch-evaluate them. Keep the hosted browser session open first.
 - Paste a listing URL to evaluate a single home.

@@ -76,6 +76,15 @@ function parseJsonStdout(stdout) {
   }
 }
 
+function killProcessTree(child) {
+  if (!child?.pid) return;
+  if (process.platform === 'win32') {
+    spawnSync('taskkill', ['/pid', String(child.pid), '/t', '/f'], { stdio: 'ignore' });
+    return;
+  }
+  child.kill('SIGKILL');
+}
+
 export function normalizeCrawl4aiPortalResult(record = {}, fallback = {}) {
   const notes = [
     ...asArray(record.notes).map((note) => String(note)),
@@ -201,7 +210,7 @@ export async function crawl4aiPortalExtract(options = {}) {
     let killed = false;
     const timer = setTimeout(() => {
       killed = true;
-      child.kill('SIGKILL');
+      killProcessTree(child);
     }, timeoutMs + 15000);
 
     child.stdout.on('data', (chunk) => { stdout += chunk.toString('utf8'); });
@@ -317,7 +326,7 @@ export function crawl4aiFetchPage(url, options = {}) {
     let killed = false;
     const timer = setTimeout(() => {
       killed = true;
-      child.kill('SIGKILL');
+      killProcessTree(child);
     }, timeoutMs + 10000);
 
     child.stdout.on('data', (chunk) => { stdout += chunk.toString('utf8'); });

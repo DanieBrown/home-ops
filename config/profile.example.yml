@@ -74,6 +74,10 @@ financial:
   down_payment_pct: 20
   closing_cost_pct_min: 2
   closing_cost_pct_max: 3
+  loan_term_years: 30
+  housing_payment_pct: 25
+  rate_assumption_pct: null
+  rate_source: null
 
 # research_sources controls which listing portals and background-research sites
 # Home-Ops uses. Each group maps to a specific pipeline stage:

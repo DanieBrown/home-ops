@@ -34,6 +34,7 @@ import {
   navigateAndSettle,
   safeClose,
 } from '../browser/browser-extract-utils.mjs';
+import { extractListing } from './extract-listing-details.mjs';
 
 const OUTPUT_DIR = join(ROOT, 'output', 'school-metadata');
 const DEFAULT_TIMEOUT_MS = 20000;
@@ -1011,7 +1012,35 @@ function buildStandardizedSchools(assignedSchools = [], metadataSchools = []) {
  *      school-assignments-fetch.mjs running before this script).
  * Returns { names, source } so the caller can record provenance.
  */
-function resolveSchoolNames(target) {
+async function extractAlternateListingSchools(target, profileName) {
+  const slug = targetSlug(target);
+  const builderRecord = loadJsonIfExists(join(ROOT, 'output', 'builder', `${slug}.json`));
+  const candidateUrls = [
+    builderRecord?.detectionSourceUrl,
+  ].filter((url) => /^https?:\/\/(?:www\.)?(?:redfin|realtor|homes)\.com\//i.test(String(url ?? '')));
+
+  for (const url of candidateUrls) {
+    const listing = await extractListing(url, { profileName }).catch(() => null);
+    const schools = Array.isArray(listing?.assignedSchools) ? listing.assignedSchools : [];
+    const names = uniqueNames(schools.map((entry) => entry?.name));
+    if (names.length > 0) {
+      return {
+        names,
+        source: `alternate-listing:${listing?.platform || 'listing'}`,
+        assignmentSourcesChecked: [{
+          name: `${listing?.platform || 'alternate'}-assigned-schools`,
+          url: listing?.canonicalUrl || listing?.url || url,
+          status: 'ok',
+        }],
+        assignedSchools: schools,
+      };
+    }
+  }
+
+  return null;
+}
+
+async function resolveSchoolNames(target, profileName) {
   const slug = targetSlug(target);
 
   const listingPath = join(ROOT, 'output', 'listings', `${slug}.json`);
@@ -1030,6 +1059,7 @@ function resolveSchoolNames(target) {
         url: listing?.canonicalUrl || listing?.url || '',
         status: 'ok',
       }],
+      assignedSchools: listing.assignedSchools,
     };
   }
 
@@ -1071,6 +1101,9 @@ function resolveSchoolNames(target) {
       }],
     };
   }
+
+  const alternateListing = await extractAlternateListingSchools(target, profileName);
+  if (alternateListing) return alternateListing;
 
   return { names: [], source: 'none', assignmentSourcesChecked: [], assignedSchools: [] };
 }
@@ -1127,7 +1160,7 @@ async function captureForTarget(target, enabledSources, profileName) {
     source: nameSource,
     assignmentSourcesChecked,
     assignedSchools,
-  } = resolveSchoolNames(target);
+  } = await resolveSchoolNames(target, profileName);
   if (schoolNames.length === 0) {
     return {
       status: 'no-assigned-schools',

@@ -2,9 +2,10 @@
 
 ## System Overview
 
-Home-ops is a local decision-support system for home search. The active workflow has eight modes:
+Home-ops is a local decision-support system for home search. The active workflow has nine modes:
 
 - `profile`: interview the buyer and update the buyer-layer files
+- `afford`: estimate conservative affordability and optionally update price/financial assumptions
 - `init`: launch or confirm the hosted browser session for portal login
 - `hunt`: run reset, then scan, then evaluate in one sequential workflow
 - `evaluate`: review one listing against buyer requirements, or batch-evaluate pending pipeline homes when no target is supplied
@@ -28,6 +29,18 @@ Expected behavior:
 5. Run `scripts/config/profile-sync-check.mjs`.
 
 The normalized weights currently influence agent judgment and research emphasis. They are not yet backed by a separate deterministic scoring engine that consumes structured neighborhood, school, and development source records. Deep mode now bridges that gap with per-home packets under `output/deep-packets/` so workers receive explicit source coverage, captured browser evidence, and weighted signal rollups before reranking.
+
+## Affordability Flow
+
+The afford mode uses a short local web wizard to collect minimum financial inputs, calculate a conservative purchase-price ceiling, and ask before changing buyer-layer files.
+
+Expected behavior:
+
+1. Ask for loan term, monthly take-home pay, monthly non-mortgage debt, cash available after reserves, rough credit-score tier, and target state/area.
+2. Use Freddie Mac PMMS fixed-rate averages when the user does not provide a rate override.
+3. Calculate the selected term first, with the alternate 15-year or 30-year term as comparison context.
+4. Apply the 25% take-home housing-payment cap, estimated taxes, insurance, HOA, closing costs, and credit/LTV pricing pressure.
+5. If the user accepts the result, update `config/profile.yml`, `buyer-profile.md`, and `modes/_profile.md` without persisting raw income, debt, cash, or exact credit-score data.
 
 ## Hunt Flow
 

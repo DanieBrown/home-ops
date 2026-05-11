@@ -799,10 +799,6 @@ function buildBuilderReputationCard(finalist) {
   const eliant = builder?.reviews?.eliant;
   const bbb = builder?.reviews?.bbb;
   const builderOnline = builder?.reviews?.builderOnline;
-  const hasReviewData = Boolean(avid || eliant || bbb || builderOnline || packetBuilder.avidRatingsOverall || packetBuilder.eliantOverall);
-  const detectedBy = firstNonEmpty(builder?.detectionSource, packetBuilder.detectionSource);
-  const confidence = firstNonEmpty(builder?.detectionConfidence, packetBuilder.detectionConfidence);
-  const detectionSourceUrl = firstNonEmpty(builder?.detectionSourceUrl, packetBuilder.detectionSourceUrl, finalist.listing?.canonicalUrl, finalist.listing?.url);
 
   const rows = [];
   if (builder?.standing?.label) {
@@ -837,12 +833,6 @@ function buildBuilderReputationCard(finalist) {
     rows.push([sourceLink(`Builder 100 ${builderOnline.year ?? ''}`.trim(), builderOnline.url), [rank, builderOnline.standing?.label ? standingLabel(builderOnline.standing.label) : '', prior].filter(Boolean).join(' - ')]);
     if (builderOnline.totalClosings != null) rows.push(['Builder 100 closings', `${Number(builderOnline.totalClosings).toLocaleString()} closings${builderOnline.grossRevenueMillions != null ? `; $${Number(builderOnline.grossRevenueMillions).toLocaleString()}M revenue` : ''}`]);
   }
-  if (detectedBy || confidence) {
-    rows.push(['Detection', [confidence, detectedBy].filter(Boolean).join(', ')]);
-  }
-  if (detectionSourceUrl) {
-    rows.push([sourceLink('Builder source', detectionSourceUrl), detectedBy || 'listing/source page']);
-  }
 
   const rowHtml = rows.map(([label, value]) => `
     <tr>
@@ -862,19 +852,11 @@ function buildBuilderReputationCard(finalist) {
     builderOnline?.url ? `<a href="${escapeHtml(builderOnline.url)}">Builder 100</a>` : '',
   ].filter(Boolean).join(' ');
 
-  const statusNote = hasReviewData
-    ? 'Public builder reputation data was captured from the sources below. Treat it as a directional quality signal, not a substitute for inspection and warranty review.'
-    : status === 'not-found'
-      ? 'Builder was detected, but no matching public Avid Ratings or Eliant score was found.'
-      : 'Builder was detected from the listing/report, but the reputation lookup has not populated a review sidecar yet.';
-
   return `
     <div class="panel builder wide">
       <h3>Builder Reputation</h3>
       <p><strong>${escapeHtml(builderName)}</strong></p>
       ${rowHtml ? `<table class="builder-status"><tbody>${rowHtml}</tbody></table>` : ''}
-      ${builder?.standing?.summary ? `<p class="muted">${escapeHtml(builder.standing.summary)}</p>` : ''}
-      <p class="muted">${escapeHtml(statusNote)}</p>
       ${snippets ? `<ul class="builder-snippets">${snippets}</ul>` : ''}
       ${reviewLinks ? `<p class="builder-links">${reviewLinks}</p>` : ''}
     </div>`;

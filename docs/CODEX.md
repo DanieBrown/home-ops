@@ -24,6 +24,7 @@ The browser-session commands used by `/home-ops init` run this bootstrap automat
 
 - `Initialize the portal browser session with Home-Ops.`
 - `Set up or revise my buyer profile with Home-Ops.`
+- `Estimate my home affordability range with Home-Ops.`
 - `Run the full hunt workflow with Home-Ops.`
 - `Evaluate this listing URL with Home-Ops.`
 - `Evaluate the pending pipeline with Home-Ops.`
@@ -37,6 +38,7 @@ The browser-session commands used by `/home-ops init` run this bootstrap automat
 | User intent | Files Codex should read |
 |-------------|-------------------------|
 | Buyer profile setup or refresh | `modes/_shared.md` + `modes/profile.md` |
+| Affordability estimate or price-range refresh | `modes/_shared.md` + `modes/afford.md` |
 | Portal login setup or refresh | `modes/_shared.md` + `modes/init.md` |
 | Full reset-scan-evaluate workflow | `modes/_shared.md` + `modes/hunt.md` |
 | Raw listing URL | `modes/_shared.md` + `modes/evaluate.md` |

@@ -42,6 +42,7 @@ Rule:
 |---------|---------|
 | `/home-ops` | Show the menu or route from a listing URL |
 | `/home-ops-profile` | Interview the buyer and update buyer profile files |
+| `/home-ops-afford` | Estimate conservative affordability and optionally update buyer price range |
 | `/home-ops-init` | Launch or confirm the hosted browser session for portal login |
 | `/home-ops-hunt` | Run reset, scan, evaluate, and the deep shortlist branch sequentially against a live hosted session |
 | `/home-ops-evaluate` | Evaluate one listing or batch-evaluate pending pipeline homes |
@@ -128,6 +129,7 @@ Store that in `buyer-profile.md`, `config/profile.yml`, or `modes/_profile.md`.
 
 Once the basics are in place, the user can:
 - run `/home-ops profile` to refresh buyer criteria interactively
+- run `/home-ops afford` to calculate a conservative affordability range before widening or tightening price filters
 - run `/home-ops init`
 - run `/home-ops hunt` to clear generated state, scan fresh listings, batch-evaluate them, and run the deep shortlist branch (rerank, finalist gate, top-3 briefing PDF) in one pass
 - paste a listing URL to evaluate it
@@ -149,6 +151,7 @@ When the user asks to change priorities, weights, or scan coverage:
 | If the user... | Mode |
 |----------------|------|
 | wants to set up or revise the buyer profile interactively | `profile` |
+| wants to calculate home affordability or revise price range from finances | `afford` |
 | wants to set up or refresh portal login sessions | `init` |
 | wants the full reset-scan-evaluate-deep intake flow | `hunt` |
 | pastes a listing URL or asks to process pending listings | `evaluate` |

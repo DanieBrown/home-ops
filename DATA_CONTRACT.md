@@ -29,6 +29,7 @@ System-layer files hold prompts, scripts, templates, and repo instructions. They
 | `modes/init.md` | Browser session setup mode |
 | `modes/reset.md` | Generated-state reset mode |
 | `modes/profile.md` | Interactive buyer-profile setup mode |
+| `modes/afford.md` | Affordability estimate and optional profile-update mode |
 | `modes/hunt.md` | Sequential reset-scan-evaluate orchestration mode |
 | `modes/evaluate.md` | Single-listing evaluation mode |
 | `modes/compare.md` | Multi-listing comparison mode |

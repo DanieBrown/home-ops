@@ -9,7 +9,7 @@ These files are the intended place for buyer-specific configuration:
 - `modes/_profile.md`: buyer-specific prompt behavior and decision heuristics
 - `portals.yml`: live search URLs and source preferences
 
-If you want guided setup instead of manual editing, use `/home-ops profile` to interview the buyer and write the answers back into the buyer-layer files.
+If you want guided setup instead of manual editing, use `/home-ops profile` to interview the buyer and write the answers back into the buyer-layer files. Use `/home-ops afford` when the price range should be recalculated from a conservative affordability estimate.
 
 If priorities change, update one of these files instead of hard-coding new criteria into `modes/_shared.md`.
 
@@ -22,7 +22,7 @@ Key sections to tune:
 - `soft_preferences`: lot, resale, layout, and livability preferences
 - `deal_breakers`: flood risk, busy roads, HOA, or similar hard negatives
 - `sentiment.weights`: neighborhood weighting model (`crime_safety`, `traffic_commute`, `community`, `livability`)
-- `financial`: down payment, closing cost, and payment assumptions
+- `financial`: down payment, closing cost, loan-term, rate, and payment assumptions
 - `workflow.shortlist.preserve_on_reset`: keep `data/shortlist.md` stable during recurring reset and hunt runs
 
 These weight blocks currently steer evaluator judgment and research emphasis. They are not yet a standalone deterministic scoring engine that automatically consumes structured sentiment, school, and development records.

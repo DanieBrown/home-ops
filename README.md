@@ -35,17 +35,22 @@ npm run verify
 ```bash
 /home-ops profile
 ```
-4. Start/reuse hosted browser session:
+4. Optional affordability check before scanning:
+```bash
+/home-ops afford
+```
+5. Start/reuse hosted browser session:
 ```bash
 /home-ops init
 ```
-5. Run intake pipeline end-to-end:
+6. Run intake pipeline end-to-end:
 ```bash
 /home-ops hunt
 ```
 
 ## Core commands
 - `/home-ops init`: refresh portal browser sessions
+- `/home-ops afford`: estimate conservative affordability and optionally update price range
 - `/home-ops scan`: find new listings from saved searches
 - `/home-ops evaluate`: review pending listings or one target
 - `/home-ops deep`: research a home, school, or area

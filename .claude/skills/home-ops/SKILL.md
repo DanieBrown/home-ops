@@ -1,6 +1,6 @@
 ---
 name: home-ops
-description: profile | init | scan | evaluate | compare | deep | hunt | tracker | reset
+description: profile | afford | init | scan | evaluate | compare | deep | hunt | tracker | reset
 user_invocable: true
 args: mode
 ---
@@ -19,6 +19,8 @@ If `{{mode}}` contains multiple tokens, use the first token as the sub-command a
 | Listing URL or pasted property details (no sub-command) | `evaluate` |
 | `profile` | `profile` |
 | `profile ...args` | `profile` |
+| `afford` | `afford` |
+| `afford ...args` | `afford` |
 | `init` | `init` |
 | `init ...args` | `init` |
 | `hunt` | `hunt` |
@@ -54,6 +56,7 @@ home-ops -- Command Center
 Available commands:
   /home-ops {listing-url}   -> Evaluate a single listing and update the tracker
   /home-ops profile         -> Interview the buyer and update the profile files
+  /home-ops afford          -> Estimate conservative affordability and optionally update price range
   /home-ops init            -> Launch or confirm the hosted browser session for portal logins
   /home-ops hunt            -> Reset, scan, batch-evaluate the refreshed pipeline, then run the deep shortlist flow (rerank, finalist gate, top-3 briefing PDF)
   /home-ops init --zillow --redfin --relator -> Initialize only those platform sessions in the hosted browser
@@ -82,6 +85,7 @@ For all active modes, read:
 
 Then read the mode file:
 - `modes/profile.md`
+- `modes/afford.md`
 - `modes/init.md`
 - `modes/hunt.md`
 - `modes/evaluate.md`
@@ -106,6 +110,8 @@ Prefer a subagent for `scan` because it can involve multiple pages and platform-
 `evaluate` with no explicit listing target should deduplicate the pending pipeline into canonical properties, keep browser-backed verification and normalized fact extraction in the main agent, and then create one report-writing subagent per property. If the queue is large, dispatch those per-property workers in waves of up to 5, but keep the unit of work at one home per agent.
 
 `profile` should use the interactive question flow from `modes/profile.md` and keep the buyer-layer writes in the main agent.
+
+`afford` should use the affordability wizard from `modes/afford.md`, calculate affordability through the checked-in scripts, and update buyer-layer price and financial assumptions only after explicit user confirmation.
 
 `hunt` should orchestrate `reset`, then `scan`, then `evaluate`, then the `deep` shortlist batch branch sequentially without terminating any running jobs.. Do not overlap those four phases. The deep phase's internal step-6 fan-out is allowed and expected. If subagents are used outside the deep phase, keep them inside the scan or evaluate phases rather than across the full hunt flow. The contract hook in `scripts/hooks/contract-shared.mjs` enforces that every deep-shortlist script (`research-source-plan`, `sentiment-browser-extract`, `construction-check`, `deep-research-packet`, `shortlist-finalist-gate`, `review-tabs shortlist-top3`, `briefing-pdf`) actually runs before the turn ends.
 
