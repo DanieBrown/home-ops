@@ -53,7 +53,8 @@ deep-single-runner.mjs        →  extract-listing-details + school-assignments-
         ↓
 deep-single-final-runner.mjs  →  research-source-plan, community-lookup, sentiment-browser-extract,
                                   sentiment-public-extract, construction-check, county-permits-check,
-                                  school-metadata-fetch, builder-check, deep-research-packet
+                                  school-metadata-fetch, builder-check, hoa-docs-check,
+                                  deep-research-packet
         ↓ (gate: deep-research-packet-single)
 [3 axis agents in parallel]   →  Sentiment, Risk & Builder, Schools
         ↓
@@ -121,7 +122,7 @@ Run the post-eval runner. Pass the report path from Phase 1. This blocks until a
 node scripts/pipeline/deep-single-final-runner.mjs --report reports/{N}-{slug}-{YYYY-MM-DD}.md --profile chrome-host
 ```
 
-This runner sequentially runs: research-source-plan, community-lookup, sentiment-browser-extract, sentiment-public-extract, construction-check, county-permits-check, school-metadata-fetch, builder-check, and deep-research-packet. All steps produce JSON sidecars under `output/`. The runner exits 0 when the deep-research-packet succeeds (all other failures are soft).
+This runner sequentially runs: research-source-plan, community-lookup, sentiment-browser-extract, sentiment-public-extract, construction-check, county-permits-check, school-metadata-fetch, builder-check, hoa-docs-check, and deep-research-packet. All steps produce JSON sidecars under `output/`. The runner exits 0 when the deep-research-packet succeeds (all other failures are soft).
 
 ### Phase 3 — Three Axis Agents
 
@@ -140,6 +141,7 @@ Pass each agent the relevant sidecar paths and the `slug`. The full output schem
 Once the axis agents return:
 
 1. Review the axis outputs with the deep packet and eval report. Update the same canonical report `reports/{N}-{slug}-{YYYY-MM-DD}.md` with the deep findings instead of creating a second markdown report. A single URL should leave exactly one report for that physical home. Organize the added deep content around the seven research axes below.
+   If `output/hoa/{slug}.json` exists, add a brief `HOA Rules and Restrictions` subsection before `Risks and Open Questions`. Use only captured HOA docs or listing-derived HOA clues; when docs are missing or blocked, mark HOA rules as unconfirmed and request the resale/disclosure packet.
 
 2. Replace browser tabs with the listing URL first:
    ```

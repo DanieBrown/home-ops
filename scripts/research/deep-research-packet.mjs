@@ -23,6 +23,7 @@ const OUTPUT_DIR = join(ROOT, 'output', 'deep-packets');
 const SENTIMENT_DIR = join(ROOT, 'output', 'sentiment');
 const COMMUNITY_DIR = join(ROOT, 'output', 'communities');
 const BUILDER_DIR = join(ROOT, 'output', 'builder');
+const HOA_DIR = join(ROOT, 'output', 'hoa');
 // Composite weights. construction_pressure is a modifier applied to resale_risk
 // rather than a new top-level slot so the sum still equals 1.0. Schools are no
 // longer a scored dimension -- they are captured as metadata on the report.
@@ -102,6 +103,11 @@ function buildCommunityPath(target) {
 function buildBuilderPath(target) {
   const slug = slugify(`${target.address}-${target.city}-${target.state || 'NC'}`) || 'deep-target';
   return join(BUILDER_DIR, `${slug}.json`);
+}
+
+function buildHoaPath(target) {
+  const slug = slugify(`${target.address}-${target.city}-${target.state || 'NC'}`) || 'deep-target';
+  return join(HOA_DIR, `${slug}.json`);
 }
 
 function readJsonIfExists(filePath) {
@@ -350,6 +356,8 @@ async function buildPacket(target, researchContext) {
   const sentimentSummary = summarizeSentimentEvidence(sentimentEvidence, researchContext.profile.sentiment?.weights ?? {});
   const constructionSummary = summarizeConstruction(readConstructionRecord(target));
   const builderRecord = readBuilderRecord(target);
+  const hoaPath = buildHoaPath(target);
+  const hoaRecord = readJsonIfExists(hoaPath);
   const communityPath = buildCommunityPath(target);
   const communityEvidence = readJsonIfExists(communityPath);
   const audit = auditParsedReport(target);
@@ -448,6 +456,18 @@ async function buildPacket(target, researchContext) {
       builder100Year: builderRecord?.reviews?.builderOnline?.year ?? null,
       builderStanding: builderRecord?.standing ?? null,
     },
+    hoaRulesEvidence: {
+      filePath: existsSync(hoaPath) ? toWorkspacePath(hoaPath) : null,
+      status: hoaRecord?.status ?? 'not-run',
+      confidence: hoaRecord?.confidence ?? null,
+      communityName: hoaRecord?.hoa?.communityName ?? null,
+      associationName: hoaRecord?.hoa?.associationName ?? null,
+      managementCompany: hoaRecord?.hoa?.managementCompany ?? null,
+      monthlyDues: hoaRecord?.hoa?.monthlyDues ?? null,
+      documents: (hoaRecord?.documents ?? []).slice(0, 8),
+      topics: (hoaRecord?.topics ?? []).slice(0, 8),
+      openQuestions: hoaRecord?.openQuestions ?? [],
+    },
     reportSections: {
       neighborhoodSentiment: target.sections['Neighborhood Sentiment'],
       schoolReview: target.sections['School Review'],
@@ -469,6 +489,7 @@ async function buildPacket(target, researchContext) {
       'Treat constructionEvidence.level as a resale-risk modifier: "high" should lower the deep rerank unless the pressure is clearly benign (e.g. completed projects only).',
       'If constructionEvidence.status is "not-reviewed" or "unreachable", flag construction risk as an open question rather than claiming clear air.',
       'Include builder reputation in the Risk & Builder Quality section when builderEvidence.status is "found". If status is "not-found" or "no-builder-detected", omit the builder section rather than speculating.',
+      'Include HOA rules only from hoaRulesEvidence when status is "captured" or "partial"; otherwise mark HOA rules as unconfirmed and request the resale/disclosure packet.',
     ],
   };
 
@@ -486,6 +507,7 @@ async function buildPacket(target, researchContext) {
     constructionLevel: constructionSummary.level,
     builderStatus: builderRecord?.status ?? 'not-run',
     builderName: builderRecord?.builderName ?? null,
+    hoaStatus: hoaRecord?.status ?? 'not-run',
     developmentSources: packet.sourcePlans.development.entries.length,
     schoolSources: packet.sourcePlans.school.entries.length,
     auditBlockers: criticalFindings.length,
@@ -501,6 +523,7 @@ function printSummary(results) {
     console.log(`Sentiment evidence: ${result.sentimentStatus}`);
     console.log(`Construction evidence: ${result.constructionStatus} (${result.constructionLevel})`);
     console.log(`Builder evidence: ${result.builderStatus}${result.builderName ? ` (${result.builderName})` : ''}`);
+    console.log(`HOA rules evidence: ${result.hoaStatus}`);
     console.log(`Development sources queued: ${result.developmentSources}`);
     console.log(`School sources queued: ${result.schoolSources}`);
     console.log(`Audit blockers carried forward: ${result.auditBlockers}`);

@@ -158,12 +158,18 @@ const CONTRACTS = {
         /deep-single-final-runner\.mjs\b/,
         /npm(?:\.cmd)?\s+run\s+deep:single-final\b/,
       ], { requires: ['research-source-plan-single'] }),
+      req('hoa-docs-check-single', 'Single-home HOA document and rules lookup', [
+        /hoa-docs-check\.mjs\b/,
+        /npm(?:\.cmd)?\s+run\s+hoa:docs\b/,
+        /deep-single-final-runner\.mjs\b/,
+        /npm(?:\.cmd)?\s+run\s+deep:single-final\b/,
+      ], { requires: ['research-source-plan-single'] }),
       req('deep-research-packet-single', 'Single-home deep research packet assembly', [
         /deep-research-packet\.mjs\b/,
         /deep-single-final-runner\.mjs\b/,
         /npm(?:\.cmd)?\s+run\s+deep:single-final\b/,
       ], {
-        requires: ['research-source-plan-single', 'community-lookup-single', 'sentiment-extract-single', 'sentiment-public-extract-single', 'construction-check-single', 'county-permits-check-single', 'school-metadata-fetch-single', 'builder-check-single'],
+        requires: ['research-source-plan-single', 'community-lookup-single', 'sentiment-extract-single', 'sentiment-public-extract-single', 'construction-check-single', 'county-permits-check-single', 'school-metadata-fetch-single', 'builder-check-single', 'hoa-docs-check-single'],
         isGate: true,
       }),
       req('review-tabs-single', 'Replace browser tabs with listing URL', [

@@ -34,6 +34,7 @@ const DEEP_PACKET_DIR = join(ROOT, 'output', 'deep-packets');
 const BUILDER_DIR = join(ROOT, 'output', 'builder');
 const SCHOOL_METADATA_DIR = join(ROOT, 'output', 'school-metadata');
 const LISTING_DIR = join(ROOT, 'output', 'listings');
+const HOA_DIR = join(ROOT, 'output', 'hoa');
 
 const HELP_TEXT = `Usage:
   node briefing-pdf.mjs [--profile chrome-host] [--no-open]
@@ -389,6 +390,9 @@ function buildGapList(report, finalist, profile) {
   if (finalist.builderMismatch) {
     gaps.push(finalist.builderMismatch);
   }
+  if (finalist.hoaMismatch) {
+    gaps.push(finalist.hoaMismatch);
+  }
   if (finalist.packetMismatch) {
     gaps.push(finalist.packetMismatch);
   }
@@ -485,6 +489,13 @@ function collectSourceLinks(finalist) {
   const collector = { seen: new Set(), links: [] };
   addSourceLink(collector, 'Listing source', report.metadata.url);
 
+  for (const source of finalist.hoaRules?.sourcesChecked ?? []) {
+    addSourceLink(collector, source.label || source.name || 'HOA source', source.finalUrl || source.url, source.status);
+  }
+  for (const document of finalist.hoaRules?.documents ?? []) {
+    addSourceLink(collector, document.label || 'HOA document', document.finalUrl || document.url, document.status);
+  }
+
   const schoolMetadata = loadSchoolMetadata(report);
   for (const source of schoolMetadata?.sourcesChecked ?? []) {
     addSourceLink(collector, source.name || 'School source', source.url || source.assignmentUrl || source.searchUrl || source.baseUrl, source.status);
@@ -559,6 +570,62 @@ function buildFactsCard(finalist) {
     <div class="panel facts">
       <h3>Listing Snapshot</h3>
       <table>${rows || '<tr><td class="muted">No structured facts captured.</td></tr>'}</table>
+    </div>`;
+}
+
+function formatHoaDues(value, fallback = '') {
+  if (value === null || value === undefined || value === '') return String(fallback ?? '').trim();
+  const numeric = typeof value === 'number' ? value : Number(String(value).replace(/[^0-9.\-]/g, ''));
+  if (Number.isFinite(numeric)) return `$${numeric.toLocaleString()}/mo`;
+  return String(fallback ?? '').trim();
+}
+
+function buildHoaRulesCard(finalist) {
+  const hoa = finalist.hoaRules;
+  if (!hoa) return '';
+
+  const facts = [
+    ['Status', hoa.status || 'unconfirmed'],
+    ['Confidence', hoa.confidence || 'unconfirmed'],
+    ['HOA / Community', firstNonEmpty(hoa.hoa?.associationName, hoa.hoa?.communityName, 'Unconfirmed')],
+    ['Manager / Source', firstNonEmpty(hoa.hoa?.managementCompany, 'Unconfirmed')],
+    ['Monthly dues', firstNonEmpty(formatHoaDues(hoa.hoa?.monthlyDues, hoa.hoa?.duesText), 'Unconfirmed')],
+  ].map(([label, value]) => `
+    <tr>
+      <th>${escapeHtml(label)}</th>
+      <td>${escapeHtml(value)}</td>
+    </tr>
+  `).join('');
+
+  const documents = (hoa.documents ?? [])
+    .filter((document) => document.status === 'captured' || document.status === 'found')
+    .slice(0, 6);
+  const documentRows = documents.length
+    ? documents.map((document) => `
+      <li><a href="${escapeHtml(document.finalUrl || document.url)}">${escapeHtml(document.label || document.documentType || 'HOA document')}</a>${document.documentType ? ` <span class="subtle">${escapeHtml(document.documentType)}</span>` : ''}</li>
+    `).join('')
+    : '<li class="muted">No public governing documents confirmed.</li>';
+
+  const topicRows = (hoa.topics ?? [])
+    .filter((topic) => topic.status === 'found')
+    .slice(0, 6)
+    .map((topic) => `
+      <tr>
+        <th>${escapeHtml(topic.topic)}</th>
+        <td>${escapeHtml(summarizeSection(topic.summary, 240))}</td>
+      </tr>
+    `).join('');
+
+  const openQuestions = (hoa.openQuestions ?? []).slice(0, 3).map((item) => `<li>${escapeHtml(item)}</li>`).join('');
+
+  return `
+    <div class="panel hoa wide">
+      <h3>HOA Rules &amp; Restrictions</h3>
+      <table class="hoa-status"><tbody>${facts}</tbody></table>
+      <h4>Documents found</h4>
+      <ul class="hoa-docs">${documentRows}</ul>
+      ${topicRows ? `<h4>Buyer-relevant rule topics</h4><table class="hoa-topics"><tbody>${topicRows}</tbody></table>` : '<p class="muted">No buyer-relevant HOA rule topics were confirmed from public docs in this pass.</p>'}
+      ${openQuestions ? `<h4>Before offer</h4><ul class="hoa-open">${openQuestions}</ul>` : ''}
     </div>`;
 }
 
@@ -1427,6 +1494,7 @@ function buildFinalistSection(finalist, profile, options = {}) {
           <p>${escapeHtml(summarizeSection(plainText(recommendationText), 1500))}</p>
         </div>
         ${buyerFitBlock}
+        ${buildHoaRulesCard(finalist)}
         ${builderBlock}
         <div class="panel concerns wide">
           <h3>Top Concerns</h3>
@@ -1681,6 +1749,41 @@ function buildHtml(finalists, profile, mode = 'batch') {
   }
   .construction .resource-list a { color: #1d4ed8; }
   .infrastructure h3 { color: #075985; }
+  .hoa {
+    background: #f7fee7;
+    border-color: #d9f99d;
+  }
+  .hoa h3 { color: #3f6212; }
+  .hoa h4 {
+    margin: 8px 0 5px;
+    color: #4b5563;
+    font-size: 8.5pt;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .hoa-status {
+    width: 100%;
+    margin-bottom: 8px;
+    table-layout: fixed;
+  }
+  .hoa-status th,
+  .hoa-topics th {
+    width: 30%;
+    text-transform: none;
+    letter-spacing: 0;
+    font-size: 8.5pt;
+    background: #f8fafc;
+  }
+  .hoa-status td,
+  .hoa-topics td { font-size: 9pt; }
+  .hoa-docs,
+  .hoa-open {
+    margin: 0 0 8px;
+    padding-left: 14px;
+    font-size: 8.5pt;
+  }
+  .hoa-docs li,
+  .hoa-open li { margin-bottom: 3px; }
   .builder {
     background: #f8fafc;
     border-color: #cbd5e1;
@@ -1906,6 +2009,7 @@ function loadFinalist(reportPath, rank = 1) {
   const sentimentCompanion = loadCompanionForReport(report, SENTIMENT_DIR, 'Sentiment');
   const packetCompanion = loadCompanionForReport(report, DEEP_PACKET_DIR, 'Deep packet');
   const builderCompanion = loadCompanionForReport(report, BUILDER_DIR, 'Builder');
+  const hoaCompanion = loadCompanionForReport(report, HOA_DIR, 'HOA');
   const listing = loadListingFacts(report);
   const communityPayload = findCompanionJson(report, COMMUNITY_DIR);
   const community = communityPayload && communityPayload.community
@@ -1919,6 +2023,7 @@ function loadFinalist(reportPath, rank = 1) {
     permits: permitsCompanion.data,
     sentiment: sentimentCompanion.data,
     builder: builderCompanion.data,
+    hoaRules: hoaCompanion.data,
     packet: packetCompanion.data,
     listing,
     community,
@@ -1926,6 +2031,7 @@ function loadFinalist(reportPath, rank = 1) {
     permitsMismatch: permitsCompanion.mismatchMessage,
     sentimentMismatch: sentimentCompanion.mismatchMessage,
     builderMismatch: builderCompanion.mismatchMessage,
+    hoaMismatch: hoaCompanion.mismatchMessage,
     packetMismatch: packetCompanion.mismatchMessage,
   };
 }

@@ -73,6 +73,7 @@
     "permits:discover": "node scripts/research/county-services-discover.mjs",
     "schools:metadata": "node scripts/research/school-metadata-fetch.mjs",
     "sentiment:public": "node scripts/research/sentiment-public-extract.mjs",
+    "hoa:docs": "node scripts/research/hoa-docs-check.mjs",
     "skim": "node scripts/browser/skim-portals.mjs"
   },
   "keywords": [
