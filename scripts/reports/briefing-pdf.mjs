@@ -3,8 +3,8 @@
 /**
  * briefing-pdf.mjs -- Renders a top-3 finalist briefing PDF for the current
  * refined shortlist and opens it as a new tab inside the hosted Chrome
- * session. One combined PDF with one page per finalist so the user can flip
- * through them quickly.
+ * session. Each home gets an overview page plus page-sized report sections so
+ * the user can flip through the brief without cramped card breaks.
  *
  * HTML-to-PDF via Playwright's built-in page.pdf(), so no new npm deps. Tab
  * open uses the same CDP /json/new path that review-tabs already relies on.
@@ -53,7 +53,7 @@ Modes:
   combined (--reports a.md,b.md,...) renders one combined PDF covering N
            homes from URL-based deep runs, output at
            output/briefings/url-deep-{date}.pdf. Cover lists all homes (no
-           top-3 ranking); one section per home, no rank badge.
+           top-3 ranking); each home gets its own section-page set, no rank badge.
 
 All modes open the PDF in a new tab inside the hosted Chrome session unless
 --no-open is supplied.
@@ -192,178 +192,6 @@ function loadBuyerProfile() {
   } catch {
     return null;
   }
-}
-
-function parseDollarAmount(raw) {
-  const text = String(raw ?? '').toLowerCase();
-  if (!text || text === 'not recorded' || text.includes('n/a')) return null;
-  if (text.includes('none') || text.includes('no hoa')) return 0;
-  const match = text.replace(/,/g, '').match(/\$?\s*(\d+(?:\.\d+)?)\s*(k|m)?/i);
-  if (!match) return null;
-  const value = Number.parseFloat(match[1]);
-  if (!Number.isFinite(value)) return null;
-  const suffix = (match[2] ?? '').toLowerCase();
-  if (suffix === 'k') return value * 1000;
-  if (suffix === 'm') return value * 1_000_000;
-  return value;
-}
-
-function parseBedsNumber(raw) {
-  const text = String(raw ?? '');
-
-  // Prefer explicit "N bed" phrasing so "Hoke Elementary 8/10" style strings
-  // that leaked into Beds/Baths never get mistaken for a bed count.
-  const explicit = text.match(/(\d+)\s*(?:bed|bd|br)/i);
-  if (explicit) {
-    const beds = Number.parseInt(explicit[1], 10);
-    return Number.isFinite(beds) ? beds : null;
-  }
-
-  const match = text.match(/(\d+)\s*\/\s*(\d+(?:\.\d+)?)/);
-  if (!match) return null;
-  const beds = Number.parseInt(match[1], 10);
-  const baths = Number.parseFloat(match[2]);
-  // Sanity guard per modes/_shared.md -- plausible residential ranges are
-  // beds 1-7 and baths 1-8; anything outside that is almost certainly a
-  // parsing mistake (school rating, mislabeled field, etc.).
-  if (!Number.isFinite(beds) || beds < 1 || beds > 7) return null;
-  if (!Number.isFinite(baths) || baths < 1 || baths > 8) return null;
-  return beds;
-}
-
-function parseSqftNumber(raw) {
-  const cleaned = String(raw ?? '').replace(/,/g, '');
-  const match = cleaned.match(/(\d{3,6})/);
-  return match ? Number.parseInt(match[1], 10) : null;
-}
-
-function parseYearNumber(raw) {
-  const match = String(raw ?? '').match(/(19|20)\d{2}/);
-  return match ? Number.parseInt(match[0], 10) : null;
-}
-
-function formatMoney(value) {
-  if (!Number.isFinite(value)) return 'n/a';
-  if (value >= 1_000_000) return `$${(value / 1_000_000).toFixed(2)}M`;
-  if (value >= 1000) return `$${Math.round(value / 1000)}k`;
-  return `$${value.toLocaleString()}`;
-}
-
-function classifyFitStatus(report, profile) {
-  if (!profile) return [];
-  const hard = profile.search?.hard_requirements ?? {};
-  const soft = profile.search?.soft_preferences ?? {};
-  const dealBreakers = profile.search?.deal_breakers ?? [];
-  const reportBlob = [
-    report.sections['Quick Take'],
-    report.sections['Property Fit'],
-    report.sections['Neighborhood Sentiment'],
-    report.sections['Risks and Open Questions'],
-    report.sections['Hard Requirement Gate'],
-  ].filter(Boolean).join(' \n ').toLowerCase();
-
-  const items = [];
-  const price = parseDollarAmount(report.metadata.price);
-  if (Number.isFinite(price) && (hard.price_min || hard.price_max)) {
-    const min = hard.price_min;
-    const max = hard.price_max;
-    if (Number.isFinite(max) && price > max) {
-      items.push({ status: 'gap', label: `Price ${formatMoney(price)} is above the ${formatMoney(max)} max` });
-    } else if (Number.isFinite(min) && price < min) {
-      items.push({ status: 'gap', label: `Price ${formatMoney(price)} is below the ${formatMoney(min)} target floor` });
-    } else {
-      items.push({ status: 'match', label: `Priced at ${formatMoney(price)} -- inside your ${formatMoney(min ?? 0)}-${formatMoney(max ?? 0)} range` });
-    }
-  }
-
-  const beds = parseBedsNumber(report.metadata.bedsBaths);
-  if (Number.isFinite(beds) && Number.isFinite(hard.beds_min)) {
-    if (beds < hard.beds_min) {
-      items.push({ status: 'gap', label: `Only ${beds} bedroom${beds === 1 ? '' : 's'} -- you need at least ${hard.beds_min}` });
-    } else {
-      items.push({ status: 'match', label: `${beds} bedrooms clears your ${hard.beds_min}+ minimum` });
-    }
-  }
-
-  const sqft = parseSqftNumber(report.metadata.sqft);
-  if (Number.isFinite(sqft) && Number.isFinite(hard.sqft_min)) {
-    if (sqft < hard.sqft_min) {
-      items.push({ status: 'gap', label: `${sqft.toLocaleString()} sqft is under your ${hard.sqft_min.toLocaleString()} minimum` });
-    } else {
-      items.push({ status: 'match', label: `${sqft.toLocaleString()} sqft clears your ${hard.sqft_min.toLocaleString()} floor` });
-    }
-  }
-
-  const year = parseYearNumber(report.metadata.yearBuilt);
-  if (Number.isFinite(year)) {
-    const resalePreferred = String(hard.home_type_preference ?? '').toLowerCase().includes('resale');
-    if (resalePreferred && year >= 2023) {
-      items.push({ status: 'gap', label: `Built ${year} -- leans new-construction, which you prefer to avoid` });
-    } else if (Number.isFinite(soft.year_built_min) && year < soft.year_built_min) {
-      items.push({ status: 'gap', label: `Built ${year} is older than your ${soft.year_built_min}+ soft preference` });
-    } else {
-      items.push({ status: 'match', label: `Built ${year} -- fits your year-built preference` });
-    }
-  }
-
-  const hoa = parseDollarAmount(report.metadata.hoa);
-  if (Number.isFinite(hoa) && Number.isFinite(soft.hoa_max_monthly)) {
-    if (hoa > soft.hoa_max_monthly) {
-      items.push({ status: 'gap', label: `HOA ${formatMoney(hoa)}/mo is above your ${formatMoney(soft.hoa_max_monthly)}/mo cap` });
-    } else {
-      items.push({ status: 'match', label: `HOA ${formatMoney(hoa)}/mo is inside your ${formatMoney(soft.hoa_max_monthly)}/mo cap` });
-    }
-  }
-
-  const garageMatch = reportBlob.match(/(\d)\s*[- ]?car\s*garage/);
-  if (garageMatch && Number.isFinite(hard.garage_min)) {
-    const garage = Number.parseInt(garageMatch[1], 10);
-    if (garage < hard.garage_min) {
-      items.push({ status: 'gap', label: `${garage}-car garage is short of your ${hard.garage_min}+ minimum` });
-    } else {
-      items.push({ status: 'match', label: `${garage}-car garage clears your ${hard.garage_min}+ minimum` });
-    }
-  }
-
-  if (soft.fenced_yard && /fence/.test(reportBlob)) {
-    items.push({ status: 'match', label: 'Fenced yard noted -- matches your family priority' });
-  }
-
-  const flaggedBreakers = dealBreakers
-    .map((entry) => String(entry ?? '').trim())
-    .filter(Boolean)
-    .filter((entry) => {
-      const needle = entry.toLowerCase();
-      if (needle.includes('flood') && /flood/.test(reportBlob)) return true;
-      if (needle.includes('busy road') && /(busy road|highway frontage|traffic noise)/.test(reportBlob)) return true;
-      if (needle.includes('weak') && /(weak school|below.*rating|school concern)/.test(reportBlob)) return true;
-      if (needle.includes('structural') && /(structural|foundation issue|major repair)/.test(reportBlob)) return true;
-      return false;
-    });
-
-  for (const breaker of flaggedBreakers) {
-    items.push({ status: 'gap', label: `Possible match against your deal-breaker: ${breaker}` });
-  }
-
-  return items;
-}
-
-function buildBuyerFitChecks(report, profile) {
-  const items = classifyFitStatus(report, profile);
-  if (items.length === 0) return '';
-  const rows = items.slice(0, 6).map((item) => `
-    <li class="fit-row fit-${escapeHtml(item.status)}">
-      <span class="fit-mark" aria-hidden="true">${item.status === 'match' ? '&#10003;' : '!'}</span>
-      <span class="fit-label">${escapeHtml(item.label)}</span>
-    </li>
-  `).join('');
-
-  return `
-    <div class="panel fit wide">
-      <h3>Buyer Fit Checks</h3>
-      <ul class="fit-list">${rows}</ul>
-    </div>
-  `;
 }
 
 function buildGapList(report, finalist, profile) {
@@ -1389,6 +1217,13 @@ function buildSchoolsCard(report) {
     </div>`;
 }
 
+function wrapReportPage(content, extraClass = '') {
+  const body = String(content ?? '').trim();
+  if (!body) return '';
+  const className = ['report-page', extraClass].filter(Boolean).join(' ');
+  return `<article class="${escapeHtml(className)}">${body}</article>`;
+}
+
 function buildFinalistSection(finalist, profile, options = {}) {
   const showRank = options.showRank !== false;
   const isFirst = Boolean(options.isFirst);
@@ -1426,9 +1261,13 @@ function buildFinalistSection(finalist, profile, options = {}) {
   const concerns = buildTailoredConcerns(report, finalist).slice(0, 4);
   const recommendationText = firstNonEmpty(report.sections.Recommendation, recommendation);
   const developmentText = summarizeSection(report.sections['Development and Infrastructure'], 850);
-  const buyerFitBlock = buildBuyerFitChecks(report, profile);
+  const factsBlock = buildFactsCard(finalist);
+  const hoaBlock = buildHoaRulesCard(finalist);
   const infrastructureBlock = buildDevelopmentInfrastructureSection({ construction, permits, developmentText });
   const builderBlock = buildBuilderReputationCard(finalist);
+  const schoolsBlock = buildSchoolsCard(report);
+  const commuteBlock = buildCommuteCard(report, profile);
+  const sourceLedgerBlock = buildSourceLedger(finalist);
 
   const topKpi = (sentiment?.kpiRollup ?? []).slice(0, 5).map((row) => `
     <tr>
@@ -1471,6 +1310,31 @@ function buildFinalistSection(finalist, profile, options = {}) {
   const rankBadgeHtml = showRank
     ? `<div class="rank-badge">#${escapeHtml(String(finalist.rank))}</div>`
     : '';
+  const concernBlock = `
+    <div class="panel concerns wide">
+      <h3>Top Concerns</h3>
+      <ul>${(concerns.length ? concerns : ['(none captured)']).map((s) => `<li>${escapeHtml(s)}</li>`).join('')}</ul>
+    </div>`;
+  const overviewPage = wrapReportPage(`
+    <div class="overview-grid">
+      ${factsBlock}
+      <div class="panel decision">
+        <h3>Decision Read</h3>
+        <p>${escapeHtml(summarizeSection(plainText(recommendationText), 800))}</p>
+      </div>
+      ${concernBlock}
+      ${gapBlock}
+    </div>`, 'report-page-overview');
+  const reportPages = [
+    overviewPage,
+    wrapReportPage(hoaBlock, 'report-page-hoa'),
+    wrapReportPage(builderBlock, 'report-page-builder'),
+    wrapReportPage(infrastructureBlock, 'report-page-infrastructure'),
+    wrapReportPage(schoolsBlock, 'report-page-schools'),
+    wrapReportPage(sentimentBlock, 'report-page-sentiment'),
+    wrapReportPage(commuteBlock, 'report-page-commute'),
+    wrapReportPage(sourceLedgerBlock, 'report-page-sources'),
+  ].filter(Boolean).join('\n');
 
   return `
     <section class="${sectionClass}" id="${anchor}">
@@ -1487,25 +1351,8 @@ function buildFinalistSection(finalist, profile, options = {}) {
         </div>
       </header>
 
-      <div class="grid">
-        ${buildFactsCard(finalist)}
-        <div class="panel decision">
-          <h3>Decision Read</h3>
-          <p>${escapeHtml(summarizeSection(plainText(recommendationText), 1500))}</p>
-        </div>
-        ${buyerFitBlock}
-        ${buildHoaRulesCard(finalist)}
-        ${builderBlock}
-        <div class="panel concerns wide">
-          <h3>Top Concerns</h3>
-          <ul>${(concerns.length ? concerns : ['(none captured)']).map((s) => `<li>${escapeHtml(s)}</li>`).join('')}</ul>
-        </div>
-        ${infrastructureBlock}
-        ${buildSchoolsCard(report)}
-        ${sentimentBlock}
-        ${buildCommuteCard(report, profile)}
-        ${gapBlock}
-        ${buildSourceLedger(finalist)}
+      <div class="report-pages">
+        ${reportPages}
       </div>
     </section>
   `;
@@ -1540,7 +1387,7 @@ function buildHtml(finalists, profile, mode = 'batch') {
     <p class="cover-meta">Generated ${escapeHtml(generatedAt)} UTC &middot; ${escapeHtml(String(finalists.length))} home${finalists.length === 1 ? '' : 's'}${buyerLabel}</p>
     ${mode === 'batch' ? buildCoverToc(finalists) : buildCoverList(finalists)}
     <div class="cover-legend">
-      <p>Each page shows the decision read, buyer fit checks, top concerns tailored to that listing, construction pressure, a schools metadata table, neighborhood sentiment, and any research gaps worth filling in.</p>
+      <p>Each home starts with a decision dashboard containing facts, decision read, top concerns, and research gaps, then deeper evidence sections get their own PDF pages.</p>
       <p>Anything marked <strong>Not yet captured</strong> is unknown, not favorable. Ask for a deeper dive to fill in the research gaps before a final decision.</p>
     </div>
   </section>`;
@@ -1645,8 +1492,40 @@ function buildHtml(finalists, profile, mode = 'batch') {
     background: #eef2ff; color: #1d4ed8; font-weight: 600;
   }
 
-  /* Grid and cards */
-  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  /* Section pages and cards */
+  .report-pages { display: block; }
+  .report-page {
+    page-break-before: always;
+    break-before: page;
+    min-height: 9.35in;
+    padding: 0;
+  }
+  .report-page:first-of-type {
+    page-break-before: auto;
+    break-before: auto;
+    min-height: 8.1in;
+  }
+  .overview-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+    gap: 12px;
+    align-items: start;
+  }
+  .report-page-overview .panel,
+  .report-page-overview .card {
+    padding: 10px 12px;
+  }
+  .report-page-overview .panel p,
+  .report-page-overview .card p,
+  .report-page-overview .panel li,
+  .report-page-overview .card li {
+    font-size: 8.9pt;
+    line-height: 1.35;
+  }
+  .report-page-overview .panel h3,
+  .report-page-overview .card h3 {
+    margin-bottom: 6px;
+  }
   .card, .panel {
     border: 1px solid #d1d5db; border-radius: 6px;
     padding: 12px 14px; background: #ffffff;
@@ -1656,6 +1535,12 @@ function buildHtml(finalists, profile, mode = 'batch') {
   }
   .facts { break-inside: avoid; page-break-inside: avoid; }
   .card.wide, .panel.wide { grid-column: span 2; }
+  .report-page > .card,
+  .report-page > .panel,
+  .report-page > .wide {
+    width: 100%;
+    grid-column: auto;
+  }
   .card h3, .panel h3 {
     font-size: 9pt; font-weight: 700; text-transform: uppercase;
     letter-spacing: 0.08em; color: #6b7280; margin-bottom: 8px;
@@ -1696,29 +1581,6 @@ function buildHtml(finalists, profile, mode = 'batch') {
   .stat { font-size: 9.5pt; color: #4b5563; margin-bottom: 2px; }
   .stat strong { color: #111827; }
   .muted { color: #9ca3af; font-size: 8.5pt; }
-
-  /* Fit narrative */
-  .card.fit {
-    background: #f0fdf4;
-    border-color: #bbf7d0;
-  }
-  .card.fit h3 { color: #166534; }
-  .fit-list { list-style: none; padding: 0; margin: 0; }
-  .fit-row {
-    display: flex; align-items: flex-start; gap: 10px;
-    padding: 4px 0; font-size: 9.5pt;
-    border-bottom: 1px dashed #e5e7eb;
-  }
-  .fit-row:last-child { border-bottom: 0; }
-  .fit-mark {
-    flex-shrink: 0; width: 18px; height: 18px; border-radius: 50%;
-    display: flex; align-items: center; justify-content: center;
-    font-size: 10pt; font-weight: 800; color: #ffffff;
-  }
-  .fit-match .fit-mark { background: #16a34a; }
-  .fit-gap .fit-mark { background: #dc2626; }
-  .fit-unknown .fit-mark { background: #9ca3af; }
-  .fit-label { color: #1f2937; line-height: 1.4; }
 
   /* Tables */
   table { width: 100%; border-collapse: collapse; font-size: 9pt; }

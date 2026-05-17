@@ -37,7 +37,9 @@ When no flags are present, open tabs for all platforms configured in `portals.ym
    - It syncs buyer filters into each search URL (price, beds, baths, sqft, garage, listing age, HOA, year built, school rating where applicable).
    - It checks for an active hosted session via the CDP endpoint saved in `output/browser-sessions/chrome-host/session-state.json`.
    - **If no session is active**, the script launches a new hosted Chrome window automatically (falling back to Edge or Chromium if Chrome is not installed) and saves the session state before opening tabs.
+   - It uses a short-lived skim lock so a duplicate command invocation does not open a second tab set while the first run is still active.
    - It connects to the hosted session via CDP and opens one tab per platform × area.
+   - If a matching filtered search tab is already open, it reuses that tab instead of opening a duplicate.
 3. After the script exits, the hosted browser remains open for the user to browse.
 
 ## Session Auto-Launch
@@ -52,5 +54,6 @@ Unlike `/home-ops init`, skim does not wait for the user to sign in before proce
 Return a concise summary with:
 - whether an existing session was reused or a new one was launched
 - total tabs opened, grouped by platform
+- any tabs that were already open and reused
 - any tabs that failed to navigate (the tab is still open but may need a manual refresh)
 - the next suggested action: browse the tabs, then run `/home-ops scan` to extract and pipeline the listings

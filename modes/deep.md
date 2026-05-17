@@ -152,7 +152,7 @@ Once the axis agents return:
    ```
    node scripts/reports/briefing-pdf.mjs --report reports/{N}-{slug}-{YYYY-MM-DD}.md
    ```
-   `briefing-pdf.mjs` renders the PDF **and** opens it as a new CDP tab automatically. Running it after `--replace` means the PDF tab opens into the already-clean session, producing exactly 2 tabs.
+   `briefing-pdf.mjs` renders the PDF **and** opens it as a new CDP tab automatically. The PDF starts each home with a decision dashboard containing top concerns and research gaps, then gives the deeper evidence sections their own page-sized space. Running it after `--replace` means the PDF tab opens into the already-clean session, producing exactly 2 tabs.
 
    **Do NOT also run a `--reports` call for a single home.** The single-mode call covers the home in one PDF. Running both `--report` and `--reports` produces duplicate output; the contract has a single `briefing-pdf-deep-single` gate that either form satisfies.
 
@@ -202,7 +202,7 @@ Then render **one combined briefing PDF** covering all homes and open it in the 
 ```
 node scripts/reports/briefing-pdf.mjs --reports reports/{slug1}-deep-{YYYY-MM-DD}.md,reports/{slug2}-deep-{YYYY-MM-DD}.md,...
 ```
-`briefing-pdf.mjs` renders the combined PDF to `output/briefings/url-deep-{YYYY-MM-DD}.pdf` and opens it as a new CDP tab automatically. Running it after `--replace` means the PDF tab is added into the already-clean session.
+`briefing-pdf.mjs` renders the combined PDF to `output/briefings/url-deep-{YYYY-MM-DD}.pdf` and opens it as a new CDP tab automatically. Each home's major report sections receive separate page-sized space in the PDF. Running it after `--replace` means the PDF tab is added into the already-clean session.
 
 **Do NOT use raw Playwright scripts to open PDF tabs.** Always use `briefing-pdf.mjs`.
 
@@ -289,6 +289,7 @@ The agents read pre-written JSON sidecars first. They MAY use Playwright MCP onl
     node scripts/reports/briefing-pdf.mjs
     ```
     PDF lands at `output/briefings/top3-briefing-{YYYY-MM-DD}.pdf`.
+    The rendered briefing should keep each major report section on its own page-sized space for readability.
 
 17. Replace browser tabs with the top-3 finalists, then open the PDF last:
     ```

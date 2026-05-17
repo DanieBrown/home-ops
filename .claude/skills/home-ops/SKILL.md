@@ -1,6 +1,6 @@
 ---
 name: home-ops
-description: profile | afford | init | scan | evaluate | compare | deep | hunt | tracker | reset
+description: profile | afford | init | scan | skim | evaluate | compare | deep | hunt | tracker | reset
 user_invocable: true
 args: mode
 ---
@@ -118,5 +118,7 @@ Prefer a subagent for `scan` because it can involve multiple pages and platform-
 When multiple listings are being evaluated, the main agent should own the final tracker merge, pipeline edits, and summary. Workers should return full report drafts plus structured evaluation results or other staged output rather than racing to edit `data/listings.md` directly, and browser-backed verification should stay serialized across the run.
 
 `deep` with a populated top-10 shortlist in `data/shortlist.md` should launch one subagent per shortlisted home. Each worker should return structured deep-dive findings and a tentative verdict for one home, while the main agent owns the combined batch brief, shortlist rewrite, final top-3 rerank, and finalist-tab replacement in the hosted browser.
+
+`skim` should run the checked-in skim script exactly once per user command. If a direct wrapper such as `/home-ops-skim` loaded this skill, treat the mode as `skim` and treat any wrapper arguments as skim flags. Do not also route through `/home-ops skim` or run a second skim pass after the script returns.
 
 Execute the instructions from the loaded mode files.

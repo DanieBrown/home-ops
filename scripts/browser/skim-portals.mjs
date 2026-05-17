@@ -28,6 +28,7 @@
 //   --help          Show this help text.
 
 import { existsSync, readFileSync } from 'fs';
+import { mkdir, open, stat, unlink } from 'fs/promises';
 import { join } from 'path';
 import { chromium } from 'playwright';
 import YAML from 'yaml';
@@ -43,6 +44,7 @@ const DEFAULT_PROFILE = 'chrome-host';
 const DEFAULT_CDP_PORT = 9222;
 const NAVIGATION_TIMEOUT_MS = 15000;
 const SETTLE_TIMEOUT_MS = 1200;
+const SKIM_LOCK_MAX_AGE_MS = 5 * 60 * 1000;
 
 const SKIM_SCHEMA = {
   '--profile':     { type: 'value',    key: 'profileName' },
@@ -372,6 +374,68 @@ async function ensureOrLaunchSession(profileName) {
   return state;
 }
 
+function resolveSkimLockPath(profileName) {
+  return join(ROOT, 'output', 'browser-sessions', profileName, 'skim.lock');
+}
+
+async function acquireSkimLock(profileName, { retryAfterStale = true } = {}) {
+  const lockPath = resolveSkimLockPath(profileName);
+  await mkdir(join(ROOT, 'output', 'browser-sessions', profileName), { recursive: true });
+
+  try {
+    const handle = await open(lockPath, 'wx');
+    await handle.writeFile(JSON.stringify({
+      pid: process.pid,
+      profile: profileName,
+      startedAt: new Date().toISOString(),
+    }, null, 2));
+    await handle.close();
+    return async () => {
+      await unlink(lockPath).catch(() => {});
+    };
+  } catch (error) {
+    if (error?.code !== 'EEXIST') {
+      throw error;
+    }
+
+    let stale = false;
+    try {
+      const info = await stat(lockPath);
+      stale = Date.now() - info.mtimeMs > SKIM_LOCK_MAX_AGE_MS;
+    } catch {
+      stale = true;
+    }
+
+    if (stale && retryAfterStale) {
+      await unlink(lockPath).catch(() => {});
+      return acquireSkimLock(profileName, { retryAfterStale: false });
+    }
+
+    console.log('Another skim run is already in progress for this browser profile; skipping this duplicate invocation.');
+    return null;
+  }
+}
+
+function normalizeOpenTabUrl(rawUrl) {
+  try {
+    const parsed = new URL(String(rawUrl ?? '').trim());
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return '';
+    parsed.hash = '';
+    return parsed.toString();
+  } catch {
+    return '';
+  }
+}
+
+function buildExistingTabIndex(context) {
+  const byUrl = new Map();
+  for (const page of context.pages()) {
+    const key = normalizeOpenTabUrl(page.url());
+    if (key && !byUrl.has(key)) byUrl.set(key, page);
+  }
+  return byUrl;
+}
+
 // ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
@@ -415,89 +479,111 @@ async function main() {
     return;
   }
 
-  // Load portals and profile
-  const portals = readYamlFile(PORTALS_PATH);
-  const profile = readYamlFile(PROFILE_PATH);
-  const requirements = loadRequirements(profile);
+  const releaseSkimLock = await acquireSkimLock(config.profileName);
+  if (!releaseSkimLock) return;
 
-  // Build target list: one entry per platform × area, filters synced
-  const platformsNode = portals.platforms ?? {};
-  const targets = [];
-
-  for (const [rawKey, rawValue] of Object.entries(platformsNode)) {
-    if (!rawValue || typeof rawValue !== 'object') continue;
-    const key = canonicalPlatformKey(rawKey);
-    if (config.selectedPlatforms.size > 0 && !config.selectedPlatforms.has(key)) continue;
-    if (config.excludedPlatforms.has(key)) continue;
-
-    const searchUrls = Array.isArray(rawValue.search_urls) ? rawValue.search_urls : [];
-    for (const entry of searchUrls) {
-      const rawUrl = String(entry?.url ?? '').trim();
-      if (!rawUrl) continue;
-      const syncedUrl = syncPlatformSearchUrl(key, rawUrl, requirements);
-      targets.push({
-        platform: key,
-        name: String(rawValue.name ?? rawKey).trim(),
-        area: String(entry?.area ?? '').trim(),
-        url: syncedUrl,
-      });
-    }
-  }
-
-  if (targets.length === 0) {
-    console.log('No portal search URLs matched the selected platforms. Check portals.yml.');
-    process.exit(1);
-  }
-
-  // Ensure a hosted session is running
-  const sessionData = await ensureOrLaunchSession(config.profileName);
-
-  // Connect to the hosted session via CDP
-  let browser;
   try {
-    browser = await chromium.connectOverCDP(sessionData.cdpUrl, {
-      timeout: 15000,
-      isLocal: true,
-    });
-  } catch (error) {
-    console.error(`Could not connect to hosted browser at ${sessionData.cdpUrl}: ${error.message}`);
-    console.error('Try running /home-ops init to reset the session.');
-    process.exit(1);
-  }
+    // Load portals and profile
+    const portals = readYamlFile(PORTALS_PATH);
+    const profile = readYamlFile(PROFILE_PATH);
+    const requirements = loadRequirements(profile);
 
-  const context = browser.contexts()[0];
-  if (!context) {
-    console.error('Connected to browser but found no default context. Try /home-ops init.');
-    process.exit(1);
-  }
+    // Build target list: one entry per platform x area, filters synced
+    const platformsNode = portals.platforms ?? {};
+    const targets = [];
 
-  // Open one tab per target
-  console.log(`\nOpening ${targets.length} search tab(s)...\n`);
-  const opened = [];
-  const failed = [];
+    for (const [rawKey, rawValue] of Object.entries(platformsNode)) {
+      if (!rawValue || typeof rawValue !== 'object') continue;
+      const key = canonicalPlatformKey(rawKey);
+      if (config.selectedPlatforms.size > 0 && !config.selectedPlatforms.has(key)) continue;
+      if (config.excludedPlatforms.has(key)) continue;
 
-  for (const target of targets) {
-    try {
-      const page = await context.newPage();
-      await page.goto(target.url, { waitUntil: 'domcontentloaded', timeout: NAVIGATION_TIMEOUT_MS });
-      await page.waitForTimeout(SETTLE_TIMEOUT_MS);
-      console.log(`  ${target.name} | ${target.area}`);
-      opened.push(target);
-    } catch (error) {
-      console.log(`  ${target.name} | ${target.area}  [navigation error: ${error.message.split('\n')[0]}]`);
-      failed.push(target);
+      const searchUrls = Array.isArray(rawValue.search_urls) ? rawValue.search_urls : [];
+      for (const entry of searchUrls) {
+        const rawUrl = String(entry?.url ?? '').trim();
+        if (!rawUrl) continue;
+        const syncedUrl = syncPlatformSearchUrl(key, rawUrl, requirements);
+        targets.push({
+          platform: key,
+          name: String(rawValue.name ?? rawKey).trim(),
+          area: String(entry?.area ?? '').trim(),
+          url: syncedUrl,
+        });
+      }
     }
-  }
 
-  // Disconnect without closing the hosted browser window
-  await browser.close().catch(() => {});
+    if (targets.length === 0) {
+      throw new Error('No portal search URLs matched the selected platforms. Check portals.yml.');
+    }
 
-  const platformCount = new Set(opened.map((t) => t.platform)).size;
-  console.log(`\nSkimmed ${opened.length} tab(s) across ${platformCount} portal(s).`);
-  if (failed.length > 0) {
-    console.log(`${failed.length} tab(s) failed to load -- the tabs are open but may need a manual refresh.`);
+    // Ensure a hosted session is running
+    const sessionData = await ensureOrLaunchSession(config.profileName);
+
+    // Connect to the hosted session via CDP
+    let browser;
+    try {
+      browser = await chromium.connectOverCDP(sessionData.cdpUrl, {
+        timeout: 15000,
+        isLocal: true,
+      });
+    } catch (error) {
+      throw new Error(`Could not connect to hosted browser at ${sessionData.cdpUrl}: ${error.message}. Try running /home-ops init to reset the session.`);
+    }
+
+    try {
+      const context = browser.contexts()[0];
+      if (!context) {
+        throw new Error('Connected to browser but found no default context. Try /home-ops init.');
+      }
+
+      // Open one tab per target, reusing exact already-open search tabs.
+      console.log(`\nOpening ${targets.length} search tab(s)...\n`);
+      const opened = [];
+      const reused = [];
+      const failed = [];
+      const existingTabs = buildExistingTabIndex(context);
+
+      for (const target of targets) {
+        const targetKey = normalizeOpenTabUrl(target.url);
+        const existingPage = targetKey ? existingTabs.get(targetKey) : null;
+        if (existingPage) {
+          await existingPage.bringToFront().catch(() => {});
+          console.log(`  ${target.name} | ${target.area}  [already open]`);
+          reused.push(target);
+          continue;
+        }
+
+        try {
+          const page = await context.newPage();
+          await page.goto(target.url, { waitUntil: 'domcontentloaded', timeout: NAVIGATION_TIMEOUT_MS });
+          await page.waitForTimeout(SETTLE_TIMEOUT_MS);
+          console.log(`  ${target.name} | ${target.area}`);
+          opened.push(target);
+          const openedKey = normalizeOpenTabUrl(page.url()) || targetKey;
+          if (openedKey) existingTabs.set(openedKey, page);
+        } catch (error) {
+          console.log(`  ${target.name} | ${target.area}  [navigation error: ${error.message.split('\n')[0]}]`);
+          failed.push(target);
+        }
+      }
+
+      const handled = [...opened, ...reused];
+      const platformCount = new Set(handled.map((t) => t.platform)).size;
+      console.log(`\nSkimmed ${handled.length} tab(s) across ${platformCount} portal(s).`);
+      if (reused.length > 0) {
+        console.log(`${reused.length} tab(s) were already open and were reused instead of duplicated.`);
+      }
+      if (failed.length > 0) {
+        console.log(`${failed.length} tab(s) failed to load -- the tabs are open but may need a manual refresh.`);
+      }
+      console.log('\nThe hosted browser is still open. Browse the tabs and run /home-ops scan when ready to extract listings.');
+    } finally {
+      // Disconnect without closing the hosted browser window.
+      await browser.close().catch(() => {});
+    }
+  } finally {
+    await releaseSkimLock();
   }
-  console.log('\nThe hosted browser is still open. Browse the tabs and run /home-ops scan when ready to extract listings.');
 }
 
 main().catch((error) => {
