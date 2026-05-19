@@ -164,12 +164,18 @@ const CONTRACTS = {
         /deep-single-final-runner\.mjs\b/,
         /npm(?:\.cmd)?\s+run\s+deep:single-final\b/,
       ], { requires: ['research-source-plan-single'] }),
+      req('utility-options-check-single', 'Single-home utilities/provider billing options', [
+        /utility-options-check\.mjs\b/,
+        /npm(?:\.cmd)?\s+run\s+utilities:check\b/,
+        /deep-single-final-runner\.mjs\b/,
+        /npm(?:\.cmd)?\s+run\s+deep:single-final\b/,
+      ], { requires: ['research-source-plan-single'] }),
       req('deep-research-packet-single', 'Single-home deep research packet assembly', [
         /deep-research-packet\.mjs\b/,
         /deep-single-final-runner\.mjs\b/,
         /npm(?:\.cmd)?\s+run\s+deep:single-final\b/,
       ], {
-        requires: ['research-source-plan-single', 'community-lookup-single', 'sentiment-extract-single', 'sentiment-public-extract-single', 'construction-check-single', 'county-permits-check-single', 'school-metadata-fetch-single', 'builder-check-single', 'hoa-docs-check-single'],
+        requires: ['research-source-plan-single', 'community-lookup-single', 'sentiment-extract-single', 'sentiment-public-extract-single', 'construction-check-single', 'county-permits-check-single', 'school-metadata-fetch-single', 'builder-check-single', 'hoa-docs-check-single', 'utility-options-check-single'],
         isGate: true,
       }),
       req('review-tabs-single', 'Replace browser tabs with listing URL', [
@@ -211,10 +217,14 @@ const CONTRACTS = {
       req('sentiment-public-extract', 'Shortlist public sentiment — Google Maps/traffic_commute (fan-out 6e)', [
         /sentiment-public-extract\.mjs[^\n]*--shortlist/,
       ], { requires: ['research-audit'], isGate: true }),
+      req('utility-options-check', 'Shortlist utilities/provider billing options', [
+        /utility-options-check\.mjs[^\n]*--shortlist/,
+        /npm(?:\.cmd)?\s+run\s+utilities:check[^\n]*--shortlist/,
+      ], { requires: ['research-audit'], isGate: true }),
       req('deep-research-packet', 'Deep research packets per shortlisted home', [
         /deep-research-packet\.mjs[^\n]*--shortlist/,
         /npm(?:\.cmd)?\s+run\s+prepare:deep[^\n]*--shortlist/,
-      ], { requires: ['research-source-plan', 'community-lookup', 'sentiment-extract', 'construction-check', 'sentiment-public-extract'], isGate: true }),
+      ], { requires: ['research-source-plan', 'community-lookup', 'sentiment-extract', 'construction-check', 'sentiment-public-extract', 'utility-options-check'], isGate: true }),
       req('promote-finalists', 'Auto-promote top-3 into Refined Top 3 section', [
         /promote-finalists\.mjs\b/,
         /npm(?:\.cmd)?\s+run\s+promote:finalists\b/,
@@ -228,7 +238,7 @@ const CONTRACTS = {
         /npm(?:\.cmd)?\s+run\s+browser:review[^\n]*shortlist-top3/,
       ], {
         isGate: true,
-        requires: ['research-audit', 'research-source-plan', 'community-lookup', 'sentiment-extract', 'construction-check', 'sentiment-public-extract', 'deep-research-packet', 'promote-finalists', 'finalist-gate'],
+        requires: ['research-audit', 'research-source-plan', 'community-lookup', 'sentiment-extract', 'construction-check', 'sentiment-public-extract', 'utility-options-check', 'deep-research-packet', 'promote-finalists', 'finalist-gate'],
       }),
       req('briefing-pdf', 'Render top-3 briefing PDF', [
         /briefing-pdf\.mjs\b/,

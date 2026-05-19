@@ -35,6 +35,7 @@ const BUILDER_DIR = join(ROOT, 'output', 'builder');
 const SCHOOL_METADATA_DIR = join(ROOT, 'output', 'school-metadata');
 const LISTING_DIR = join(ROOT, 'output', 'listings');
 const HOA_DIR = join(ROOT, 'output', 'hoa');
+const UTILITIES_DIR = join(ROOT, 'output', 'utilities');
 
 const HELP_TEXT = `Usage:
   node briefing-pdf.mjs [--profile chrome-host] [--no-open]
@@ -145,6 +146,10 @@ function loadCompanionForReport(report, dir, label) {
   };
 }
 
+export function loadUtilityOptionsForReport(report) {
+  return loadCompanionForReport(report, UTILITIES_DIR, 'Utilities');
+}
+
 function summarizeSection(sectionText, maxLength = 900) {
   if (!sectionText) return '';
   const compact = sectionText.replace(/\s+/g, ' ').trim();
@@ -220,6 +225,15 @@ function buildGapList(report, finalist, profile) {
   }
   if (finalist.hoaMismatch) {
     gaps.push(finalist.hoaMismatch);
+  }
+  if (!finalist.utilities) {
+    gaps.push('Utility/provider billing options have not been captured yet.');
+  }
+  if (finalist.utilitiesMismatch) {
+    gaps.push(finalist.utilitiesMismatch);
+  }
+  if ((finalist.utilities?.sourceCoverage ?? []).some((entry) => ['blocked', 'error'].includes(entry.status))) {
+    gaps.push('One or more utility/provider sources were blocked or unreachable; treat affected availability as unknown.');
   }
   if (finalist.packetMismatch) {
     gaps.push(finalist.packetMismatch);
@@ -322,6 +336,18 @@ function collectSourceLinks(finalist) {
   }
   for (const document of finalist.hoaRules?.documents ?? []) {
     addSourceLink(collector, document.label || 'HOA document', document.finalUrl || document.url, document.status);
+  }
+
+  for (const source of finalist.utilities?.sourceCoverage ?? []) {
+    addSourceLink(collector, source.name || source.key || 'Utility source', source.url, source.status);
+  }
+  for (const providers of Object.values(finalist.utilities?.providers ?? {})) {
+    for (const provider of providers ?? []) {
+      addSourceLink(collector, provider.name || 'Utility provider', provider.sourceUrl, provider.serviceStatus);
+      for (const plan of provider.plans ?? []) {
+        addSourceLink(collector, `${provider.name || 'Internet'} ${plan.name || 'plan'}`, plan.sourceUrl, provider.serviceStatus);
+      }
+    }
   }
 
   const schoolMetadata = loadSchoolMetadata(report);
@@ -454,6 +480,194 @@ function buildHoaRulesCard(finalist) {
       <ul class="hoa-docs">${documentRows}</ul>
       ${topicRows ? `<h4>Buyer-relevant rule topics</h4><table class="hoa-topics"><tbody>${topicRows}</tbody></table>` : '<p class="muted">No buyer-relevant HOA rule topics were confirmed from public docs in this pass.</p>'}
       ${openQuestions ? `<h4>Before offer</h4><ul class="hoa-open">${openQuestions}</ul>` : ''}
+    </div>`;
+}
+
+function formatUtilityMoney(value) {
+  if (value === null || value === undefined || value === '') return '--';
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? `$${numeric.toLocaleString(undefined, { maximumFractionDigits: 0 })}` : '--';
+}
+
+function formatUtilityRange(range) {
+  if (!range || range.low == null || range.typical == null || range.high == null) return '--';
+  return `${formatUtilityMoney(range.low)} / ${formatUtilityMoney(range.typical)} / ${formatUtilityMoney(range.high)}`;
+}
+
+function formatUtilityStatus(value) {
+  return String(value ?? 'unconfirmed').replace(/[-_]+/g, ' ');
+}
+
+function utilityKindLabel(kind) {
+  const labels = {
+    electric: 'Electric',
+    waterSewer: 'Water / Sewer',
+    naturalGas: 'Natural Gas',
+    internet: 'Internet',
+  };
+  return labels[kind] ?? String(kind ?? '').replace(/[-_]+/g, ' ');
+}
+
+function providerEstimateLabel(provider) {
+  if (provider?.estimateMonthly) {
+    return formatUtilityRange(provider.estimateMonthly);
+  }
+  const pricedPlans = (provider?.plans ?? [])
+    .filter((plan) => plan.monthlyPrice != null)
+    .sort((left, right) => Number(left.monthlyPrice) - Number(right.monthlyPrice));
+  if (pricedPlans.length > 0) {
+    return `${formatUtilityMoney(pricedPlans[0].monthlyPrice)}+`;
+  }
+  return '--';
+}
+
+function internetStatusRank(status) {
+  const ranks = { confirmed: 0, reported: 1, likely: 2, unconfirmed: 3, blocked: 4, 'not-available': 5 };
+  return ranks[String(status ?? '').toLowerCase()] ?? 6;
+}
+
+function chooseInternetDisplayPlan(provider) {
+  const plans = provider?.plans ?? [];
+  const pricedFast = plans
+    .filter((plan) => plan.monthlyPrice != null && Number(plan.downloadMbps) >= 500)
+    .sort((left, right) => Number(left.monthlyPrice) - Number(right.monthlyPrice));
+  if (pricedFast[0]) return pricedFast[0];
+  const fastestReported = plans
+    .filter((plan) => plan.downloadMbps != null)
+    .sort((left, right) => Number(right.downloadMbps) - Number(left.downloadMbps));
+  return fastestReported[0] ?? null;
+}
+
+function buildInternetDisplayRows(utilities) {
+  const providers = utilities.providers?.internet ?? [];
+  const selected = utilities.selectedInternetPlan;
+  const selectedKey = selected ? `${selected.provider}|${selected.name}`.toLowerCase() : '';
+  const rows = [];
+  const seen = new Set();
+
+  if (selected) {
+    rows.push({
+      provider: selected.provider,
+      status: selected.serviceStatus,
+      plan: selected,
+      selected: true,
+      sourceUrl: selected.sourceUrl,
+    });
+    seen.add(selectedKey);
+  }
+
+  const candidates = providers
+    .map((provider) => ({ provider, plan: chooseInternetDisplayPlan(provider) }))
+    .sort((left, right) => (
+      internetStatusRank(left.provider.serviceStatus) - internetStatusRank(right.provider.serviceStatus)
+      || Number(right.plan?.downloadMbps ?? 0) - Number(left.plan?.downloadMbps ?? 0)
+      || Number(left.plan?.monthlyPrice ?? 9999) - Number(right.plan?.monthlyPrice ?? 9999)
+    ));
+
+  for (const { provider, plan } of candidates) {
+    const key = `${provider.name}|${plan?.name ?? ''}`.toLowerCase();
+    if (key === selectedKey || seen.has(key)) continue;
+    rows.push({ provider: provider.name, status: provider.serviceStatus, plan, selected: false, sourceUrl: provider.sourceUrl });
+    seen.add(key);
+    if (rows.length >= 6) break;
+  }
+
+  return {
+    rows,
+    omittedCount: Math.max(0, providers.length - rows.length),
+  };
+}
+
+function buildUtilitiesOptionsCard(finalist) {
+  const utilities = finalist.utilities;
+  if (!utilities) {
+    return `
+      <div class="panel wide utilities unreviewed">
+        <h3>Utilities &amp; Monthly Bills</h3>
+        <p class="muted">Utility/provider options have not been captured for this home yet. Availability and billing estimates are unknown, not favorable.</p>
+      </div>`;
+  }
+
+  const estimate = utilities.monthlyEstimate ?? {};
+  const included = (estimate.includedServices ?? []).join(', ') || 'None confirmed';
+  const optional = (estimate.optionalServices ?? []).join(', ') || 'None listed';
+  const blockedSources = (utilities.sourceCoverage ?? []).filter((entry) => ['blocked', 'error'].includes(entry.status));
+  const sourceSummary = `${(utilities.sourceCoverage ?? []).length} utility source${(utilities.sourceCoverage ?? []).length === 1 ? '' : 's'} tracked${blockedSources.length ? `; ${blockedSources.length} blocked` : ''}`;
+
+  const summaryRows = [
+    ['Low / Typical / High', formatUtilityRange(estimate)],
+    ['Confidence', estimate.confidence || 'low'],
+    ['Included in total', included],
+    ['Optional / not counted', optional],
+  ].map(([label, value]) => `
+    <tr>
+      <th>${escapeHtml(label)}</th>
+      <td>${escapeHtml(value)}</td>
+    </tr>
+  `).join('');
+
+  const providerRows = Object.entries(utilities.providers ?? {})
+    .filter(([kind]) => kind !== 'internet')
+    .flatMap(([kind, providers]) => (providers ?? []).map((provider) => `
+      <tr>
+        <td>${escapeHtml(utilityKindLabel(kind))}</td>
+        <td>${provider.sourceUrl ? `<a href="${escapeHtml(provider.sourceUrl)}">${escapeHtml(provider.name ?? '--')}</a>` : escapeHtml(provider.name ?? '--')}</td>
+        <td>${escapeHtml(formatUtilityStatus(provider.serviceStatus))}</td>
+        <td class="num">${escapeHtml(providerEstimateLabel(provider))}</td>
+      </tr>
+    `)).join('');
+
+  const internetDisplay = buildInternetDisplayRows(utilities);
+  const internetRows = internetDisplay.rows.map((entry) => {
+    const plan = entry.plan;
+    const providerLink = entry.sourceUrl
+      ? `<a href="${escapeHtml(entry.sourceUrl)}">${escapeHtml(entry.provider ?? '--')}</a>`
+      : escapeHtml(entry.provider ?? '--');
+    const planLabel = plan
+      ? (plan.sourceUrl ? `<a href="${escapeHtml(plan.sourceUrl)}">${escapeHtml(plan.name ?? 'Plan')}</a>` : escapeHtml(plan.name ?? 'Plan'))
+      : '<span class="muted">No priced plan captured</span>';
+    const speed = plan
+      ? [plan.technology, plan.downloadMbps ? `${plan.downloadMbps} Mbps down` : '', plan.uploadMbps ? `${plan.uploadMbps} Mbps up` : ''].filter(Boolean).join(' / ')
+      : '';
+    return `
+      <tr>
+        <td>${providerLink}${entry.selected ? ' <span class="subtle">selected</span>' : ''}</td>
+        <td>${escapeHtml(formatUtilityStatus(entry.status))}</td>
+        <td>${planLabel}${speed ? `<br><span class="subtle">${escapeHtml(speed)}</span>` : ''}</td>
+        <td class="num">${escapeHtml(formatUtilityMoney(plan?.monthlyPrice))}</td>
+      </tr>`;
+  }).join('');
+
+  const assumptionRows = [
+    utilities.assumptions?.electricKwh ? `Electric: ${utilities.assumptions.electricKwh.typical?.toLocaleString?.() ?? utilities.assumptions.electricKwh.typical} kWh/mo typical` : '',
+    utilities.assumptions?.waterGallons ? `Water/sewer: ${utilities.assumptions.waterGallons.typical?.toLocaleString?.() ?? utilities.assumptions.waterGallons.typical} gal/mo typical` : '',
+    utilities.assumptions?.gasTherms ? `Gas optional: ${utilities.assumptions.gasTherms.typical} therms/mo typical` : '',
+  ].filter(Boolean);
+
+  const warnings = [
+    ...(utilities.warnings ?? []),
+    ...blockedSources.slice(0, 3).map((source) => `${source.name || source.key || 'Utility source'}: ${source.note || source.status}`),
+  ];
+  const warningRows = warnings.slice(0, 3).map((warning) => `<li>${escapeHtml(warning)}</li>`).join('');
+  const hiddenWarningCount = Math.max(0, warnings.length - 3);
+
+  return `
+    <div class="panel wide utilities">
+      <h3>Utilities &amp; Monthly Bills</h3>
+      <table class="utility-summary"><tbody>${summaryRows}</tbody></table>
+      <h4>Core providers</h4>
+      <table class="utility-providers">
+        <thead><tr><th>Service</th><th>Provider</th><th>Status</th><th class="num">Low / Typical / High</th></tr></thead>
+        <tbody>${providerRows || '<tr><td colspan="4" class="muted">No electric, water/sewer, or gas provider estimates captured.</td></tr>'}</tbody>
+      </table>
+      <h4>Internet options</h4>
+      <table class="utility-internet">
+        <thead><tr><th>Provider</th><th>Status</th><th>Plan / speed</th><th class="num">Monthly</th></tr></thead>
+        <tbody>${internetRows || '<tr><td colspan="4" class="muted">No internet plans captured.</td></tr>'}</tbody>
+      </table>
+      <p class="utility-source-note">${escapeHtml(sourceSummary)}${internetDisplay.omittedCount ? `; ${internetDisplay.omittedCount} additional internet provider${internetDisplay.omittedCount === 1 ? '' : 's'} in source ledger` : ''}.</p>
+      ${assumptionRows.length ? `<p class="utility-assumptions">${escapeHtml(assumptionRows.join(' | '))}</p>` : ''}
+      ${warningRows ? `<div class="utility-warnings"><h4>Gaps / cautions</h4><ul>${warningRows}${hiddenWarningCount ? `<li class="muted">${hiddenWarningCount} more caution${hiddenWarningCount === 1 ? '' : 's'} in the utility sidecar.</li>` : ''}</ul></div>` : ''}
     </div>`;
 }
 
@@ -1263,6 +1477,7 @@ function buildFinalistSection(finalist, profile, options = {}) {
   const developmentText = summarizeSection(report.sections['Development and Infrastructure'], 850);
   const factsBlock = buildFactsCard(finalist);
   const hoaBlock = buildHoaRulesCard(finalist);
+  const utilitiesBlock = buildUtilitiesOptionsCard(finalist);
   const infrastructureBlock = buildDevelopmentInfrastructureSection({ construction, permits, developmentText });
   const builderBlock = buildBuilderReputationCard(finalist);
   const schoolsBlock = buildSchoolsCard(report);
@@ -1327,6 +1542,7 @@ function buildFinalistSection(finalist, profile, options = {}) {
     </div>`, 'report-page-overview');
   const reportPages = [
     overviewPage,
+    wrapReportPage(utilitiesBlock, 'report-page-utilities'),
     wrapReportPage(hoaBlock, 'report-page-hoa'),
     wrapReportPage(builderBlock, 'report-page-builder'),
     wrapReportPage(infrastructureBlock, 'report-page-infrastructure'),
@@ -1646,6 +1862,58 @@ function buildHtml(finalists, profile, mode = 'batch') {
   }
   .hoa-docs li,
   .hoa-open li { margin-bottom: 3px; }
+  .utilities {
+    background: #f0fdfa;
+    border-color: #99f6e4;
+  }
+  .utilities h3 { color: #0f766e; }
+  .utilities h4 {
+    margin: 8px 0 5px;
+    color: #334155;
+    font-size: 8.5pt;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .utility-summary,
+  .utility-providers,
+  .utility-internet {
+    width: 100%;
+    margin-bottom: 8px;
+    table-layout: fixed;
+  }
+  .utility-summary th {
+    width: 32%;
+    text-transform: none;
+    letter-spacing: 0;
+    font-size: 8.4pt;
+    background: #f8fafc;
+  }
+  .utility-summary td,
+  .utility-providers td,
+  .utility-internet td { font-size: 8.7pt; }
+  .utility-assumptions {
+    border-top: 1px dashed #99f6e4;
+    padding-top: 7px;
+    color: #475569;
+    font-size: 8.3pt !important;
+  }
+  .utility-source-note {
+    color: #64748b;
+    font-size: 8.1pt !important;
+    margin: 2px 0 5px;
+  }
+  .utility-warnings {
+    background: #fffbeb;
+    border: 1px solid #fde68a;
+    border-radius: 5px;
+    padding: 7px 9px;
+    margin-top: 8px;
+  }
+  .utility-warnings ul {
+    margin: 0;
+    padding-left: 14px;
+    font-size: 8.3pt;
+  }
   .builder {
     background: #f8fafc;
     border-color: #cbd5e1;
@@ -1872,6 +2140,7 @@ function loadFinalist(reportPath, rank = 1) {
   const packetCompanion = loadCompanionForReport(report, DEEP_PACKET_DIR, 'Deep packet');
   const builderCompanion = loadCompanionForReport(report, BUILDER_DIR, 'Builder');
   const hoaCompanion = loadCompanionForReport(report, HOA_DIR, 'HOA');
+  const utilitiesCompanion = loadUtilityOptionsForReport(report);
   const listing = loadListingFacts(report);
   const communityPayload = findCompanionJson(report, COMMUNITY_DIR);
   const community = communityPayload && communityPayload.community
@@ -1886,6 +2155,7 @@ function loadFinalist(reportPath, rank = 1) {
     sentiment: sentimentCompanion.data,
     builder: builderCompanion.data,
     hoaRules: hoaCompanion.data,
+    utilities: utilitiesCompanion.data,
     packet: packetCompanion.data,
     listing,
     community,
@@ -1894,6 +2164,7 @@ function loadFinalist(reportPath, rank = 1) {
     sentimentMismatch: sentimentCompanion.mismatchMessage,
     builderMismatch: builderCompanion.mismatchMessage,
     hoaMismatch: hoaCompanion.mismatchMessage,
+    utilitiesMismatch: utilitiesCompanion.mismatchMessage,
     packetMismatch: packetCompanion.mismatchMessage,
   };
 }

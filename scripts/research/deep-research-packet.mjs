@@ -24,6 +24,7 @@ const SENTIMENT_DIR = join(ROOT, 'output', 'sentiment');
 const COMMUNITY_DIR = join(ROOT, 'output', 'communities');
 const BUILDER_DIR = join(ROOT, 'output', 'builder');
 const HOA_DIR = join(ROOT, 'output', 'hoa');
+const UTILITY_DIR = join(ROOT, 'output', 'utilities');
 // Composite weights. construction_pressure is a modifier applied to resale_risk
 // rather than a new top-level slot so the sum still equals 1.0. Schools are no
 // longer a scored dimension -- they are captured as metadata on the report.
@@ -108,6 +109,11 @@ function buildBuilderPath(target) {
 function buildHoaPath(target) {
   const slug = slugify(`${target.address}-${target.city}-${target.state || 'NC'}`) || 'deep-target';
   return join(HOA_DIR, `${slug}.json`);
+}
+
+function buildUtilityPath(target) {
+  const slug = slugify(`${target.address}-${target.city}-${target.state || 'NC'}`) || 'deep-target';
+  return join(UTILITY_DIR, `${slug}.json`);
 }
 
 function readJsonIfExists(filePath) {
@@ -347,6 +353,60 @@ function summarizeConstruction(record) {
   };
 }
 
+function summarizeUtilityOptions(record, filePath) {
+  if (!record) {
+    return {
+      filePath: null,
+      status: 'not-run',
+      monthlyEstimate: {
+        low: null,
+        typical: null,
+        high: null,
+        includedServices: [],
+        optionalServices: [],
+        confidence: 'low',
+      },
+      assumptions: null,
+      selectedInternetPlan: null,
+      providerSummary: [],
+      sourceCoverage: [],
+      warnings: ['utility-options-check.mjs has not been run for this home.'],
+    };
+  }
+
+  const providerSummary = Object.entries(record.providers ?? {}).flatMap(([kind, providers]) => (
+    Array.isArray(providers)
+      ? providers.map((provider) => ({
+        kind,
+        name: provider.name,
+        serviceStatus: provider.serviceStatus ?? 'unconfirmed',
+        sourceUrl: provider.sourceUrl ?? '',
+        checkedAt: provider.checkedAt ?? null,
+        estimateMonthly: provider.estimateMonthly ?? null,
+        planCount: Array.isArray(provider.plans) ? provider.plans.length : 0,
+      }))
+      : []
+  ));
+
+  const blockedCoverage = (record.sourceCoverage ?? []).filter((entry) => ['blocked', 'error'].includes(entry.status));
+  const availableSignals = providerSummary.filter((provider) => ['confirmed', 'reported', 'likely'].includes(provider.serviceStatus));
+  let status = 'captured';
+  if (blockedCoverage.length > 0) status = 'captured-with-gaps';
+  if (availableSignals.length === 0) status = 'unconfirmed';
+
+  return {
+    filePath: existsSync(filePath) ? toWorkspacePath(filePath) : null,
+    status,
+    monthlyEstimate: record.monthlyEstimate ?? null,
+    assumptions: record.assumptions ?? null,
+    selectedInternetPlan: record.selectedInternetPlan ?? null,
+    providerSummary,
+    optionalEstimates: record.optionalEstimates ?? {},
+    sourceCoverage: record.sourceCoverage ?? [],
+    warnings: record.warnings ?? [],
+  };
+}
+
 async function buildPacket(target, researchContext) {
   const sentimentPlan = buildSentimentSourcePlan(target, researchContext);
   const developmentPlan = buildDevelopmentSourcePlan(target, researchContext);
@@ -358,6 +418,9 @@ async function buildPacket(target, researchContext) {
   const builderRecord = readBuilderRecord(target);
   const hoaPath = buildHoaPath(target);
   const hoaRecord = readJsonIfExists(hoaPath);
+  const utilityPath = buildUtilityPath(target);
+  const utilityRecord = readJsonIfExists(utilityPath);
+  const utilitySummary = summarizeUtilityOptions(utilityRecord, utilityPath);
   const communityPath = buildCommunityPath(target);
   const communityEvidence = readJsonIfExists(communityPath);
   const audit = auditParsedReport(target);
@@ -468,6 +531,7 @@ async function buildPacket(target, researchContext) {
       topics: (hoaRecord?.topics ?? []).slice(0, 8),
       openQuestions: hoaRecord?.openQuestions ?? [],
     },
+    utilityOptionsEvidence: utilitySummary,
     reportSections: {
       neighborhoodSentiment: target.sections['Neighborhood Sentiment'],
       schoolReview: target.sections['School Review'],
@@ -490,6 +554,7 @@ async function buildPacket(target, researchContext) {
       'If constructionEvidence.status is "not-reviewed" or "unreachable", flag construction risk as an open question rather than claiming clear air.',
       'Include builder reputation in the Risk & Builder Quality section when builderEvidence.status is "found". If status is "not-found" or "no-builder-detected", omit the builder section rather than speculating.',
       'Include HOA rules only from hoaRulesEvidence when status is "captured" or "partial"; otherwise mark HOA rules as unconfirmed and request the resale/disclosure packet.',
+      'Use utilityOptionsEvidence for utility/provider billing assumptions. Treat blocked, unconfirmed, and address-gated provider data as a gap, never as confirmed availability.',
     ],
   };
 
@@ -508,6 +573,8 @@ async function buildPacket(target, researchContext) {
     builderStatus: builderRecord?.status ?? 'not-run',
     builderName: builderRecord?.builderName ?? null,
     hoaStatus: hoaRecord?.status ?? 'not-run',
+    utilityStatus: utilitySummary.status,
+    utilityEstimateTypical: utilitySummary.monthlyEstimate?.typical ?? null,
     developmentSources: packet.sourcePlans.development.entries.length,
     schoolSources: packet.sourcePlans.school.entries.length,
     auditBlockers: criticalFindings.length,
@@ -524,6 +591,7 @@ function printSummary(results) {
     console.log(`Construction evidence: ${result.constructionStatus} (${result.constructionLevel})`);
     console.log(`Builder evidence: ${result.builderStatus}${result.builderName ? ` (${result.builderName})` : ''}`);
     console.log(`HOA rules evidence: ${result.hoaStatus}`);
+    console.log(`Utility/provider options: ${result.utilityStatus}${result.utilityEstimateTypical == null ? '' : ` ($${Number(result.utilityEstimateTypical).toFixed(0)}/mo typical)`}`);
     console.log(`Development sources queued: ${result.developmentSources}`);
     console.log(`School sources queued: ${result.schoolSources}`);
     console.log(`Audit blockers carried forward: ${result.auditBlockers}`);

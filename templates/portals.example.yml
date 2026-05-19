@@ -79,6 +79,20 @@ development_sources:
     - name: "Example DOT Projects"
       url: "https://www.exampledot.gov/projects"
 
+utility_sources:
+  electric:
+    - name: "Example State Electric Utility Tables"
+      url: "https://www.example-state.gov/electric-rates"
+  waterSewer:
+    - name: "Example City Water/Sewer Rates"
+      url: "https://www.examplecity.gov/utility-rates"
+  naturalGas:
+    - name: "Example Natural Gas Provider"
+      url: "https://www.examplegas.com/availability"
+  internet:
+    - name: "Example Broadband Availability"
+      url: "https://www.exampleisp.com/internet"
+
 search_queries:
   - name: "Zillow -- Example Town"
     query: 'site:zillow.com "Example Town" house 4 bed $500,000 $800,000'

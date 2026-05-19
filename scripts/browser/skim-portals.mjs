@@ -104,6 +104,160 @@ function canonicalPlatformKey(value) {
   return normalized;
 }
 
+function normalizeComparableValue(value) {
+  return String(value ?? '').trim().toLowerCase();
+}
+
+function decodePathSegment(segment) {
+  try {
+    return decodeURIComponent(segment);
+  } catch {
+    return segment;
+  }
+}
+
+function normalizePathSegments(pathname) {
+  return String(pathname ?? '')
+    .split('/')
+    .map((segment) => normalizeComparableValue(decodePathSegment(segment)))
+    .filter(Boolean);
+}
+
+function sortComparableTokens(tokens, separator = ',') {
+  return tokens
+    .map((token) => normalizeComparableValue(token))
+    .filter(Boolean)
+    .sort()
+    .join(separator);
+}
+
+function canonicalizeQueryParams(searchParams, { aliases = new Map(), allowedKeys = null } = {}) {
+  const normalized = [];
+
+  for (const [rawKey, rawValue] of searchParams.entries()) {
+    const aliasedKey = aliases.get(rawKey) ?? rawKey;
+    const key = normalizeComparableValue(aliasedKey);
+    if (!key) continue;
+    if (allowedKeys && !allowedKeys.has(key)) continue;
+
+    const value = normalizeComparableValue(rawValue);
+    if (!value) continue;
+    normalized.push(`${key}=${value}`);
+  }
+
+  return normalized.sort().join('&');
+}
+
+function stableSerialize(value) {
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => stableSerialize(item)).join(',')}]`;
+  }
+
+  if (value && typeof value === 'object') {
+    return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${stableSerialize(value[key])}`).join(',')}}`;
+  }
+
+  return JSON.stringify(value);
+}
+
+function detectPortalPlatform(rawUrl) {
+  try {
+    const parsed = new URL(String(rawUrl ?? '').trim());
+    const host = normalizeComparableValue(parsed.hostname).replace(/^www\./, '');
+    if (host.endsWith('zillow.com')) return 'zillow';
+    if (host.endsWith('redfin.com')) return 'redfin';
+    if (host.endsWith('realtor.com')) return 'realtor';
+    if (host.endsWith('homes.com')) return 'homes';
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+function buildZillowSearchIdentity(parsed) {
+  const pathKey = normalizePathSegments(parsed.pathname).join('/');
+  const rawState = parsed.searchParams.get('searchQueryState');
+  if (!rawState) return `zillow|${pathKey}|`;
+
+  try {
+    const state = JSON.parse(rawState) ?? {};
+    const filterState = state.filterState ?? {};
+    const managedFilterState = {};
+    for (const key of ['price', 'beds', 'baths', 'sqft', 'garSp', 'doz', 'hoa', 'built', 'isMultiFamily', 'isApartment', 'isCondo', 'isTownhouse', 'isManufactured', 'isLotLand', 'nc']) {
+      if (key in filterState) managedFilterState[key] = filterState[key];
+    }
+    return `zillow|${pathKey}|${stableSerialize(managedFilterState)}`;
+  } catch {
+    return `zillow|${pathKey}|`;
+  }
+}
+
+function buildRedfinSearchIdentity(parsed) {
+  const [pathnameRoot, rawFilterSegment = ''] = String(parsed.pathname ?? '').split('/filter/');
+  const areaKey = normalizePathSegments(pathnameRoot).join('/');
+  if (!areaKey.startsWith('city/') && !areaKey.startsWith('zipcode/')) return '';
+
+  const filterKey = sortComparableTokens(rawFilterSegment.split(','));
+  return `redfin|${areaKey}|${filterKey}`;
+}
+
+function buildRealtorSearchIdentity(parsed) {
+  const segments = normalizePathSegments(parsed.pathname);
+  if (segments[0] !== 'realestateandhomes-search' || segments.length < 2) return '';
+
+  const areaKey = segments[1];
+  const filterKey = sortComparableTokens(segments.slice(2), '/');
+  return `realtor|${areaKey}|${filterKey}`;
+}
+
+const HOMES_QUERY_ALIASES = new Map([
+  ['bath', 'bath-min'],
+  ['baths', 'bath-min'],
+]);
+
+const HOMES_STABLE_QUERY_KEYS = new Set([
+  'bath-min',
+  'price-min',
+  'price-max',
+  'sfmin',
+  'yb-min',
+  'hoa-max',
+  'gsr-min',
+  'gsr-max',
+  'parking',
+  'dom-max',
+]);
+
+function buildHomesSearchIdentity(parsed) {
+  const segments = normalizePathSegments(parsed.pathname);
+  if (segments.length === 0) return '';
+
+  const [areaKey, ...pathFilters] = segments;
+  const pathKey = sortComparableTokens(pathFilters, '/');
+  const queryKey = canonicalizeQueryParams(parsed.searchParams, {
+    aliases: HOMES_QUERY_ALIASES,
+    allowedKeys: HOMES_STABLE_QUERY_KEYS,
+  });
+
+  return `homes|${areaKey}|${pathKey}|${queryKey}`;
+}
+
+function buildSearchTabIdentity(rawUrl, explicitPlatform = null) {
+  try {
+    const parsed = new URL(String(rawUrl ?? '').trim());
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return '';
+
+    const platform = explicitPlatform ? canonicalPlatformKey(explicitPlatform) : detectPortalPlatform(parsed.toString());
+    if (platform === 'zillow') return buildZillowSearchIdentity(parsed);
+    if (platform === 'redfin') return buildRedfinSearchIdentity(parsed);
+    if (platform === 'realtor') return buildRealtorSearchIdentity(parsed);
+    if (platform === 'homes') return buildHomesSearchIdentity(parsed);
+    return '';
+  } catch {
+    return '';
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Filter sync -- mirrors the logic in scan-listings.mjs
 // ---------------------------------------------------------------------------
@@ -428,12 +582,16 @@ function normalizeOpenTabUrl(rawUrl) {
 }
 
 function buildExistingTabIndex(context) {
+  const byIdentity = new Map();
   const byUrl = new Map();
   for (const page of context.pages()) {
+    const identity = buildSearchTabIdentity(page.url());
+    if (identity && !byIdentity.has(identity)) byIdentity.set(identity, page);
+
     const key = normalizeOpenTabUrl(page.url());
     if (key && !byUrl.has(key)) byUrl.set(key, page);
   }
-  return byUrl;
+  return { byIdentity, byUrl };
 }
 
 // ---------------------------------------------------------------------------
@@ -544,8 +702,10 @@ async function main() {
       const existingTabs = buildExistingTabIndex(context);
 
       for (const target of targets) {
+        const targetIdentity = buildSearchTabIdentity(target.url, target.platform);
         const targetKey = normalizeOpenTabUrl(target.url);
-        const existingPage = targetKey ? existingTabs.get(targetKey) : null;
+        const existingPage = (targetIdentity ? existingTabs.byIdentity.get(targetIdentity) : null)
+          ?? (targetKey ? existingTabs.byUrl.get(targetKey) : null);
         if (existingPage) {
           await existingPage.bringToFront().catch(() => {});
           console.log(`  ${target.name} | ${target.area}  [already open]`);
@@ -559,8 +719,10 @@ async function main() {
           await page.waitForTimeout(SETTLE_TIMEOUT_MS);
           console.log(`  ${target.name} | ${target.area}`);
           opened.push(target);
+          const openedIdentity = buildSearchTabIdentity(page.url(), target.platform) || targetIdentity;
+          if (openedIdentity) existingTabs.byIdentity.set(openedIdentity, page);
           const openedKey = normalizeOpenTabUrl(page.url()) || targetKey;
-          if (openedKey) existingTabs.set(openedKey, page);
+          if (openedKey) existingTabs.byUrl.set(openedKey, page);
         } catch (error) {
           console.log(`  ${target.name} | ${target.area}  [navigation error: ${error.message.split('\n')[0]}]`);
           failed.push(target);

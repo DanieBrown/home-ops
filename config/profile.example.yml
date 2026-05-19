@@ -85,6 +85,7 @@ financial:
 #   sentiment    -> /home-ops deep + sentiment extract (community posts)
 #   schools      -> school metadata fetch (rating, enrollment, demographics) for PDF
 #   development  -> construction-pressure check (planned roads, rezonings)
+#   utilities    -> deep PDF utility/provider billing estimates
 # generate-portals.mjs honors these toggles when rebuilding portals.yml.
 research_sources:
   portals:
@@ -107,6 +108,11 @@ research_sources:
     county_planning: true
     municipal_planning: true
     mpo: false
+  utilities:
+    electric: true
+    water_sewer: true
+    natural_gas: true
+    internet: true
 
 workflow:
   shortlist:

@@ -17,10 +17,12 @@ import YAML from 'yaml';
 
 import { slugify as slugifyLower } from '../shared/text-utils.mjs';
 import { ROOT, OUTPUT_DIR, PROFILE_PATH, PORTALS_PATH } from '../shared/paths.mjs';
+import { DEFAULT_UTILITY_SOURCES } from '../research/utility-options-core.mjs';
 
 const REGISTRY_PATH = join(ROOT, 'config', 'city-registry.yml');
 const DEVELOPMENT_SOURCES_OUTPUT = join(OUTPUT_DIR, 'development-sources.json');
 const STATE_SOURCES_OUTPUT = join(OUTPUT_DIR, 'state-sources.json');
+const UTILITY_SOURCES_OUTPUT = join(OUTPUT_DIR, 'utility-sources.json');
 
 const STATE_RESEARCH_DEFAULTS = {
   NC: {
@@ -350,6 +352,7 @@ function buildPlatforms(areas, registryIndex, warnings, selection) {
 const DEFAULT_SENTIMENT_SELECTION = { nextdoor: true, facebook: true, google_maps: true, twitter: false };
 const DEFAULT_SCHOOL_SELECTION = { greatschools: true, niche: true, state_report_cards: true, schooldigger: false };
 const DEFAULT_DEVELOPMENT_SELECTION = { state_dot: true, county_planning: true, municipal_planning: true, mpo: false };
+const DEFAULT_UTILITY_SELECTION = { electric: true, water_sewer: true, natural_gas: true, internet: true };
 
 function resolveGroupSelection(profile, group, defaults) {
   const configured = profile?.research_sources?.[group];
@@ -373,6 +376,7 @@ function buildResearchSources(areas, profile) {
   const sentimentSelection = resolveGroupSelection(profile, 'sentiment', DEFAULT_SENTIMENT_SELECTION);
   const schoolSelection = resolveGroupSelection(profile, 'schools', DEFAULT_SCHOOL_SELECTION);
   const developmentSelection = resolveGroupSelection(profile, 'development', DEFAULT_DEVELOPMENT_SELECTION);
+  const utilitySelection = resolveGroupSelection(profile, 'utilities', DEFAULT_UTILITY_SELECTION);
 
   const countyNames = new Set();
   for (const area of areas) {
@@ -495,7 +499,21 @@ function buildResearchSources(areas, profile) {
       : [{ name: 'Regional MPO (add entry)', url: '' }];
   }
 
-  return { sentimentSources, schoolSources, developmentSources };
+  const utilitySources = {};
+  if (utilitySelection.electric) {
+    utilitySources.electric = DEFAULT_UTILITY_SOURCES.electric;
+  }
+  if (utilitySelection.water_sewer) {
+    utilitySources.waterSewer = DEFAULT_UTILITY_SOURCES.waterSewer;
+  }
+  if (utilitySelection.natural_gas) {
+    utilitySources.naturalGas = DEFAULT_UTILITY_SOURCES.naturalGas;
+  }
+  if (utilitySelection.internet) {
+    utilitySources.internet = DEFAULT_UTILITY_SOURCES.internet;
+  }
+
+  return { sentimentSources, schoolSources, developmentSources, utilitySources };
 }
 
 function buildGeneratedResearchInventories(areas, profile, research) {
@@ -617,7 +635,22 @@ function buildGeneratedResearchInventories(areas, profile, research) {
   // can cite the profile-selected inventory without reparsing YAML.
   developmentSources.portalInventory = research.developmentSources;
 
-  return { developmentSources, stateSources };
+  const utilitySources = {
+    generatedAt,
+    profileAreas: areas.map((area) => ({
+      name: area.name,
+      state: area.state,
+      county: area.county,
+      rank: area.rank ?? null,
+    })),
+    utilitySources: research.utilitySources,
+    sourceNotes: [
+      'Utility estimates are planning ranges, not guaranteed bills.',
+      'Address-gated provider pages must be recorded as blocked or unconfirmed unless availability is verified.',
+    ],
+  };
+
+  return { developmentSources, stateSources, utilitySources };
 }
 
 function buildSearchQueries(areas, hardRequirements, selection, scanKeywords = [], scanNegativeKeywords = []) {
@@ -717,6 +750,7 @@ function buildPortalsDocument(profile, registry) {
     sentiment_sources: research.sentimentSources,
     school_sources: research.schoolSources,
     development_sources: research.developmentSources,
+    utility_sources: research.utilitySources,
     search_queries: queries,
   };
 
@@ -751,12 +785,13 @@ function main() {
   mkdirSync(OUTPUT_DIR, { recursive: true });
   writeFileSync(DEVELOPMENT_SOURCES_OUTPUT, `${JSON.stringify(generatedInventories.developmentSources, null, 2)}\n`, 'utf8');
   writeFileSync(STATE_SOURCES_OUTPUT, `${JSON.stringify(generatedInventories.stateSources, null, 2)}\n`, 'utf8');
+  writeFileSync(UTILITY_SOURCES_OUTPUT, `${JSON.stringify(generatedInventories.utilitySources, null, 2)}\n`, 'utf8');
 
   const platformKeys = Object.keys(document.platforms);
   const areaCount = platformKeys.length > 0 ? document.platforms[platformKeys[0]].search_urls.length : 0;
   const platformSummary = platformKeys.length > 0 ? platformKeys.join(', ') : '(none enabled)';
   console.log(`Wrote portals.yml with ${areaCount} area(s) across platforms: ${platformSummary}.`);
-  console.log('Wrote output/development-sources.json and output/state-sources.json.');
+  console.log('Wrote output/development-sources.json, output/state-sources.json, and output/utility-sources.json.');
   if (warnings.length > 0) {
     console.log('\nWarnings:');
     for (const warning of warnings) {

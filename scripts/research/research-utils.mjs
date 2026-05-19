@@ -426,6 +426,7 @@ export function loadResearchConfig(projectRoot = ROOT) {
     portals: YAML.parse(readUtf8(join(projectRoot, 'portals.yml'))) ?? {},
     generatedDevelopmentSources: readJsonIfExists(join(projectRoot, 'output', 'development-sources.json')),
     generatedStateSources: readJsonIfExists(join(projectRoot, 'output', 'state-sources.json')),
+    generatedUtilitySources: readJsonIfExists(join(projectRoot, 'output', 'utility-sources.json')),
   };
 }
 

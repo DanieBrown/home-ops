@@ -119,6 +119,7 @@ const scripts = [
   'scripts/research/research-source-plan.mjs --address "100 Test Dr" --city "Apex" --type sentiment',
   'scripts/research/sentiment-browser-extract.mjs --help',
   'scripts/research/construction-check.mjs --help',
+  'scripts/research/utility-options-check.mjs --help',
   'scripts/reports/briefing-pdf.mjs --help',
   'scripts/system/cache-utils.mjs --help',
   'scripts/system/test-cache-loop.mjs',
@@ -168,6 +169,15 @@ for (const script of scripts) {
     pass('affordability calculation and profile patch tests');
   } else {
     fail(`affordability calculation and profile patch tests\n${result.output}`);
+  }
+}
+
+{
+  const result = run('node scripts/tests/test-utility-options.mjs');
+  if (result.ok) {
+    pass('utility estimate calculation and sidecar tests');
+  } else {
+    fail(`utility estimate calculation and sidecar tests\n${result.output}`);
   }
 }
 

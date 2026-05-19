@@ -21,6 +21,14 @@ System-layer files hold prompts, scripts, templates, and repo instructions. They
 | `reports/*` | Saved listing evaluation reports |
 | `output/*` | Generated exports or temporary artifacts |
 
+### Generated Utility Sidecars
+
+Deep utility/provider capture writes `output/utilities/{slug}.json`. The sidecar belongs to the generated user layer and must match the report address before a renderer or packet consumes it.
+
+Required top-level fields: `generatedAt`, `address`, `city`, `state`, `reportPath`, `assumptions`, `providers`, `monthlyEstimate`, `sourceCoverage`, and `warnings`.
+
+Provider entries must include `name`, `serviceStatus`, `sourceUrl`, and `checkedAt`, plus either `estimateMonthly` or `plans`. Address-gated, blocked, or unconfirmed sources must stay marked as `blocked` or `unconfirmed`; they must not be rendered as confirmed availability.
+
 ## System Layer (safe to update)
 
 | File | Purpose |

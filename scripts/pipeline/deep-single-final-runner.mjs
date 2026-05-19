@@ -17,7 +17,8 @@
  *   7. school-metadata-fetch      — Niche.com / GreatSchools details
  *   8. builder-check              — builder reputation lookup
  *   9. hoa-docs-check             — public HOA docs/rules lookup
- *  10. deep-research-packet       — assemble single-home packet
+ *  10. utility-options-check      — estimate utilities/provider options
+ *  11. deep-research-packet       — assemble single-home packet
  *
  * After this runner exits 0, the main agent should:
  *   - Launch the 3 axis agents (Sentiment, Risk & Builder, Schools)
@@ -45,7 +46,7 @@ const HELP_TEXT = `Usage:
 
 Post-evaluation phase of the single-home deep flow. Runs the source plan,
 community lookup, sentiment, construction, permits, school metadata, builder
-check, HOA document lookup, and deep-research-packet scripts against the canonical eval report
+check, HOA document lookup, utility/provider options, and deep-research-packet scripts against the canonical eval report
 the main agent just wrote.
 
 Options:
@@ -195,6 +196,12 @@ function main() {
       label: 'HOA document/rules lookup',
       cmd: NODE,
       args: ['scripts/research/hoa-docs-check.mjs', reportArg],
+    },
+    {
+      contractId: 'utility-options-check-single',
+      label: 'Utility/provider billing options',
+      cmd: NODE,
+      args: ['scripts/research/utility-options-check.mjs', reportArg],
     },
     {
       contractId: 'deep-research-packet-single',
