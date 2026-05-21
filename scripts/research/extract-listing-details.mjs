@@ -28,6 +28,7 @@ import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 import { ROOT } from '../shared/paths.mjs';
 import { slugify } from '../shared/text-utils.mjs';
+import { expiresInDays, recordArtifact, subjectKeyForTarget, withSidecarMetadata } from '../shared/knowledge-store.mjs';
 import {
   attachHostedBrowser,
   navigateAndSettle,
@@ -982,9 +983,37 @@ export async function extractListing(url, opts = {}) {
 async function writeListing(listing) {
   const slug = buildSlug(listing);
   const outputPath = join(OUTPUT_DIR, `${slug}.json`);
+  const generatedAt = new Date().toISOString();
+  const sidecar = withSidecarMetadata({
+    generatedAt,
+    ...listing,
+  }, {
+    kind: 'listing',
+    scope: 'property',
+    subject: listing,
+    subjectKey: subjectKeyForTarget(listing),
+    generatedAt,
+    expiresAt: expiresInDays(7, generatedAt),
+    sourceUrls: [listing.url, listing.canonicalUrl].filter(Boolean),
+    status: listing.listingStatus ?? 'unconfirmed',
+    warnings: listing.coverageNotes ?? [],
+  });
   await mkdir(OUTPUT_DIR, { recursive: true });
-  await writeFile(outputPath, `${JSON.stringify(listing, null, 2)}\n`, 'utf8');
-  return { slug, outputPath };
+  await writeFile(outputPath, `${JSON.stringify(sidecar, null, 2)}\n`, 'utf8');
+  recordArtifact({
+    path: outputPath,
+    kind: 'listing',
+    scope: 'property',
+    subject: listing,
+    subjectKey: sidecar.subjectKey,
+    commandId: sidecar.commandId,
+    generatedAt: sidecar.generatedAt,
+    expiresAt: sidecar.expiresAt,
+    sourceUrls: sidecar.sourceUrls,
+    status: sidecar.status,
+    warnings: sidecar.warnings,
+  });
+  return { slug, outputPath, listing: sidecar };
 }
 
 function printSummary(listing, outputPath) {
@@ -1033,14 +1062,14 @@ async function main() {
   }
 
   const listing = await extractListing(config.url, { profileName: config.profileName });
-  const { outputPath } = await writeListing(listing);
+  const { outputPath, listing: writtenListing } = await writeListing(listing);
 
   if (config.json) {
-    console.log(JSON.stringify({ outputPath, listing }, null, 2));
+    console.log(JSON.stringify({ outputPath, listing: writtenListing }, null, 2));
     return;
   }
 
-  printSummary(listing, outputPath);
+  printSummary(writtenListing, outputPath);
 }
 
 const isDirectEntry = process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1];

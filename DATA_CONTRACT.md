@@ -19,7 +19,23 @@ System-layer files hold prompts, scripts, templates, and repo instructions. They
 | `data/shortlist.md` | Latest compare top-three tags and deep handoff state |
 | `data/scan-history.tsv` | Scan dedup and history log |
 | `reports/*` | Saved listing evaluation reports |
-| `output/*` | Generated exports or temporary artifacts |
+| `output/*` | Generated user-layer facts, learned source inventories, and exports |
+
+### Learned Output Layer
+
+`output/` is durable user-layer storage. Resets should clear transient run clutter, not learned facts about places or properties.
+
+Durable learned stores include:
+
+- `output/knowledge/index.json` -- index of learned sidecars.
+- `output/knowledge/commands.jsonl` -- per-command memory log.
+- `output/areas/{area-slug}.json` -- reusable area facts and source references.
+- `output/geocode/`, `output/permits/`, `output/construction/`, `output/school-metadata/`, `output/utilities/`, `output/sentiment/`, `output/communities/`, `output/listings/`, `output/builder/`, and `output/hoa/`.
+- `output/*-sources.json` source inventories.
+
+One-off scripts and scratch artifacts must live under `.home-ops/tmp/{commandId}/` or the OS temp directory and be removed after use.
+
+Generated sidecars should include additive metadata when possible: `schemaVersion`, `scope`, `subjectKey`, `commandId`, `generatedAt`, `expiresAt`, `sourceUrls`, `status`, and `warnings`. Readers must tolerate older sidecars that do not yet include those fields.
 
 ### Generated Utility Sidecars
 
@@ -47,6 +63,7 @@ Provider entries must include `name`, `serviceStatus`, `sourceUrl`, and `checked
 | `modes/_profile.template.md` | Starter template for buyer overrides |
 | `templates/states.yml` | Canonical listing states |
 | `templates/portals.example.yml` | Example scanner configuration |
+| `templates/research-defaults.yml` | Reusable seed catalog for state/county/municipal source discovery |
 | `CLAUDE.md` | Agent operating instructions |
 | `AGENTS.md` | Codex routing instructions |
 | `docs/*` | Documentation |
@@ -59,6 +76,6 @@ Provider entries must include `name`, `serviceStatus`, `sourceUrl`, and `checked
 
 ## The Rule
 
-If a file belongs to the user layer, updates must not overwrite, delete, or reset it.
+If a file belongs to the user layer, updates must not overwrite, delete, or reset it. `reset:data` preserves learned `output/` facts by default; use `--purge-knowledge` only when the user explicitly wants that full deletion.
 
 If a file belongs to the system layer, it can be improved or replaced as the shared product evolves.

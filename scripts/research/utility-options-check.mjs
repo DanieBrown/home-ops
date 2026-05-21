@@ -18,6 +18,7 @@ import { slugify } from '../shared/text-utils.mjs';
 import { ensureGeocode } from './geocode.mjs';
 import { loadResearchConfig, parseReport, parseShortlist } from './research-utils.mjs';
 import { buildUtilityOptionsRecord } from './utility-options-core.mjs';
+import { expiresInDays, recordArtifact, subjectKeyForTarget, withSidecarMetadata } from '../shared/knowledge-store.mjs';
 
 const OUTPUT_DIR = join(ROOT, 'output', 'utilities');
 
@@ -167,8 +168,35 @@ async function run() {
       skipNetwork: config.noNetwork,
     });
     const outputPath = buildOutputPath(target);
-    await writeFile(outputPath, `${JSON.stringify(record, null, 2)}\n`, 'utf8');
-    records.push({ ...record, outputPath });
+    const sourceUrls = Object.values(record.sourceCoverage ?? {})
+      .flatMap((entry) => Array.isArray(entry) ? entry : [entry])
+      .map((entry) => entry?.sourceUrl ?? entry?.url)
+      .filter(Boolean);
+    const sidecar = withSidecarMetadata(record, {
+      kind: 'utilities',
+      scope: 'property',
+      subject: target,
+      subjectKey: subjectKeyForTarget(target),
+      expiresAt: expiresInDays(90, record.generatedAt),
+      sourceUrls,
+      status: 'reviewed',
+      warnings: record.warnings ?? [],
+    });
+    await writeFile(outputPath, `${JSON.stringify(sidecar, null, 2)}\n`, 'utf8');
+    recordArtifact({
+      path: outputPath,
+      kind: 'utilities',
+      scope: 'property',
+      subject: target,
+      subjectKey: sidecar.subjectKey,
+      commandId: sidecar.commandId,
+      generatedAt: sidecar.generatedAt,
+      expiresAt: sidecar.expiresAt,
+      sourceUrls: sidecar.sourceUrls,
+      status: sidecar.status,
+      warnings: sidecar.warnings,
+    });
+    records.push({ ...sidecar, outputPath });
   }
 
   if (config.json) {

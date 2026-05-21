@@ -35,6 +35,7 @@ import {
 } from './sentiment-scoring.mjs';
 import { crawl4aiFetchPage } from './crawl4ai-utils.mjs';
 import { slugify } from '../shared/text-utils.mjs';
+import { expiresInDays, recordArtifact, subjectKeyForTarget, withSidecarMetadata } from '../shared/knowledge-store.mjs';
 
 const OUTPUT_DIR = join(ROOT, 'output', 'sentiment');
 const PUBLIC_KEYS = new Set(['google_maps']);
@@ -361,8 +362,35 @@ async function extractTarget(target, researchContext) {
   };
 
   await mkdir(OUTPUT_DIR, { recursive: true });
-  await writeFile(outputPath, `${JSON.stringify(output, null, 2)}\n`, 'utf8');
-  return { ...output, outputPath, newSourceCount: newSources.length };
+  const sourceUrls = mergedSources.flatMap((source) => [
+    source.url,
+    ...(source.queryResults ?? []).map((query) => query.finalUrl || query.searchUrl),
+  ]).filter(Boolean);
+  const sidecar = withSidecarMetadata(output, {
+    kind: 'sentiment',
+    scope: 'property',
+    subject: target,
+    subjectKey: subjectKeyForTarget(target),
+    expiresAt: expiresInDays(30, output.generatedAt),
+    sourceUrls,
+    status: mergedSources.length > 0 ? 'reviewed' : 'unconfigured',
+    warnings: mergedSources.length > 0 ? [] : ['No public sentiment sources were configured for this target.'],
+  });
+  await writeFile(outputPath, `${JSON.stringify(sidecar, null, 2)}\n`, 'utf8');
+  recordArtifact({
+    path: outputPath,
+    kind: 'sentiment',
+    scope: 'property',
+    subject: target,
+    subjectKey: sidecar.subjectKey,
+    commandId: sidecar.commandId,
+    generatedAt: sidecar.generatedAt,
+    expiresAt: sidecar.expiresAt,
+    sourceUrls: sidecar.sourceUrls,
+    status: sidecar.status,
+    warnings: sidecar.warnings,
+  });
+  return { ...sidecar, outputPath, newSourceCount: newSources.length };
 }
 
 function printSummary(results) {

@@ -30,6 +30,8 @@ import {
   saveCache,
 } from '../system/cache-utils.mjs';
 import { slugify } from '../shared/text-utils.mjs';
+import { expiresInDays, recordArtifact, subjectKeyForTarget, withSidecarMetadata } from '../shared/knowledge-store.mjs';
+import { compileConfiguredPatterns, readResearchDefaults } from '../shared/research-defaults.mjs';
 
 const COMMUNITY_CACHE_NAME = 'community';
 const COMMUNITY_CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
@@ -38,16 +40,7 @@ const OUTPUT_DIR = join(ROOT, 'output', 'communities');
 const LOOKUP_URL = 'https://www.mapdevelopers.com/what-neighborhood-am-i-in.php';
 const PAGE_TIMEOUT_MS = 30000;
 const RESULT_TIMEOUT_MS = 15000;
-const INVALID_COMMUNITY_PATTERNS = [
-  /map my location along with the neighborhood you are in at the moment/i,
-  /find my neighborhood/i,
-  /what neighborhood am i in/i,
-  /share my location/i,
-  /your approximiate location/i,
-  /this is the location information for the address you searched/i,
-  /you can share this map with the link below/i,
-  /^not found$/i,
-];
+const invalidCommunityPatterns = compileConfiguredPatterns(readResearchDefaults().community?.invalid_patterns ?? []);
 const FIELD_LABEL_TOKENS = new Set(['address', 'city', 'state', 'zipcode', 'zip', 'code', 'county']);
 
 const HELP_TEXT = `Usage:
@@ -146,7 +139,7 @@ function sanitizeCommunityName(value) {
     return null;
   }
 
-  if (INVALID_COMMUNITY_PATTERNS.some((pattern) => pattern.test(community))) {
+  if (invalidCommunityPatterns.some((pattern) => pattern.test(community))) {
     return null;
   }
 
@@ -467,8 +460,30 @@ async function lookupTarget(context, target, cacheState) {
       };
       const outputPath = buildOutputPath(target);
       await mkdir(OUTPUT_DIR, { recursive: true });
-      await writeFile(outputPath, `${JSON.stringify(cachedOutput, null, 2)}\n`, 'utf8');
-      return { ...cachedOutput, outputPath };
+      const sidecar = withSidecarMetadata(cachedOutput, {
+        kind: 'community',
+        scope: 'property',
+        subject: target,
+        subjectKey: subjectKeyForTarget(target),
+        expiresAt: expiresInDays(30, cachedOutput.generatedAt),
+        sourceUrls: Object.values(urls).filter(Boolean),
+        status: cachedOutput.status,
+      });
+      await writeFile(outputPath, `${JSON.stringify(sidecar, null, 2)}\n`, 'utf8');
+      recordArtifact({
+        path: outputPath,
+        kind: 'community',
+        scope: 'property',
+        subject: target,
+        subjectKey: sidecar.subjectKey,
+        commandId: sidecar.commandId,
+        generatedAt: sidecar.generatedAt,
+        expiresAt: sidecar.expiresAt,
+        sourceUrls: sidecar.sourceUrls,
+        status: sidecar.status,
+        warnings: sidecar.warnings,
+      });
+      return { ...sidecar, outputPath };
     }
   }
 
@@ -488,7 +503,30 @@ async function lookupTarget(context, target, cacheState) {
   };
   const outputPath = buildOutputPath(target);
   await mkdir(OUTPUT_DIR, { recursive: true });
-  await writeFile(outputPath, `${JSON.stringify(output, null, 2)}\n`, 'utf8');
+  const sidecar = withSidecarMetadata(output, {
+    kind: 'community',
+    scope: 'property',
+    subject: target,
+    subjectKey: subjectKeyForTarget(target),
+    expiresAt: expiresInDays(30, output.generatedAt),
+    sourceUrls: [LOOKUP_URL, ...Object.values(urls)].filter(Boolean),
+    status: output.status,
+    warnings: output.status === 'resolved' ? [] : ['No community match was confirmed.'],
+  });
+  await writeFile(outputPath, `${JSON.stringify(sidecar, null, 2)}\n`, 'utf8');
+  recordArtifact({
+    path: outputPath,
+    kind: 'community',
+    scope: 'property',
+    subject: target,
+    subjectKey: sidecar.subjectKey,
+    commandId: sidecar.commandId,
+    generatedAt: sidecar.generatedAt,
+    expiresAt: sidecar.expiresAt,
+    sourceUrls: sidecar.sourceUrls,
+    status: sidecar.status,
+    warnings: sidecar.warnings,
+  });
 
   if (cacheState?.cache && !cacheState.disabled && cacheKey) {
     putCacheEntry(cacheState.cache, cacheKey, {
@@ -499,7 +537,7 @@ async function lookupTarget(context, target, cacheState) {
     cacheState.misses += 1;
   }
 
-  return { ...output, outputPath };
+  return { ...sidecar, outputPath };
 }
 
 function printSummary(results) {

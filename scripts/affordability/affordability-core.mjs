@@ -169,6 +169,75 @@ export function normalizeHousingPaymentPct(value) {
   return Math.min(numeric, 45);
 }
 
+export function firstProfileState(profile) {
+  const area = profile?.search?.areas?.[0];
+  return area?.state ?? '';
+}
+
+export function firstProfileArea(profile) {
+  const areas = profile?.search?.areas;
+  if (!Array.isArray(areas) || areas.length === 0) return '';
+  return areas.map((area) => area.name).filter(Boolean).join(', ');
+}
+
+export function estimateMonthlyTakeHomeFromAnswers(answers = {}) {
+  const direct = toNumber(answers.monthly_take_home);
+  if (Number.isFinite(direct) && direct > 0) return direct;
+
+  const annualGross = (toNumber(answers.primary_annual_salary) ?? 0)
+    + (toNumber(answers.secondary_annual_salary) ?? 0)
+    + (toNumber(answers.other_annual_income) ?? 0);
+  const takeHomePct = toNumber(answers.take_home_pct) ?? 70;
+  const monthlyHelp = toNumber(answers.other_monthly_contribution) ?? 0;
+  const override = toNumber(answers.monthly_take_home_override);
+  if (Number.isFinite(override) && override > 0) return override + monthlyHelp;
+  if (annualGross > 0 || monthlyHelp > 0) return (annualGross * (takeHomePct / 100) / 12) + monthlyHelp;
+  return direct;
+}
+
+export function normalizeAffordabilityAnswers(answers = {}, profile = {}, pmmsRates = null) {
+  const termYears = normalizeTermYears(answers.loan_term_years ?? answers.term_years);
+  const overrideRate = toNumber(answers.interest_rate_override);
+  const selectedPmmsRate = termYears === 30 ? pmmsRates?.rate30Pct : pmmsRates?.rate15Pct;
+  const rateAssumptionPct = Number.isFinite(overrideRate) && overrideRate > 0 ? overrideRate : selectedPmmsRate;
+
+  if (!Number.isFinite(rateAssumptionPct) || rateAssumptionPct <= 0) {
+    throw new Error('No interest rate is available. Reopen the affordability wizard and enter an interest-rate override, then submit again.');
+  }
+
+  const rateSource = Number.isFinite(overrideRate) && overrideRate > 0
+    ? 'User override'
+    : `Freddie Mac PMMS (${pmmsRates?.asOf ?? 'latest available'})`;
+  const profileHoa = toNumber(profile?.search?.soft_preferences?.hoa_max_monthly);
+  const hard = profile?.search?.hard_requirements ?? {};
+
+  return {
+    termYears,
+    monthlyTakeHomePay: estimateMonthlyTakeHomeFromAnswers(answers),
+    monthlyDebt: toNumber(answers.monthly_debt) ?? 0,
+    cashAvailable: toNumber(answers.cash_available),
+    creditTier: answers.credit_tier ?? 'unknown',
+    targetState: answers.target_state || firstProfileState(profile),
+    targetArea: answers.target_area || firstProfileArea(profile),
+    rateAssumptionPct,
+    rate30Pct: pmmsRates?.rate30Pct,
+    rate15Pct: pmmsRates?.rate15Pct,
+    rateSource,
+    comparisonRateSource: pmmsRates ? `Freddie Mac PMMS (${pmmsRates.asOf ?? 'latest available'})` : rateSource,
+    propertyTaxPct: toNumber(answers.property_tax_pct) ?? 1.0,
+    insurancePct: toNumber(answers.insurance_pct) ?? 0.35,
+    hoaMonthly: toNumber(answers.hoa_monthly) ?? profileHoa ?? 0,
+    closingCostPctMin: toNumber(answers.closing_cost_pct_min) ?? 2,
+    closingCostPctMax: toNumber(answers.closing_cost_pct_max) ?? 5,
+    housingPaymentPct: toNumber(answers.housing_payment_pct) ?? 25,
+    downPaymentPct: toNumber(answers.down_payment_pct) ?? toNumber(profile?.financial?.down_payment_pct) ?? 20,
+    priceFloorMode: answers.price_floor_mode ?? 'current_profile',
+    priceFloorCustom: toNumber(answers.price_floor_custom),
+    currentPriceMin: toNumber(hard.price_min),
+    includeComparison: answers.include_comparison !== false,
+  };
+}
+
 function ltvBucket(ltvPct) {
   const ltv = toNumber(ltvPct);
   if (!Number.isFinite(ltv)) return LLPA_BY_LTV_BUCKET[0];
@@ -299,9 +368,10 @@ export function calculateScenario(input) {
     mortgageInsurancePct: toNumber(input.mortgageInsurancePct) ?? 0.55,
   };
 
+  const debtAdjustedTakeHomePay = Math.max(0, monthlyTakeHomePay - Math.max(0, monthlyDebt));
   const ltvPct = 100 - assumptions.downPaymentPct;
   const llpa = getLlpaPct({ termYears, creditTier: input.creditTier, ltvPct });
-  const monthlyPaymentCap = monthlyTakeHomePay * (housingPaymentPct / 100);
+  const monthlyPaymentCap = debtAdjustedTakeHomePay * (housingPaymentPct / 100);
   const paymentCap = priceCapByPayment(monthlyPaymentCap, assumptions);
   const cashCap = priceCapByCash(cashAvailable, assumptions, llpa.pct);
   const unroundedRecommended = Math.min(paymentCap, cashCap);
@@ -317,7 +387,7 @@ export function calculateScenario(input) {
 
   const warnings = [];
   if (monthlyDebt > 0) {
-    warnings.push(`Existing monthly debt does not raise the ${housingPaymentPct}% housing cap; have a lender review total DTI before relying on this estimate.`);
+    warnings.push(`Existing monthly debt reduced the ${housingPaymentPct}% housing cap before estimating the purchase range; have a lender review total DTI before relying on this estimate.`);
   }
   if (llpa.creditTierKey === 'unknown') {
     warnings.push(llpa.note);
@@ -337,6 +407,7 @@ export function calculateScenario(input) {
     cash_price_cap: cashCap,
     constraint: paymentCap <= cashCap ? 'monthly_payment_cap' : 'cash_available',
     monthly_payment_cap: monthlyPaymentCap,
+    debt_adjusted_monthly_take_home: debtAdjustedTakeHomePay,
     payment_at_recommended: paymentAtRecommended,
     upfront_cash_at_recommended: upfrontCash,
     assumptions: {
@@ -355,9 +426,40 @@ export function calculateScenario(input) {
   };
 }
 
+export function resolveRecommendedPriceMin({
+  mode = 'current_profile',
+  customAmount = null,
+  currentPriceMin = null,
+  recommendedPriceMax = 0,
+} = {}) {
+  const max = toNumber(recommendedPriceMax) ?? 0;
+  if (max <= 0) return 0;
+
+  if (mode === 'none') return 0;
+  if (mode === 'custom') {
+    const custom = toNumber(customAmount);
+    if (!Number.isFinite(custom) || custom <= 0) return roundDown(max * 0.85);
+    return Math.min(roundDown(custom), max);
+  }
+
+  if (mode === 'current_profile') {
+    const current = toNumber(currentPriceMin);
+    if (Number.isFinite(current) && current > 0 && current <= max) return roundDown(current);
+    return roundDown(max * 0.85);
+  }
+
+  return roundDown(max * 0.85);
+}
+
 export function calculateAffordability(input) {
   const selectedTermYears = normalizeTermYears(input.termYears);
   const selected = calculateScenario({ ...input, termYears: selectedTermYears });
+  const recommendedPriceMin = resolveRecommendedPriceMin({
+    mode: input.priceFloorMode ?? 'current_profile',
+    customAmount: input.priceFloorCustom,
+    currentPriceMin: input.currentPriceMin,
+    recommendedPriceMax: selected.recommended_price_max,
+  });
   let comparison = null;
 
   if (input.includeComparison !== false) {
@@ -374,7 +476,7 @@ export function calculateAffordability(input) {
   }
 
   const sourceNotes = [
-    `Primary cap uses ${selected.assumptions.housingPaymentPct}% of monthly take-home pay.`,
+    `Primary cap uses ${selected.assumptions.housingPaymentPct}% of monthly take-home pay after subtracting non-mortgage monthly debt.`,
     'Monthly payment includes principal, interest, estimated property tax, homeowners insurance, HOA, and mortgage insurance when applicable.',
     '30-year conventional estimates include Fannie Mae purchase LLPA credit/LTV pricing pressure for terms greater than 15 years.',
     'Freddie Mac PMMS rates are national averages, not lender quotes or preapproval.',
@@ -383,6 +485,7 @@ export function calculateAffordability(input) {
   return {
     calculated_at: new Date().toISOString(),
     selected_term_years: selectedTermYears,
+    recommended_price_min: recommendedPriceMin,
     recommended_price_max: selected.recommended_price_max,
     monthly_payment_cap: selected.monthly_payment_cap,
     selected,
@@ -463,12 +566,12 @@ export function calculateIncomeNeeded(input) {
 }
 
 export function buildProfilePatchPreview(profile, result) {
-  const hard = profile?.search?.hard_requirements ?? {};
-  const currentMin = toNumber(hard.price_min);
   const newMax = result.recommended_price_max;
-  const newMin = Number.isFinite(currentMin) && currentMin > 0 && currentMin <= newMax
-    ? currentMin
-    : roundDown(newMax * 0.85);
+  const newMin = toNumber(result.recommended_price_min) ?? resolveRecommendedPriceMin({
+    mode: 'current_profile',
+    currentPriceMin: profile?.search?.hard_requirements?.price_min,
+    recommendedPriceMax: newMax,
+  });
   const selected = result.selected;
 
   return {

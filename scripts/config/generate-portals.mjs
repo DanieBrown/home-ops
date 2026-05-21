@@ -13,169 +13,25 @@
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
 import { join } from 'path';
+import { pathToFileURL } from 'url';
 import YAML from 'yaml';
 
 import { slugify as slugifyLower } from '../shared/text-utils.mjs';
 import { ROOT, OUTPUT_DIR, PROFILE_PATH, PORTALS_PATH } from '../shared/paths.mjs';
 import { DEFAULT_UTILITY_SOURCES } from '../research/utility-options-core.mjs';
+import {
+  expiresInDays,
+  relativeFromRoot,
+  recordArtifact,
+  upsertAreaKnowledge,
+  withSidecarMetadata,
+} from '../shared/knowledge-store.mjs';
+import { RESEARCH_DEFAULTS_PATH, stateResearchDefaults } from '../shared/research-defaults.mjs';
 
 const REGISTRY_PATH = join(ROOT, 'config', 'city-registry.yml');
 const DEVELOPMENT_SOURCES_OUTPUT = join(OUTPUT_DIR, 'development-sources.json');
 const STATE_SOURCES_OUTPUT = join(OUTPUT_DIR, 'state-sources.json');
 const UTILITY_SOURCES_OUTPUT = join(OUTPUT_DIR, 'utility-sources.json');
-
-const STATE_RESEARCH_DEFAULTS = {
-  NC: {
-    reddit_subreddits: ['r/raleigh', 'r/bullcity', 'r/NorthCarolina', 'r/triangle'],
-    state_report_card: {
-      url: 'https://ncreports.ondemand.sas.com/dashboard',
-      note: 'NC School Report Cards -- operated by NCDPI.',
-    },
-    transportation: [
-      {
-        name: 'NCDOT STIP Projects',
-        url: 'https://www.ncdot.gov/projects/state-transportation-improvement-program/Pages/default.aspx',
-        layers: [
-          {
-            name: 'NCDOT STIP points',
-            url: 'https://gis11.services.ncdot.gov/arcgis/rest/services/NCDOT_STIP/MapServer/0',
-            geometryType: 'point',
-          },
-          {
-            name: 'NCDOT STIP lines',
-            url: 'https://gis11.services.ncdot.gov/arcgis/rest/services/NCDOT_STIP/MapServer/1',
-            geometryType: 'line',
-          },
-        ],
-      },
-      {
-        name: 'CAMPO (Capital Area MPO)',
-        url: 'https://www.campo-nc.us/',
-      },
-    ],
-    counties: {
-      Wake: {
-        name: 'Wake County Planning, Development & Inspections',
-        url: 'https://www.wake.gov/departments-government/planning-development-inspections',
-      },
-      Harnett: {
-        name: 'Harnett County Planning Services',
-        url: 'https://www.harnett.org/planning/',
-      },
-      Durham: {
-        name: 'Durham County Planning',
-        url: 'https://www.dconc.gov/county-departments/departments-f-z/planning',
-      },
-      Johnston: {
-        name: 'Johnston County Planning',
-        url: 'https://www.johnstonnc.com/mainsite2/content.cfm?pd=12',
-      },
-      Chatham: {
-        name: 'Chatham County Planning',
-        url: 'https://www.chathamcountync.gov/government/departments-programs/planning',
-      },
-      Orange: {
-        name: 'Orange County Planning',
-        url: 'https://www.orangecountync.gov/139/Planning-Inspections',
-      },
-    },
-    municipalities: {
-      'holly springs': {
-        name: 'Holly Springs Interactive Development Activity Map',
-        url: 'https://hollyspringsnc.gov/321/Maps',
-        note: 'Use the Development Activity Map / Interactive Development Activity Map for proposed, approved, and under-construction projects.',
-        lookupMethods: ['address', 'parcel', 'project-name', 'nearby-road'],
-      },
-      'fuquay-varina': {
-        name: 'Fuquay-Varina Interactive Development Map',
-        url: 'https://fuquay-varina.org/304/Whats-Coming-to-Fuquay-Varina',
-        note: 'Use the interactive development map and project tabs for proposed, approved, under-construction, and completed projects.',
-        lookupMethods: ['address', 'parcel', 'project-name', 'nearby-road'],
-      },
-      apex: {
-        name: 'Apex Interactive Development Map',
-        url: 'https://www.apexnc.org/659/View',
-        note: 'Use the development map for proposed, approved, and under-construction projects.',
-        lookupMethods: ['address', 'parcel', 'project-name', 'nearby-road'],
-      },
-      cary: {
-        name: 'Cary Planning & Development Services',
-        url: 'https://www.carync.gov/services-publications/planning-development',
-      },
-      raleigh: {
-        name: 'Raleigh Planning & Development',
-        url: 'https://raleighnc.gov/planning',
-      },
-      durham: {
-        name: 'Durham City-County Planning',
-        url: 'https://www.durhamnc.gov/228/City-County-Planning',
-      },
-      morrisville: {
-        name: 'Morrisville Planning',
-        url: 'https://www.townofmorrisville.org/government/departments/planning',
-      },
-      'wake forest': {
-        name: 'Wake Forest Planning',
-        url: 'https://www.wakeforestnc.gov/departments/planning',
-      },
-    },
-    property_permits: {
-      Wake: [
-        {
-          name: 'Wake County Permit Search (pre-2018)',
-          url: 'https://permitsearch.wake.gov/',
-          jurisdiction: 'Wake County',
-          lookupMethods: ['address', 'pin', 'owner', 'permit-number'],
-          note: 'Historical Wake County permit search. Page states post-7/1/2018 records should be checked in the Wake County Permit Portal.',
-        },
-        {
-          name: 'Wake County Permit Portal (EnerGov SelfService)',
-          url: 'https://wakecountync-energovpub.tylerhost.net/apps/SelfService#/search',
-          jurisdiction: 'Wake County',
-          lookupMethods: ['address', 'pin', 'permit-number'],
-          note: 'Use for current county-issued permit records. Populate the search bar with the target service address before extracting permit, inspection, applicant, contractor, builder, or owner details; municipal addresses may also need the city portal.',
-        },
-      ],
-    },
-    municipal_property_permits: {
-      'holly springs': {
-        name: 'Holly Springs CityView Portal',
-        url: 'https://cityview.hollyspringsnc.us/portal',
-        jurisdiction: 'Town of Holly Springs',
-        lookupMethods: ['service-address', 'permit-number', 'application-search', 'property-search'],
-        note: 'Public portal exposes Building & UDO permit application search and property search.',
-      },
-      'fuquay-varina': {
-        name: 'Fuquay-Varina ePermits',
-        url: 'https://esuite.fuquay-varina.org/esuite.permits/',
-        jurisdiction: 'Town of Fuquay-Varina',
-        lookupMethods: ['service-address', 'permit-number'],
-        note: 'Public Information Search supports service-address and permit-number lookups.',
-      },
-      apex: {
-        name: 'Apex ePermits Public Information Search',
-        url: 'https://apexnc.org/183/Building-Inspections-Permits',
-        jurisdiction: 'Town of Apex',
-        lookupMethods: ['address', 'permit-number'],
-        note: 'Town guidance says public users can search by permit number or address for issued permits and inspection results.',
-      },
-      cary: {
-        name: 'Cary Click2Gov Permit Portal',
-        url: 'https://www.carync.gov/services-publications/click2gov-landing-page',
-        jurisdiction: 'Town of Cary',
-        lookupMethods: ['address', 'permit-number', 'inspection-results'],
-        note: 'Cary Click2Gov provides permit search, inspection scheduling, and inspection results.',
-      },
-      durham: {
-        name: 'Durham LDO Application/Permit Search',
-        url: 'https://ldo4.durhamnc.gov/DurhamWeb/Search/ApplicationSearchResults',
-        jurisdiction: 'City of Durham',
-        lookupMethods: ['application-permit', 'related-permit-summary', 'parcel-address-pin-owner', 'inspection'],
-        note: 'Search does not require login. Use Application/Permit for direct permit records, Parcel by Parcel ID/PIN/Address/Owner Name when address search is thin, and Inspection for inspection history.',
-      },
-    },
-  },
-};
 
 function readYaml(path) {
   if (!existsSync(path)) {
@@ -189,6 +45,10 @@ function optionalYaml(path) {
     return {};
   }
   return YAML.parse(readFileSync(path, 'utf8')) ?? {};
+}
+
+export function readResearchDefaults(path = RESEARCH_DEFAULTS_PATH) {
+  return stateResearchDefaults(path);
 }
 
 function normalizeKey(name, state) {
@@ -368,10 +228,10 @@ function resolveGroupSelection(profile, group, defaults) {
   return resolved;
 }
 
-function buildResearchSources(areas, profile) {
+function buildResearchSources(areas, profile, researchDefaults) {
   const states = new Set(areas.map((area) => (area.state ?? 'NC').toUpperCase()));
   const primaryState = areas[0]?.state?.toUpperCase() ?? 'NC';
-  const defaults = STATE_RESEARCH_DEFAULTS[primaryState];
+  const defaults = researchDefaults[primaryState];
 
   const sentimentSelection = resolveGroupSelection(profile, 'sentiment', DEFAULT_SENTIMENT_SELECTION);
   const schoolSelection = resolveGroupSelection(profile, 'schools', DEFAULT_SCHOOL_SELECTION);
@@ -516,8 +376,8 @@ function buildResearchSources(areas, profile) {
   return { sentimentSources, schoolSources, developmentSources, utilitySources };
 }
 
-function buildGeneratedResearchInventories(areas, profile, research) {
-  const states = [...new Set(areas.map((area) => area.state || 'NC'))];
+function buildGeneratedResearchInventories(areas, profile, research, researchDefaults) {
+  const states = [...new Set(areas.map((area) => String(area.state || 'NC').toUpperCase()))];
   const generatedAt = new Date().toISOString();
 
   const stateSources = {
@@ -526,7 +386,7 @@ function buildGeneratedResearchInventories(areas, profile, research) {
   };
 
   for (const state of states) {
-    const defaults = STATE_RESEARCH_DEFAULTS[state] ?? {};
+    const defaults = researchDefaults[state] ?? {};
     stateSources.states[state] = {
       transportation: (defaults.transportation ?? []).map((source) => ({
         ...source,
@@ -543,7 +403,7 @@ function buildGeneratedResearchInventories(areas, profile, research) {
   const propertyPermitDefaults = {};
   const municipalPropertyPermitDefaults = {};
   for (const state of states) {
-    const defaults = STATE_RESEARCH_DEFAULTS[state] ?? {};
+    const defaults = researchDefaults[state] ?? {};
     Object.assign(municipalityDefaults, defaults.municipalities ?? {});
     Object.assign(countyDefaults, defaults.counties ?? {});
     Object.assign(propertyPermitDefaults, defaults.property_permits ?? {});
@@ -708,7 +568,7 @@ function buildSearchQueries(areas, hardRequirements, selection, scanKeywords = [
   return queries;
 }
 
-function buildPortalsDocument(profile, registry) {
+export function buildPortalsDocument(profile, registry, researchDefaults = {}) {
   const areas = (profile.search?.areas ?? [])
     .map((entry) => ({
       name: String(entry?.name ?? '').trim(),
@@ -733,8 +593,8 @@ function buildPortalsDocument(profile, registry) {
       'No listing portals are enabled in research_sources.portals. Scan will have nothing to fetch.',
     );
   }
-  const research = buildResearchSources(areas, profile);
-  const generatedInventories = buildGeneratedResearchInventories(areas, profile, research);
+  const research = buildResearchSources(areas, profile, researchDefaults);
+  const generatedInventories = buildGeneratedResearchInventories(areas, profile, research, researchDefaults);
   const scanKeywords = Array.isArray(profile.search?.scan_keywords) ? profile.search.scan_keywords : [];
   const scanNegativeKeywords = Array.isArray(profile.search?.scan_negative_keywords) ? profile.search.scan_negative_keywords : [];
   const queries = buildSearchQueries(
@@ -779,13 +639,63 @@ function serialize(document) {
 function main() {
   const profile = readYaml(PROFILE_PATH);
   const registry = optionalYaml(REGISTRY_PATH);
-  const { document, warnings, generatedInventories } = buildPortalsDocument(profile, registry);
+  const researchDefaults = readResearchDefaults();
+  const { document, warnings, generatedInventories } = buildPortalsDocument(profile, registry, researchDefaults);
   const yamlText = serialize(document);
   writeFileSync(PORTALS_PATH, yamlText, 'utf8');
   mkdirSync(OUTPUT_DIR, { recursive: true });
-  writeFileSync(DEVELOPMENT_SOURCES_OUTPUT, `${JSON.stringify(generatedInventories.developmentSources, null, 2)}\n`, 'utf8');
-  writeFileSync(STATE_SOURCES_OUTPUT, `${JSON.stringify(generatedInventories.stateSources, null, 2)}\n`, 'utf8');
-  writeFileSync(UTILITY_SOURCES_OUTPUT, `${JSON.stringify(generatedInventories.utilitySources, null, 2)}\n`, 'utf8');
+  const generatedAt = new Date().toISOString();
+  const inventories = [
+    ['development-source-inventory', DEVELOPMENT_SOURCES_OUTPUT, generatedInventories.developmentSources],
+    ['state-source-inventory', STATE_SOURCES_OUTPUT, generatedInventories.stateSources],
+    ['utility-source-inventory', UTILITY_SOURCES_OUTPUT, generatedInventories.utilitySources],
+  ];
+  const artifactRefs = [];
+  let commandId = null;
+  for (const [kind, path, payload] of inventories) {
+    const sidecar = withSidecarMetadata({ generatedAt, ...payload }, {
+      kind,
+      scope: 'area',
+      subjectKey: kind,
+      generatedAt,
+      expiresAt: expiresInDays(180, generatedAt),
+      sourceUrls: JSON.stringify(payload).match(/https?:\/\/[^"\\]+/g) ?? [],
+      status: 'reviewed',
+      warnings,
+    });
+    writeFileSync(path, `${JSON.stringify(sidecar, null, 2)}\n`, 'utf8');
+    commandId = commandId ?? sidecar.commandId;
+    artifactRefs.push(relativeFromRoot(path));
+    recordArtifact({
+      path,
+      kind,
+      scope: 'area',
+      subjectKey: kind,
+      commandId: sidecar.commandId,
+      generatedAt: sidecar.generatedAt,
+      expiresAt: sidecar.expiresAt,
+      sourceUrls: sidecar.sourceUrls,
+      status: sidecar.status,
+      warnings: sidecar.warnings,
+    });
+  }
+
+  for (const area of profile.search?.areas ?? []) {
+    upsertAreaKnowledge({
+      area,
+      facts: {
+        counties: area.counties ?? [],
+        zipcodes: area.zipcodes ?? [],
+        searchUrlCount: Object.values(document.platforms ?? {})
+          .flatMap((platform) => platform.search_urls ?? [])
+          .filter((entry) => entry.area === area.name).length,
+      },
+      artifactRefs,
+      sourceUrls: [],
+      commandId,
+      generatedAt,
+    });
+  }
 
   const platformKeys = Object.keys(document.platforms);
   const areaCount = platformKeys.length > 0 ? document.platforms[platformKeys[0]].search_urls.length : 0;
@@ -800,9 +710,11 @@ function main() {
   }
 }
 
-try {
-  main();
-} catch (error) {
-  console.error(`generate-portals.mjs failed: ${error.message}`);
-  process.exit(1);
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  try {
+    main();
+  } catch (error) {
+    console.error(`generate-portals.mjs failed: ${error.message}`);
+    process.exit(1);
+  }
 }

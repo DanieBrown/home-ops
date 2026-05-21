@@ -53,6 +53,8 @@ The browser-session commands used by `/home-ops init` run this bootstrap automat
 ## Behavioral Rules
 
 - Keep buyer-specific content in `buyer-profile.md`, `config/profile.yml`, `modes/_profile.md`, or `portals.yml`.
+- Treat learned facts under `output/knowledge/`, `output/areas/`, and output sidecar directories as durable user-layer data. Ordinary reset/hunt work must preserve them.
+- Put scratch or one-off scripts under `.home-ops/tmp/{commandId}/` or OS temp and remove them after use.
 - Never verify listing status with generic fetch alone when Playwright is available.
 - Never contact agents, schedule tours, or submit offers for the user.
 - Do not add or change git remotes unless the user explicitly asks.
@@ -63,4 +65,5 @@ The browser-session commands used by `/home-ops init` run this bootstrap automat
 npm run doctor
 npm run sync-check
 npm run verify
+npm run temp:check
 ```

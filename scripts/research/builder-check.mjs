@@ -26,6 +26,8 @@ import {
 } from './research-utils.mjs';
 import { crawl4aiFetchPage } from './crawl4ai-utils.mjs';
 import { slugify } from '../shared/text-utils.mjs';
+import { expiresInDays, recordArtifact, subjectKeyForTarget, withSidecarMetadata } from '../shared/knowledge-store.mjs';
+import { readResearchDefaults } from '../shared/research-defaults.mjs';
 
 const OUTPUT_DIR = join(ROOT, 'output', 'builder');
 const LISTING_DIR = join(ROOT, 'output', 'listings');
@@ -34,68 +36,10 @@ const DEFAULT_TIMEOUT_MS = 20000;
 const BBB_TIMEOUT_MS = 30000;
 const BUILDER_ONLINE_TIMEOUT_MS = 30000;
 const BUILDER_SEARCH_TIMEOUT_MS = 30000;
-
-// Well-known builder brands, ordered longest-first to prefer the more specific
-// match (e.g. "Smith Douglas Homes" before "Smith Douglas").
-const KNOWN_BUILDERS = [
-  'Smith Douglas Homes',
-  'David Weekley Homes',
-  'Stanley Martin Homes',
-  'Taylor Morrison',
-  'Century Communities',
-  'Caviness & Cates',
-  'Toll Brothers',
-  'Meritage Homes',
-  'Beazer Homes',
-  'Ashton Woods',
-  'Eastwood Homes',
-  'Essex Homes',
-  'Chesmar Homes',
-  'True Homes',
-  'Epcon Communities',
-  'Dan Ryan Builders',
-  'D.R. Horton',
-  'DR Horton',
-  'Ryan Homes',
-  'Pulte Homes',
-  'PulteGroup',
-  'KB Homes',
-  'KB Home',
-  'Meritage',
-  'Lennar',
-  'NVHomes',
-  'NVR',
-  'Centex',
-  'Del Webb',
-  'DiVosta',
-  'Beazer',
-  'Chesmar',
-  'Pulte',
-  'Epcon',
-  'Smith Douglas',
-  'David Weekley',
-  'Stanley Martin',
-  'Dan Ryan',
-  'M/I Homes',
-  'MI Homes',
-];
-
-// Canonical name for display (normalises dot-notation variants).
-const BUILDER_CANONICAL = {
-  'D.R. Horton': 'DR Horton',
-  'NVHomes': 'NVR',
-  'MI Homes': 'M/I Homes',
-  'Pulte Homes': 'Pulte',
-  'PulteGroup': 'Pulte',
-};
-
-const BBB_PROFILE_OVERRIDES = {
-  'taylor morrison|nc': 'https://www.bbb.org/us/nc/cary/profile/home-builders/taylor-morrison-raleigh-division-0593-90289760/addressId/118685',
-  'taylor morrison|raleigh': 'https://www.bbb.org/us/nc/cary/profile/home-builders/taylor-morrison-raleigh-division-0593-90289760/addressId/118685',
-  'taylor morrison|cary': 'https://www.bbb.org/us/nc/cary/profile/home-builders/taylor-morrison-raleigh-division-0593-90289760/addressId/118685',
-  'taylor morrison|fuquay varina': 'https://www.bbb.org/us/nc/cary/profile/home-builders/taylor-morrison-raleigh-division-0593-90289760/addressId/118685',
-  'taylor morrison|holly springs': 'https://www.bbb.org/us/nc/cary/profile/home-builders/taylor-morrison-raleigh-division-0593-90289760/addressId/118685',
-};
+const BUILDER_DEFAULTS = readResearchDefaults().builder ?? {};
+const knownBuilders = BUILDER_DEFAULTS.known_builders ?? [];
+const builderCanonical = BUILDER_DEFAULTS.canonical ?? {};
+const bbbProfileOverrides = BUILDER_DEFAULTS.bbb_profile_overrides ?? {};
 
 const HELP_TEXT = `Usage:
   node builder-check.mjs reports/001-foo.md
@@ -224,7 +168,7 @@ function detectBuilder(target) {
   if (String(listingBuilder ?? '').trim().length >= 3) {
     const name = String(listingBuilder).trim();
     return {
-      builderName: BUILDER_CANONICAL[name] ?? name,
+      builderName: builderCanonical[name] ?? name,
       detectionSource: 'listing_sidecar',
       detectionConfidence: 'high',
       detectionSourceUrl: listingFacts?.canonicalUrl || listingFacts?.url || null,
@@ -242,15 +186,15 @@ function detectBuilder(target) {
   if (fieldMatch) {
     const name = fieldMatch[1].trim();
     if (name.length >= 3) {
-      return { builderName: BUILDER_CANONICAL[name] ?? name, detectionSource: 'report_field', detectionConfidence: 'high', detectionSourceUrl: null };
+      return { builderName: builderCanonical[name] ?? name, detectionSource: 'report_field', detectionConfidence: 'high', detectionSourceUrl: null };
     }
   }
 
   // 2. Known builder brand scan (word-boundary match, longest name wins)
-  for (const builder of KNOWN_BUILDERS) {
+  for (const builder of knownBuilders) {
     const escaped = builder.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     if (new RegExp(`\\b${escaped}\\b`, 'i').test(text)) {
-      const canonical = BUILDER_CANONICAL[builder] ?? builder;
+      const canonical = builderCanonical[builder] ?? builder;
       return { builderName: canonical, detectionSource: 'known_brand', detectionConfidence: 'high', detectionSourceUrl: null };
     }
   }
@@ -353,7 +297,7 @@ function cleanBuilderCandidate(value) {
     .trim();
   if (cleaned.length < 3 || cleaned.length > 80) return null;
   if (/(realty|realtor|listing|broker|mls|zillow|redfin|homes\.com|property|school|county)/i.test(cleaned)) return null;
-  return BUILDER_CANONICAL[cleaned] ?? cleaned;
+  return builderCanonical[cleaned] ?? cleaned;
 }
 
 function permitCandidateName(value) {
@@ -408,10 +352,10 @@ function extractBuilderNameFromPage(html, target) {
     if (candidate) return candidate;
   }
 
-  for (const builder of KNOWN_BUILDERS) {
+  for (const builder of knownBuilders) {
     const escaped = builder.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     if (new RegExp(`\\b${escaped}\\b`, 'i').test(text)) {
-      return BUILDER_CANONICAL[builder] ?? builder;
+      return builderCanonical[builder] ?? builder;
     }
   }
 
@@ -585,7 +529,7 @@ function bbbOverrideUrl(builderName, target) {
   ].filter(Boolean);
 
   for (const market of marketKeys) {
-    const direct = BBB_PROFILE_OVERRIDES[`${builderKey}|${market}`];
+    const direct = bbbProfileOverrides[`${builderKey}|${market}`];
     if (direct) return direct;
   }
   return '';
@@ -1173,8 +1117,35 @@ async function run() {
 
     const record = buildRecord(target, detection, reviews);
     const outputPath = buildOutputPath(target);
-    await writeFile(outputPath, `${JSON.stringify(record, null, 2)}\n`, 'utf8');
-    records.push({ ...record, outputPath });
+    const sourceUrls = [
+      record.detectionSourceUrl,
+      ...Object.values(record.reviews ?? {}).map((review) => review?.url),
+    ].filter(Boolean);
+    const sidecar = withSidecarMetadata(record, {
+      kind: 'builder',
+      scope: 'property',
+      subject: target,
+      subjectKey: subjectKeyForTarget(target),
+      expiresAt: expiresInDays(90, record.generatedAt),
+      sourceUrls,
+      status: record.status,
+      warnings: record.status === 'not-found' ? ['Builder review sources did not return confirmed reputation data.'] : [],
+    });
+    await writeFile(outputPath, `${JSON.stringify(sidecar, null, 2)}\n`, 'utf8');
+    recordArtifact({
+      path: outputPath,
+      kind: 'builder',
+      scope: 'property',
+      subject: target,
+      subjectKey: sidecar.subjectKey,
+      commandId: sidecar.commandId,
+      generatedAt: sidecar.generatedAt,
+      expiresAt: sidecar.expiresAt,
+      sourceUrls: sidecar.sourceUrls,
+      status: sidecar.status,
+      warnings: sidecar.warnings,
+    });
+    records.push({ ...sidecar, outputPath });
   }
 
   if (config.json) {

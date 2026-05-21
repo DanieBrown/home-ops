@@ -6,6 +6,12 @@ import { dirname, extname, join, resolve } from 'path';
 import { fileURLToPath } from 'url';
 import YAML from 'yaml';
 import { fetchPmmsRates } from '../../scripts/affordability/calculate-affordability.mjs';
+import {
+  buildProfilePatchPreview,
+  calculateAffordability,
+  normalizeAffordabilityAnswers,
+  toNumber,
+} from '../../scripts/affordability/affordability-core.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -168,6 +174,47 @@ async function handleRates(_req, res) {
   }
 }
 
+async function getRates() {
+  const now = Date.now();
+  if (!cachedRates || now - cachedRatesAt > 15 * 60 * 1000) {
+    cachedRates = await fetchPmmsRates({ timeoutMs: 8000 });
+    cachedRatesAt = now;
+  }
+  return cachedRates;
+}
+
+async function handleEstimate(req, res) {
+  try {
+    const raw = await readBody(req);
+    const parsed = JSON.parse(raw || '{}');
+    const answers = parsed?.answers ?? {};
+    const profile = readProfile();
+    let rates = null;
+    try {
+      rates = await getRates();
+    } catch (error) {
+      const hasOverride = Number.isFinite(toNumber(answers.interest_rate_override)) && toNumber(answers.interest_rate_override) > 0;
+      if (!hasOverride) throw error;
+    }
+    const normalized = normalizeAffordabilityAnswers(answers, profile, rates);
+    const result = calculateAffordability(normalized);
+    result.target = {
+      state: normalized.targetState,
+      area: normalized.targetArea,
+    };
+    result.profile_patch_preview = buildProfilePatchPreview(profile, result);
+    sendJson(res, 200, { ok: true, result, normalizedPreview: {
+      targetState: normalized.targetState,
+      targetArea: normalized.targetArea,
+      termYears: normalized.termYears,
+      rateAssumptionPct: normalized.rateAssumptionPct,
+      rateSource: normalized.rateSource,
+    } });
+  } catch (error) {
+    sendJson(res, 422, { ok: false, error: error.message });
+  }
+}
+
 function main() {
   const options = parseArgs(process.argv.slice(2));
   const server = createServer(async (req, res) => {
@@ -183,6 +230,10 @@ function main() {
     }
     if (req.method === 'POST' && url.pathname === '/api/answers') {
       await handleAnswerSave(req, res);
+      return;
+    }
+    if (req.method === 'POST' && url.pathname === '/api/estimate') {
+      await handleEstimate(req, res);
       return;
     }
     if (req.method === 'GET' && url.pathname === '/api/rates') {

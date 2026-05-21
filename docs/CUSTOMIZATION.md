@@ -13,6 +13,19 @@ If you want guided setup instead of manual editing, use `/home-ops profile` to i
 
 If priorities change, update one of these files instead of hard-coding new criteria into `modes/_shared.md`.
 
+## Learned Output
+
+Home-Ops learns reusable local facts under `output/`. These files are generated, but they are still user-layer data and should normally survive reset/hunt:
+
+- `output/knowledge/index.json` and `output/knowledge/commands.jsonl`
+- `output/areas/{area-slug}.json`
+- sidecars for geocodes, permits, construction, schools, utilities, sentiment, communities, listings, builder, and HOA
+- generated source inventories such as `output/county-sources.json`
+
+Use `npm run reset:data -- --purge-knowledge` only when you intentionally want to erase those learned facts.
+
+The reusable seed catalog for state/county/municipal sources lives in `templates/research-defaults.yml`. Profile-selected and area-specific copies are generated into `output/`, where the scripts read them as learned local inventory.
+
 ## config/profile.yml
 
 Key sections to tune:

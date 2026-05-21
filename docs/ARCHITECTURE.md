@@ -32,15 +32,29 @@ The normalized weights currently influence agent judgment and research emphasis.
 
 ## Affordability Flow
 
-The afford mode uses a short local web wizard to collect minimum financial inputs, calculate a conservative purchase-price ceiling, and ask before changing buyer-layer files.
+The afford mode uses a profile-wizard-style local web wizard to collect ten primary financial inputs, calculate a conservative purchase-price range, and ask before changing buyer-layer files.
 
 Expected behavior:
 
-1. Ask for loan term, monthly take-home pay, monthly non-mortgage debt, cash available after reserves, rough credit-score tier, and target state/area.
+1. Ask for target area, fixed loan term, monthly take-home pay, monthly non-mortgage debt, purchase cash, down-payment percentage, credit band, payment cap, HOA budget, and search-floor preference.
 2. Use Freddie Mac PMMS fixed-rate averages when the user does not provide a rate override.
 3. Calculate the selected term first, with the alternate 15-year or 30-year term as comparison context.
-4. Apply the 25% take-home housing-payment cap, estimated taxes, insurance, HOA, closing costs, and credit/LTV pricing pressure.
-5. If the user accepts the result, update `config/profile.yml`, `buyer-profile.md`, and `modes/_profile.md` without persisting raw income, debt, cash, or exact credit-score data.
+4. Apply the selected housing-payment cap to take-home pay after subtracting monthly non-mortgage debt.
+5. Output `recommended_price_min` and `recommended_price_max`.
+6. If the user accepts the result, update `config/profile.yml`, `buyer-profile.md`, and `modes/_profile.md` without persisting raw income, debt, cash, or exact credit-score data.
+
+Both the CLI and wizard preview call `scripts/affordability/affordability-core.mjs` so the browser and command-line paths cannot drift.
+
+## Learning Layer
+
+Home-Ops learns through durable generated sidecars under `output/`.
+
+- `scripts/shared/knowledge-store.mjs` owns `output/knowledge/index.json`, `output/knowledge/commands.jsonl`, and `output/areas/{area-slug}.json`.
+- Property and area sidecars add metadata fields such as `schemaVersion`, `scope`, `subjectKey`, `commandId`, `generatedAt`, `expiresAt`, `sourceUrls`, `status`, and `warnings`.
+- Reusable state/county/municipal source seeds live in `templates/research-defaults.yml`; `scripts/config/generate-portals.mjs` materializes the profile-scoped inventory into `output/development-sources.json`, `output/state-sources.json`, and `output/utility-sources.json`.
+- Existing readers must tolerate older sidecars; metadata is additive.
+- `reset:data` preserves learned output by default and only clears transient run clutter. `--purge-knowledge` is the explicit full-delete path.
+- One-off scripts belong under `.home-ops/tmp/{commandId}/` or OS temp and should be removed after use.
 
 ## Hunt Flow
 
@@ -66,6 +80,9 @@ data/shortlist.md        -> latest compare top-10 tags and deep handoff state
 batch/tracker-additions/ -> staged tracker rows for batch merges
 data/listings.md         -> canonical tracker
 reports/*.md             -> per-listing evaluation reports and deep shortlist briefs
+output/knowledge/*       -> learned artifact index and per-command memory
+output/areas/*.json      -> reusable area facts and source references
+output/{fact-type}/*.json -> learned property sidecars for geocode, permits, schools, utilities, sentiment, listings, builder, and HOA
 templates/states.yml     -> canonical status model
 ```
 

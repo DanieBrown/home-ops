@@ -33,46 +33,22 @@ import {
 } from './research-utils.mjs';
 import { ensureGeocode } from './geocode.mjs';
 import { slugify } from '../shared/text-utils.mjs';
+import { expiresInDays, recordArtifact, subjectKeyForTarget, withSidecarMetadata } from '../shared/knowledge-store.mjs';
+import { readResearchDefaults } from '../shared/research-defaults.mjs';
 
 const OUTPUT_DIR = join(ROOT, 'output', 'permits');
 const COUNTY_SOURCES_PATH = join(ROOT, 'output', 'county-sources.json');
 const DEFAULT_TIMEOUT_MS = 25000;
 const DEFAULT_RADIUS_METERS = 8047; // 5 miles
 const LOOKBACK_DAYS = 24 * 30; // ~24 months
-
-// Built-in fallback for Wake County. Superseded by output/county-sources.json
-// once county-services-discover.mjs has been run.
-const COUNTY_SOURCES_BUILTIN = {
-  wake: {
-    label: 'Wake County, NC',
-    services: [
-      {
-        key: 'wake-development',
-        name: 'Wake County Development (subdivisions)',
-        url: 'https://maps.wake.gov/arcgis/rest/services/Planning/Wake_County_Development/FeatureServer/0',
-        dateField: 'APPLICATIONDATE',
-        outFields: 'CASEID,CASENUMBER,WORK_CLASS,APPLICATIONDATE,DESCRIPTION,PLAN_STATUS,SUBDIVISION_NAME,PROPOSED_NO_LOTS,NUMBER_OF_ACRES',
-        recordKind: 'subdivision-case',
-      },
-      {
-        key: 'wake-zoning',
-        name: 'Wake County Zoning Cases',
-        url: 'https://maps.wake.gov/arcgis/rest/services/Planning/Zoning/FeatureServer/0',
-        dateField: null,
-        outFields: '*',
-        recordKind: 'zoning',
-        skipDateFilter: true,
-      },
-    ],
-  },
-};
+const COUNTY_SOURCE_DEFAULTS = readResearchDefaults().county_sources?.counties ?? {};
 
 function loadCountySources() {
-  if (!existsSync(COUNTY_SOURCES_PATH)) return COUNTY_SOURCES_BUILTIN;
+  if (!existsSync(COUNTY_SOURCES_PATH)) return COUNTY_SOURCE_DEFAULTS;
   try {
     const dynamic = JSON.parse(readFileSync(COUNTY_SOURCES_PATH, 'utf8'));
-    // Merge: dynamic entries override matching builtin keys; builtin fills gaps.
-    const merged = { ...COUNTY_SOURCES_BUILTIN };
+    // Merge: dynamic entries override matching template defaults; defaults fill gaps.
+    const merged = { ...COUNTY_SOURCE_DEFAULTS };
     for (const [key, entry] of Object.entries(dynamic.counties ?? {})) {
       if (Array.isArray(entry.services) && entry.services.length > 0 && entry.ok !== false) {
         merged[key] = { label: entry.label ?? key, services: entry.services };
@@ -80,7 +56,7 @@ function loadCountySources() {
     }
     return merged;
   } catch {
-    return COUNTY_SOURCES_BUILTIN;
+    return COUNTY_SOURCE_DEFAULTS;
   }
 }
 
@@ -391,8 +367,32 @@ async function run() {
     } else {
       record = await checkTarget(target, researchContext, { radiusMeters: config.radiusMeters });
     }
-    await writeFile(buildOutputPath(target), `${JSON.stringify(record, null, 2)}\n`, 'utf8');
-    records.push(record);
+    const outputPath = buildOutputPath(target);
+    const sidecar = withSidecarMetadata(record, {
+      kind: 'permits',
+      scope: 'property',
+      subject: target,
+      subjectKey: subjectKeyForTarget(target),
+      expiresAt: expiresInDays(30, record.generatedAt),
+      sourceUrls: (record.sourcesChecked ?? []).map((source) => source.url).filter(Boolean),
+      status: record.status,
+      warnings: record.note ? [record.note] : [],
+    });
+    await writeFile(outputPath, `${JSON.stringify(sidecar, null, 2)}\n`, 'utf8');
+    recordArtifact({
+      path: outputPath,
+      kind: 'permits',
+      scope: 'property',
+      subject: target,
+      subjectKey: sidecar.subjectKey,
+      commandId: sidecar.commandId,
+      generatedAt: sidecar.generatedAt,
+      expiresAt: sidecar.expiresAt,
+      sourceUrls: sidecar.sourceUrls,
+      status: sidecar.status,
+      warnings: sidecar.warnings,
+    });
+    records.push(sidecar);
   }
 
   if (config.json) {

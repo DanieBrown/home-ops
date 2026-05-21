@@ -26,6 +26,8 @@ import {
   saveCache,
 } from '../system/cache-utils.mjs';
 import { slugify } from '../shared/text-utils.mjs';
+import { expiresInDays, recordArtifact, subjectKeyForTarget, withSidecarMetadata } from '../shared/knowledge-store.mjs';
+import { compileConfiguredPatterns, readResearchDefaults } from '../shared/research-defaults.mjs';
 
 const SENTIMENT_CACHE_NAME = 'sentiment';
 
@@ -33,16 +35,7 @@ const DEFAULT_PROFILE = 'chrome-host';
 const OUTPUT_DIR = join(ROOT, 'output', 'sentiment');
 const COMMUNITY_DIR = join(ROOT, 'output', 'communities');
 const SUPPORTED_BROWSER_SOURCES = new Set(['facebook', 'nextdoor', 'twitter']);
-const INVALID_COMMUNITY_PATTERNS = [
-  /map my location along with the neighborhood you are in at the moment/i,
-  /find my neighborhood/i,
-  /what neighborhood am i in/i,
-  /share my location/i,
-  /your approximiate location/i,
-  /this is the location information for the address you searched/i,
-  /you can share this map with the link below/i,
-  /^not found$/i,
-];
+const invalidCommunityPatterns = compileConfiguredPatterns(readResearchDefaults().community?.invalid_patterns ?? []);
 // Browser-backed sources (Facebook / Nextdoor) only populate these sentiment
 // dimensions. Traffic-commute is sourced from the public extractor and NCDOT
 // so it's not included here.
@@ -365,7 +358,7 @@ function sanitizeCommunityName(value) {
     return null;
   }
 
-  if (INVALID_COMMUNITY_PATTERNS.some((pattern) => pattern.test(community))) {
+  if (invalidCommunityPatterns.some((pattern) => pattern.test(community))) {
     return null;
   }
 
@@ -778,6 +771,40 @@ function buildTargetOutputPath(target) {
   return join(OUTPUT_DIR, `${slug}.json`);
 }
 
+async function writeSentimentSidecar(outputPath, target, output) {
+  const sourceUrls = (output.sources ?? []).flatMap((source) => [
+    source.url,
+    source.communityUrl,
+    ...(source.queryResults ?? []).map((query) => query.finalUrl || query.searchUrl),
+  ]).filter(Boolean);
+  const sidecar = withSidecarMetadata(output, {
+    kind: 'sentiment',
+    scope: 'property',
+    subject: target,
+    subjectKey: subjectKeyForTarget(target),
+    expiresAt: expiresInDays(30, output.generatedAt),
+    sourceUrls,
+    status: (output.sources ?? []).length > 0 ? 'reviewed' : 'unconfigured',
+    warnings: (output.sources ?? []).length > 0 ? [] : ['No browser-supported sentiment sources were configured.'],
+  });
+  await mkdir(OUTPUT_DIR, { recursive: true });
+  await writeFile(outputPath, `${JSON.stringify(sidecar, null, 2)}\n`, 'utf8');
+  recordArtifact({
+    path: outputPath,
+    kind: 'sentiment',
+    scope: 'property',
+    subject: target,
+    subjectKey: sidecar.subjectKey,
+    commandId: sidecar.commandId,
+    generatedAt: sidecar.generatedAt,
+    expiresAt: sidecar.expiresAt,
+    sourceUrls: sidecar.sourceUrls,
+    status: sidecar.status,
+    warnings: sidecar.warnings,
+  });
+  return sidecar;
+}
+
 function rollupKpiScores(sourceResults, weights = {}) {
   const categories = new Map();
   for (const source of sourceResults) {
@@ -862,12 +889,11 @@ async function extractTarget(context, target, researchContext, cacheState, optio
       fromCache: true,
       cachedFrom: cachedFromKey || cacheKey,
     };
-    await mkdir(OUTPUT_DIR, { recursive: true });
-    await writeFile(outputPath, `${JSON.stringify(reusedOutput, null, 2)}\n`, 'utf8');
+    const sidecar = await writeSentimentSidecar(outputPath, target, reusedOutput);
     if (cacheState && !cacheState.disabled) {
       cacheState.hits += 1;
     }
-    return { ...reusedOutput, outputPath };
+    return { ...sidecar, outputPath };
   };
 
   if (cacheState?.cache && !cacheState.disabled && !cacheState.refresh && cacheKey) {
@@ -890,9 +916,8 @@ async function extractTarget(context, target, researchContext, cacheState, optio
         cachedFrom: existing.cacheKey ?? cacheKey,
       };
       const outputPath = buildTargetOutputPath(target);
-      await mkdir(OUTPUT_DIR, { recursive: true });
-      await writeFile(outputPath, `${JSON.stringify(cachedOutput, null, 2)}\n`, 'utf8');
-      return { ...cachedOutput, outputPath };
+      const sidecar = await writeSentimentSidecar(outputPath, target, cachedOutput);
+      return { ...sidecar, outputPath };
     }
   }
 
@@ -972,8 +997,7 @@ async function extractTarget(context, target, researchContext, cacheState, optio
     };
 
     const outputPath = buildTargetOutputPath(target);
-    await mkdir(OUTPUT_DIR, { recursive: true });
-    await writeFile(outputPath, `${JSON.stringify(output, null, 2)}\n`, 'utf8');
+    const sidecar = await writeSentimentSidecar(outputPath, target, output);
 
     if (cacheState?.cache && !cacheState.disabled && cacheKey) {
       putCacheEntry(cacheState.cache, cacheKey, {
@@ -987,7 +1011,7 @@ async function extractTarget(context, target, researchContext, cacheState, optio
     }
 
     return {
-      ...output,
+      ...sidecar,
       outputPath,
     };
   };

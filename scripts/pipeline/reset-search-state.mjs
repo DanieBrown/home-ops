@@ -21,20 +21,35 @@ import {
 const SCAN_RUNNING_PATH = join(HOME_OPS_DIR, 'scan-running.json');
 const SCAN_COMPLETE_PATH = join(HOME_OPS_DIR, 'scan-complete.json');
 const ZILLOW_BLOCKED_PATH = join(HOME_OPS_DIR, 'zillow-session-blocked.json');
-// Research cache subdirs of output/ that, if left in place, cause repeat runs
-// to re-surface and re-score the same homes. browser-sessions is excluded so
-// the hosted Chrome login state survives reset.
+// Transient output subdirs that can bias repeat runs. Durable learning
+// sidecars stay in output/ by default so reset/hunt does not erase local facts.
 const OUTPUT_CACHE_SUBDIRS = [
   'briefings',
   'cache',
-  'communities',
-  'construction',
   'deep-packets',
   'evaluate-packets',
+];
+
+const LEARNED_OUTPUT_SUBDIRS = [
+  'areas',
+  'builder',
+  'communities',
+  'construction',
   'geocode',
+  'hoa',
+  'knowledge',
+  'listings',
   'permits',
   'school-metadata',
   'sentiment',
+  'utilities',
+];
+
+const LEARNED_OUTPUT_FILES = [
+  'county-sources.json',
+  'development-sources.json',
+  'state-sources.json',
+  'utility-sources.json',
 ];
 
 const HISTORY_HEADER = 'url\tfirst_seen\tplatform\tarea\taddress\tstatus\n';
@@ -110,6 +125,7 @@ const SHORTLIST_TEMPLATE = [
 const HELP_TEXT = `Usage:
   node reset-search-state.mjs
   node reset-search-state.mjs --dry-run
+  node reset-search-state.mjs --purge-knowledge
 
 Resets generated search and evaluation state while preserving buyer profiles,
 portal configuration, and browser session data.
@@ -124,28 +140,41 @@ Clears:
   - data/scan-history.tsv (back to header only)
 
 Also clears (research caches that bias re-runs):
-  - output/briefings/, output/cache/, output/communities/, output/construction/
-  - output/deep-packets/, output/evaluate-packets/, output/geocode/
-  - output/permits/, output/school-metadata/, output/sentiment/
+  - output/briefings/, output/cache/
+  - output/deep-packets/, output/evaluate-packets/
 
 Preserves:
   - buyer-profile.md
   - config/profile.yml
   - modes/_profile.md
   - portals.yml
+  - output/areas/, output/knowledge/
+  - output/geocode/, output/permits/, output/school-metadata/
+  - output/sentiment/, output/construction/, output/communities/
+  - output/utilities/, output/listings/, output/builder/, output/hoa/
+  - output/*-sources.json source inventories
   - output/browser-sessions/
   - batch/logs/
+
+Use --purge-knowledge to also delete learned output sidecars and source
+inventories. Browser sessions are still preserved.
 `;
 
 function parseArgs(argv) {
   const options = {
     dryRun: false,
+    purgeKnowledge: false,
     help: false,
   };
 
   for (const arg of argv) {
     if (arg === '--dry-run') {
       options.dryRun = true;
+      continue;
+    }
+
+    if (arg === '--purge-knowledge') {
+      options.purgeKnowledge = true;
       continue;
     }
 
@@ -236,10 +265,19 @@ function main() {
   const outputCacheFiles = OUTPUT_CACHE_SUBDIRS.flatMap((sub) =>
     listResettableFiles(join(OUTPUT_DIR, sub), () => true),
   );
+  const learnedOutputFiles = options.purgeKnowledge
+    ? [
+        ...LEARNED_OUTPUT_SUBDIRS.flatMap((sub) => listResettableFiles(join(OUTPUT_DIR, sub), () => true)),
+        ...LEARNED_OUTPUT_FILES.flatMap((name) => listResettableFiles(OUTPUT_DIR, (entry) => entry === name)),
+      ]
+    : [];
 
   console.log(`Reports to remove: ${reportFiles.length}${preservedReportCount > 0 ? ` (${preservedReportCount} preserved with shortlist)` : ''}`);
   console.log(`Tracker TSVs to remove: ${trackerAdditionFiles.length + trackerMergedFiles.length}`);
-  console.log(`Research cache files to remove (output/): ${outputCacheFiles.length}`);
+  console.log(`Transient output files to remove: ${outputCacheFiles.length}`);
+  console.log(options.purgeKnowledge
+    ? `Learned output files to purge: ${learnedOutputFiles.length}`
+    : 'Learned output directories preserved: yes (use --purge-knowledge to delete them)');
   console.log('Files to reset:');
   console.log('- data/listings.md');
   console.log('- data/pipeline.md');
@@ -253,7 +291,7 @@ function main() {
     return;
   }
 
-  for (const filePath of [...reportFiles, ...trackerAdditionFiles, ...trackerMergedFiles, ...outputCacheFiles]) {
+  for (const filePath of [...reportFiles, ...trackerAdditionFiles, ...trackerMergedFiles, ...outputCacheFiles, ...learnedOutputFiles]) {
     rmSync(filePath, { force: true, recursive: true });
   }
 
@@ -269,7 +307,12 @@ function main() {
   rmSync(SCAN_COMPLETE_PATH, { force: true });
   rmSync(ZILLOW_BLOCKED_PATH, { force: true });
 
-  console.log('\nReset complete. Buyer profiles, portal config, and browser sessions were preserved.');
+  if (options.purgeKnowledge) {
+    console.log('\nReset complete. Buyer profiles, portal config, and browser sessions were preserved.');
+    console.log('Learned output data was purged because --purge-knowledge was provided.');
+  } else {
+    console.log('\nReset complete. Buyer profiles, portal config, learned output data, and browser sessions were preserved.');
+  }
   if (resetPolicy.preserveShortlistOnReset) {
     console.log('Shortlist preserved via config/profile.yml workflow.shortlist.preserve_on_reset=true.');
   }

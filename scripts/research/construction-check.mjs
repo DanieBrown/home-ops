@@ -30,34 +30,19 @@ import {
 import { crawl4aiFetchPage } from './crawl4ai-utils.mjs';
 import { ensureGeocode } from './geocode.mjs';
 import { slugify } from '../shared/text-utils.mjs';
+import { expiresInDays, recordArtifact, subjectKeyForTarget, withSidecarMetadata } from '../shared/knowledge-store.mjs';
+import { readResearchDefaults } from '../shared/research-defaults.mjs';
 
 const OUTPUT_DIR = join(ROOT, 'output', 'construction');
 const STATE_SOURCES_PATH = join(ROOT_OUTPUT_DIR, 'state-sources.json');
 const DEFAULT_TIMEOUT_MS = 20000;
 const DEFAULT_STIP_RADIUS_METERS = 32187; // 20 miles
-
-// NCDOT maintains a handful of public project index pages. Rather than guess
-// at their search API (which changes shape often), we fetch a known-stable
-// list page and a per-county STIP landing when we can. Pages missing or
-// unreachable degrade gracefully to a "not reviewed" record.
-const NCDOT_INDEX_URLS = [
-  'https://www.ncdot.gov/projects/current-projects/Pages/default.aspx',
-  'https://www.ncdot.gov/initiatives-policies/Transportation/stip/Pages/default.aspx',
-];
-
-const NCDOT_STIP_LAYERS = [
-  {
-    name: 'NCDOT STIP points',
-    url: 'https://gis11.services.ncdot.gov/arcgis/rest/services/NCDOT_STIP/MapServer/0',
-  },
-  {
-    name: 'NCDOT STIP lines',
-    url: 'https://gis11.services.ncdot.gov/arcgis/rest/services/NCDOT_STIP/MapServer/1',
-  },
-];
+const CONSTRUCTION_DEFAULTS = readResearchDefaults().construction ?? {};
+const ncdotIndexUrls = CONSTRUCTION_DEFAULTS.ncdot_index_urls ?? [];
+const ncdotStipLayers = CONSTRUCTION_DEFAULTS.ncdot_stip_layers ?? [];
 
 function loadStipLayers() {
-  if (!existsSync(STATE_SOURCES_PATH)) return NCDOT_STIP_LAYERS;
+  if (!existsSync(STATE_SOURCES_PATH)) return ncdotStipLayers;
   try {
     const inventory = JSON.parse(readFileSync(STATE_SOURCES_PATH, 'utf8'));
     const layers = Object.values(inventory.states ?? {})
@@ -65,9 +50,9 @@ function loadStipLayers() {
       .filter((source) => /ncdot|stip/i.test(`${source.name ?? ''} ${source.url ?? ''}`))
       .flatMap((source) => source.layers ?? [])
       .filter((layer) => layer?.url);
-    return layers.length > 0 ? layers : NCDOT_STIP_LAYERS;
+    return layers.length > 0 ? layers : ncdotStipLayers;
   } catch {
-    return NCDOT_STIP_LAYERS;
+    return ncdotStipLayers;
   }
 }
 
@@ -497,7 +482,7 @@ async function run() {
   // One shared fetch per index URL -- no need to refetch for every home.
   // Quick mode trims to the primary URL (saves one full timeout if the STIP
   // page is slow or unreachable).
-  const indexUrls = config.quick ? NCDOT_INDEX_URLS.slice(0, 1) : NCDOT_INDEX_URLS;
+  const indexUrls = config.quick ? ncdotIndexUrls.slice(0, 1) : ncdotIndexUrls;
   const indexPages = await Promise.all(indexUrls.map((url) => fetchText(url)));
 
   await mkdir(OUTPUT_DIR, { recursive: true });
@@ -508,8 +493,35 @@ async function run() {
     const stipRecord = await queryStipNearTarget(target, areaContext, config.radiusMeters);
     const record = buildRecord(target, areaContext, score, indexPages, stipRecord);
     const outputPath = buildOutputPath(target);
-    await writeFile(outputPath, `${JSON.stringify(record, null, 2)}\n`, 'utf8');
-    records.push({ ...record, outputPath });
+    const sourceUrls = [
+      ...(record.sourcesChecked ?? []).map((source) => source.url),
+      ...(record.spatialStip?.sourcesChecked ?? []).map((source) => source.url),
+    ].filter(Boolean);
+    const sidecar = withSidecarMetadata(record, {
+      kind: 'construction',
+      scope: 'property',
+      subject: target,
+      subjectKey: subjectKeyForTarget(target),
+      expiresAt: expiresInDays(30, record.generatedAt),
+      sourceUrls,
+      status: record.reviewed ? 'reviewed' : 'unreviewed',
+      warnings: record.reviewed ? [] : ['Construction sources were not reachable.'],
+    });
+    await writeFile(outputPath, `${JSON.stringify(sidecar, null, 2)}\n`, 'utf8');
+    recordArtifact({
+      path: outputPath,
+      kind: 'construction',
+      scope: 'property',
+      subject: target,
+      subjectKey: sidecar.subjectKey,
+      commandId: sidecar.commandId,
+      generatedAt: sidecar.generatedAt,
+      expiresAt: sidecar.expiresAt,
+      sourceUrls: sidecar.sourceUrls,
+      status: sidecar.status,
+      warnings: sidecar.warnings,
+    });
+    records.push({ ...sidecar, outputPath });
   }
 
   if (config.json) {

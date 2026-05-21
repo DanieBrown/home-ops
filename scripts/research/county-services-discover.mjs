@@ -23,6 +23,7 @@ import { join } from 'path';
 import { fileURLToPath } from 'url';
 import YAML from 'yaml';
 import { ROOT, PROFILE_PATH } from '../shared/paths.mjs';
+import { expiresInDays, recordArtifact, withSidecarMetadata } from '../shared/knowledge-store.mjs';
 
 const REGISTRY_PATH = join(ROOT, 'config', 'county-arcgis-registry.yml');
 const OUTPUT_PATH = join(ROOT, 'output', 'county-sources.json');
@@ -337,11 +338,32 @@ async function run() {
     }
   }
 
-  await writeFile(OUTPUT_PATH, `${JSON.stringify(output, null, 2)}\n`, 'utf8');
+  const sidecar = withSidecarMetadata(output, {
+    kind: 'county-source-inventory',
+    scope: 'area',
+    subjectKey: 'county-sources',
+    expiresAt: expiresInDays(180, output.generatedAt),
+    sourceUrls: Object.values(output.counties ?? {}).map((county) => county.arcgisBase).filter(Boolean),
+    status: 'reviewed',
+    warnings: Object.values(output.counties ?? {}).filter((county) => county.ok === false).map((county) => county.error).filter(Boolean),
+  });
+  await writeFile(OUTPUT_PATH, `${JSON.stringify(sidecar, null, 2)}\n`, 'utf8');
+  recordArtifact({
+    path: OUTPUT_PATH,
+    kind: 'county-source-inventory',
+    scope: 'area',
+    subjectKey: 'county-sources',
+    commandId: sidecar.commandId,
+    generatedAt: sidecar.generatedAt,
+    expiresAt: sidecar.expiresAt,
+    sourceUrls: sidecar.sourceUrls,
+    status: sidecar.status,
+    warnings: sidecar.warnings,
+  });
   console.log(`\nWrote output/county-sources.json (${Object.keys(output.counties).length} county entries)`);
 
   if (config.json) {
-    console.log(JSON.stringify(output, null, 2));
+    console.log(JSON.stringify(sidecar, null, 2));
   }
 }
 

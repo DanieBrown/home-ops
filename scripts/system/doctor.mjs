@@ -119,6 +119,20 @@ function ensureDir(relativePath) {
   }
 }
 
+function checkTempArtifacts() {
+  const result = spawnSync(process.execPath, ['scripts/system/temp-artifact-check.mjs'], {
+    cwd: ROOT,
+    encoding: 'utf8',
+  });
+  if (result.status === 0) {
+    return passResult('No stale one-off scripts or temporary artifacts');
+  }
+  return failResult(
+    'Temporary artifact cleanup check failed',
+    'Move one-off scripts under .home-ops/tmp/{commandId}/ and remove them after use.',
+  );
+}
+
 function findAvailableHostedBrowsers() {
   const candidatesByPlatform = {
     win32: {
@@ -326,6 +340,7 @@ async function main() {
     ensureDir('batch/logs'),
     ensureDir('batch/tracker-additions'),
     ensureDir('batch/tracker-additions/merged'),
+    checkTempArtifacts(),
     ...(await checkProfileAndPortalCoverage(dependencyCheck.level === 'pass')),
   ];
 

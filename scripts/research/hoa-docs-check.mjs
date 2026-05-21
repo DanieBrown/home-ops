@@ -15,6 +15,8 @@ import { join } from 'path';
 import { inflateSync } from 'zlib';
 import { ROOT } from '../shared/paths.mjs';
 import { slugify } from '../shared/text-utils.mjs';
+import { expiresInDays, recordArtifact, subjectKeyForTarget, withSidecarMetadata } from '../shared/knowledge-store.mjs';
+import { compileConfiguredPattern, readResearchDefaults } from '../shared/research-defaults.mjs';
 import {
   extractSubdivisionHints,
   loadResearchConfig,
@@ -56,39 +58,12 @@ Options:
   --json                 Print JSON summary.
   --help                 Show this help text.`;
 
-const KNOWN_HOA_SEEDS = [
-  {
-    key: '7040-rex-rd-holly-springs-nc-avocet',
-    addressPattern: /\b7040\s+rex\s+rd\b/i,
-    cityPattern: /\bholly\s+springs\b/i,
-    communityPattern: /\bavocet\b/i,
-    communityName: 'Avocet',
-    associationName: 'Avocet Home Owners Association',
-    managementCompany: 'Community Association Services, Inc.',
-    urls: [
-      {
-        label: 'CAS Avocet community page',
-        url: 'https://www.casnc.com/communities/avocet/',
-        kind: 'management-page',
-        sourceType: 'official-hoa-page',
-      },
-      {
-        label: 'Avocet Covenants',
-        url: 'https://www.casnc.com/docs/Avocet/Avocet%20Covenants.pdf',
-        kind: 'governing-document',
-        documentType: 'covenants',
-        sourceType: 'official-hosted-document',
-      },
-      {
-        label: 'Avocet Articles',
-        url: 'https://www.casnc.com/docs/Avocet/Articles.pdf',
-        kind: 'governing-document',
-        documentType: 'articles',
-        sourceType: 'official-hosted-document',
-      },
-    ],
-  },
-];
+const knownHoaSeeds = (readResearchDefaults().hoa?.known_seeds ?? []).map((seed) => ({
+  ...seed,
+  addressPattern: compileConfiguredPattern(seed.addressPattern),
+  cityPattern: compileConfiguredPattern(seed.cityPattern),
+  communityPattern: compileConfiguredPattern(seed.communityPattern),
+}));
 
 const TOPIC_DEFS = [
   {
@@ -391,7 +366,7 @@ function matchKnownSeed(target) {
   const address = normalizeText(target.address);
   const city = normalizeText(target.city);
   const community = normalizeText(target.communityName);
-  return KNOWN_HOA_SEEDS.find((seed) => (
+  return knownHoaSeeds.find((seed) => (
     (seed.addressPattern.test(address) && seed.cityPattern.test(city))
     || (community && seed.communityPattern.test(community))
   )) ?? null;
@@ -1001,10 +976,37 @@ async function runTarget(target, config) {
 
   await mkdir(OUTPUT_DIR, { recursive: true });
   const outputPath = join(OUTPUT_DIR, `${slugify(`${record.address}-${record.city}-${record.state || 'NC'}`)}.json`);
-  await writeFile(outputPath, `${JSON.stringify(record, null, 2)}\n`, 'utf8');
+  const sourceUrls = [
+    ...(record.sourcesChecked ?? []).map((source) => source.url),
+    ...(record.documents ?? []).map((document) => document.finalUrl || document.url),
+  ].filter(Boolean);
+  const sidecar = withSidecarMetadata(record, {
+    kind: 'hoa',
+    scope: 'property',
+    subject: target,
+    subjectKey: subjectKeyForTarget(target),
+    expiresAt: expiresInDays(90, record.generatedAt),
+    sourceUrls,
+    status: record.status,
+    warnings: record.openQuestions ?? [],
+  });
+  await writeFile(outputPath, `${JSON.stringify(sidecar, null, 2)}\n`, 'utf8');
+  recordArtifact({
+    path: outputPath,
+    kind: 'hoa',
+    scope: 'property',
+    subject: target,
+    subjectKey: sidecar.subjectKey,
+    commandId: sidecar.commandId,
+    generatedAt: sidecar.generatedAt,
+    expiresAt: sidecar.expiresAt,
+    sourceUrls: sidecar.sourceUrls,
+    status: sidecar.status,
+    warnings: sidecar.warnings,
+  });
 
   if (config.updateReport && target.reportAbsolutePath) {
-    upsertReportSection(target.reportAbsolutePath, record);
+    upsertReportSection(target.reportAbsolutePath, sidecar);
   }
 
   return {
@@ -1012,10 +1014,10 @@ async function runTarget(target, config) {
     city: record.city,
     state: record.state,
     outputPath: outputPath.replace(`${ROOT}\\`, '').replace(/\\/g, '/'),
-    status: record.status,
-    confidence: record.confidence,
-    documentsFound: record.documents.filter((doc) => doc.status === 'captured').length,
-    topicsFound: record.topics.filter((topic) => topic.status === 'found').length,
+    status: sidecar.status,
+    confidence: sidecar.confidence,
+    documentsFound: sidecar.documents.filter((doc) => doc.status === 'captured').length,
+    topicsFound: sidecar.topics.filter((topic) => topic.status === 'found').length,
     reportUpdated: Boolean(config.updateReport && target.reportAbsolutePath),
   };
 }

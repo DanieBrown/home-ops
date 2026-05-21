@@ -32,6 +32,7 @@ import { fileURLToPath } from 'url';
 import { ROOT } from '../shared/paths.mjs';
 import { slugify } from '../shared/text-utils.mjs';
 import { parseReport } from './research-utils.mjs';
+import { expiresInDays, recordArtifact, subjectKeyForTarget, withSidecarMetadata } from '../shared/knowledge-store.mjs';
 import {
   attachHostedBrowser,
   navigateAndSettle,
@@ -584,8 +585,35 @@ async function writeMetadata(target, capture) {
         : null),
   };
   await mkdir(OUTPUT_DIR, { recursive: true });
-  await writeFile(outputPath, `${JSON.stringify(payload, null, 2)}\n`, 'utf8');
-  return { outputPath, payload };
+  const sourceUrls = [
+    ...(payload.sourcesChecked ?? []).map((source) => source.url),
+    ...(payload.schools ?? []).map((school) => school.url ?? school.sourceUrl),
+  ].filter(Boolean);
+  const sidecar = withSidecarMetadata(payload, {
+    kind: 'school-metadata',
+    scope: 'property',
+    subject: target,
+    subjectKey: subjectKeyForTarget(target),
+    expiresAt: expiresInDays(90, payload.generatedAt),
+    sourceUrls,
+    status: payload.status,
+    warnings: payload.note ? [payload.note] : [],
+  });
+  await writeFile(outputPath, `${JSON.stringify(sidecar, null, 2)}\n`, 'utf8');
+  recordArtifact({
+    path: outputPath,
+    kind: 'school-metadata',
+    scope: 'property',
+    subject: target,
+    subjectKey: sidecar.subjectKey,
+    commandId: sidecar.commandId,
+    generatedAt: sidecar.generatedAt,
+    expiresAt: sidecar.expiresAt,
+    sourceUrls: sidecar.sourceUrls,
+    status: sidecar.status,
+    warnings: sidecar.warnings,
+  });
+  return { outputPath, payload: sidecar };
 }
 
 function printSummary(target, capture, outputPath) {

@@ -11,6 +11,7 @@ import {
   calculateIncomeNeeded,
   getLlpaPct,
   monthlyPrincipalInterest,
+  normalizeAffordabilityAnswers,
   roundDown,
 } from '../affordability/affordability-core.mjs';
 import { applyAffordabilityToFiles } from '../affordability/apply-affordability.mjs';
@@ -77,7 +78,7 @@ function approx(actual, expected, tolerance = 0.5) {
   });
   assert.equal(result.selected.constraint, 'monthly_payment_cap');
   assert.ok(result.warnings.some((warning) => warning.includes('Credit tier is unknown')));
-  assert.ok(result.warnings.some((warning) => warning.includes('Existing monthly debt')));
+  assert.ok(result.warnings.some((warning) => warning.includes('Existing monthly debt reduced')));
 }
 
 {
@@ -102,9 +103,103 @@ function approx(actual, expected, tolerance = 0.5) {
   const capped = calculateAffordability({ ...base, housingPaymentPct: 50 });
   assert.ok(lessCareful.recommended_price_max > veryCareful.recommended_price_max);
   assert.equal(veryCareful.selected.assumptions.housingPaymentPct, 20);
-  assert.equal(lessCareful.source_notes[0], 'Primary cap uses 30% of monthly take-home pay.');
+  assert.equal(lessCareful.source_notes[0], 'Primary cap uses 30% of monthly take-home pay after subtracting non-mortgage monthly debt.');
   assert.equal(capped.selected.assumptions.housingPaymentPct, 45);
-  assert.equal(capped.source_notes[0], 'Primary cap uses 45% of monthly take-home pay.');
+  assert.equal(capped.source_notes[0], 'Primary cap uses 45% of monthly take-home pay after subtracting non-mortgage monthly debt.');
+}
+
+{
+  const base = {
+    termYears: 30,
+    monthlyTakeHomePay: 9000,
+    cashAvailable: 500000,
+    creditTier: '760_779',
+    rateAssumptionPct: 6.5,
+    rate30Pct: 6.5,
+    rate15Pct: 5.8,
+    rateSource: 'fixture',
+    propertyTaxPct: 1,
+    insurancePct: 0.35,
+    hoaMonthly: 0,
+    closingCostPctMin: 2,
+    closingCostPctMax: 5,
+    housingPaymentPct: 25,
+  };
+  const noDebt = calculateAffordability({ ...base, monthlyDebt: 0 });
+  const withDebt = calculateAffordability({ ...base, monthlyDebt: 1500 });
+  assert.ok(withDebt.recommended_price_max < noDebt.recommended_price_max);
+  assert.equal(withDebt.selected.monthly_payment_cap, (9000 - 1500) * 0.25);
+}
+
+{
+  const highDown = calculateAffordability({
+    termYears: 30,
+    monthlyTakeHomePay: 9000,
+    monthlyDebt: 0,
+    cashAvailable: 90000,
+    creditTier: '760_779',
+    rateAssumptionPct: 6.5,
+    rate30Pct: 6.5,
+    rate15Pct: 5.8,
+    rateSource: 'fixture',
+    propertyTaxPct: 1,
+    insurancePct: 0.35,
+    hoaMonthly: 0,
+    closingCostPctMin: 2,
+    closingCostPctMax: 5,
+    downPaymentPct: 20,
+  });
+  const lowDown = calculateAffordability({
+    ...highDown.selected.assumptions,
+    termYears: 30,
+    monthlyTakeHomePay: 9000,
+    monthlyDebt: 0,
+    cashAvailable: 90000,
+    creditTier: '760_779',
+    rateAssumptionPct: 6.5,
+    rate30Pct: 6.5,
+    rate15Pct: 5.8,
+    rateSource: 'fixture',
+    propertyTaxPct: 1,
+    insurancePct: 0.35,
+    hoaMonthly: 0,
+    closingCostPctMin: 2,
+    closingCostPctMax: 5,
+    downPaymentPct: 5,
+  });
+  assert.ok(lowDown.selected.payment_at_recommended.mortgage_insurance > 0);
+  assert.ok(lowDown.selected.assumptions.downPaymentPct < highDown.selected.assumptions.downPaymentPct);
+  assert.ok(lowDown.selected.cash_price_cap > highDown.selected.cash_price_cap, 'Lower down payment should relax the cash cap in this fixture.');
+}
+
+{
+  const normalized = normalizeAffordabilityAnswers({
+    target_state: 'NC',
+    target_area: 'Apex',
+    loan_term_years: '15',
+    monthly_take_home: '12000',
+    monthly_debt: '500',
+    cash_available: '125000',
+    down_payment_pct: '10',
+    credit_tier: '740_759',
+    housing_payment_pct: '28',
+    hoa_monthly: '250',
+    price_floor_mode: 'custom',
+    price_floor_custom: '450000',
+    interest_rate_override: '6.1',
+  }, {
+    search: {
+      areas: [{ name: 'Cary', state: 'NC' }],
+      hard_requirements: { price_min: 500000 },
+    },
+  }, null);
+  assert.equal(normalized.termYears, 15);
+  assert.equal(normalized.monthlyTakeHomePay, 12000);
+  assert.equal(normalized.monthlyDebt, 500);
+  assert.equal(normalized.downPaymentPct, 10);
+  assert.equal(normalized.priceFloorMode, 'custom');
+  const result = calculateAffordability(normalized);
+  assert.equal(result.recommended_price_min, Math.min(450000, result.recommended_price_max));
 }
 
 {

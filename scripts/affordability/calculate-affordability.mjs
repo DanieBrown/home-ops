@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
+import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'fs';
 import { dirname, join, resolve } from 'path';
 import { pathToFileURL } from 'url';
 import YAML from 'yaml';
@@ -9,10 +9,11 @@ import {
   buildProfilePatchPreview,
   calculateAffordability,
   formatMoney,
-  normalizeTermYears,
+  normalizeAffordabilityAnswers,
   toNumber,
 } from './affordability-core.mjs';
 import { HOME_OPS_DIR, OUTPUT_DIR, PROFILE_PATH, ROOT } from '../shared/paths.mjs';
+import { expiresInDays, makeCommandId, recordArtifact, withSidecarMetadata } from '../shared/knowledge-store.mjs';
 
 const DEFAULT_INPUT = join(HOME_OPS_DIR, 'afford-wizard-submission.json');
 const DEFAULT_OUTPUT = join(OUTPUT_DIR, 'affordability', 'latest.json');
@@ -64,68 +65,6 @@ function extractAnswers(input) {
   return input?.payload?.answers ?? input?.answers ?? input;
 }
 
-function firstProfileState(profile) {
-  const area = profile?.search?.areas?.[0];
-  return area?.state ?? '';
-}
-
-function firstProfileArea(profile) {
-  const areas = profile?.search?.areas;
-  if (!Array.isArray(areas) || areas.length === 0) return '';
-  return areas.map((area) => area.name).filter(Boolean).join(', ');
-}
-
-function estimateMonthlyTakeHomeFromAnswers(answers) {
-  const annualGross = (toNumber(answers.primary_annual_salary) ?? 0)
-    + (toNumber(answers.secondary_annual_salary) ?? 0)
-    + (toNumber(answers.other_annual_income) ?? 0);
-  const takeHomePct = toNumber(answers.take_home_pct) ?? 70;
-  const monthlyHelp = toNumber(answers.other_monthly_contribution) ?? 0;
-  const override = toNumber(answers.monthly_take_home_override);
-  if (Number.isFinite(override) && override > 0) return override + monthlyHelp;
-  if (annualGross > 0 || monthlyHelp > 0) return (annualGross * (takeHomePct / 100) / 12) + monthlyHelp;
-  return toNumber(answers.monthly_take_home);
-}
-
-function normalizeAnswers(answers, profile, pmmsRates) {
-  const termYears = normalizeTermYears(answers.loan_term_years ?? answers.term_years);
-  const overrideRate = toNumber(answers.interest_rate_override);
-  const selectedPmmsRate = termYears === 30 ? pmmsRates?.rate30Pct : pmmsRates?.rate15Pct;
-  const rateAssumptionPct = Number.isFinite(overrideRate) && overrideRate > 0 ? overrideRate : selectedPmmsRate;
-
-  if (!Number.isFinite(rateAssumptionPct) || rateAssumptionPct <= 0) {
-    throw new Error('No interest rate is available. Reopen the affordability wizard and enter an interest-rate override, then submit again.');
-  }
-
-  const rateSource = Number.isFinite(overrideRate) && overrideRate > 0
-    ? 'User override'
-    : `Freddie Mac PMMS (${pmmsRates?.asOf ?? 'latest available'})`;
-
-  const profileHoa = toNumber(profile?.search?.soft_preferences?.hoa_max_monthly);
-  return {
-    termYears,
-    monthlyTakeHomePay: estimateMonthlyTakeHomeFromAnswers(answers),
-    monthlyDebt: toNumber(answers.monthly_debt) ?? 0,
-    cashAvailable: toNumber(answers.cash_available),
-    creditTier: answers.credit_tier ?? 'unknown',
-    targetState: answers.target_state || firstProfileState(profile),
-    targetArea: answers.target_area || firstProfileArea(profile),
-    rateAssumptionPct,
-    rate30Pct: pmmsRates?.rate30Pct,
-    rate15Pct: pmmsRates?.rate15Pct,
-    rateSource,
-    comparisonRateSource: pmmsRates ? `Freddie Mac PMMS (${pmmsRates.asOf ?? 'latest available'})` : rateSource,
-    propertyTaxPct: toNumber(answers.property_tax_pct) ?? 1.0,
-    insurancePct: toNumber(answers.insurance_pct) ?? 0.35,
-    hoaMonthly: toNumber(answers.hoa_monthly) ?? profileHoa ?? 0,
-    closingCostPctMin: toNumber(answers.closing_cost_pct_min) ?? 2,
-    closingCostPctMax: toNumber(answers.closing_cost_pct_max) ?? 5,
-    housingPaymentPct: toNumber(answers.housing_payment_pct) ?? 25,
-    downPaymentPct: 20,
-    includeComparison: answers.include_comparison !== false,
-  };
-}
-
 function stripTags(html) {
   return html
     .replace(/<script[\s\S]*?<\/script>/gi, ' ')
@@ -168,8 +107,8 @@ function printSummary(result) {
   const selected = result.selected;
   console.log('\n=== home-ops affordability estimate ===\n');
   console.log(`Selected term: ${selected.term_years}-year fixed`);
-  console.log(`Recommended max: ${formatMoney(result.recommended_price_max)}`);
-  console.log(`Binding constraint: ${selected.constraint === 'cash_available' ? 'cash available for down payment/closing' : `${selected.assumptions.housingPaymentPct}% monthly payment cap`}`);
+  console.log(`Recommended range: ${formatMoney(result.recommended_price_min)} to ${formatMoney(result.recommended_price_max)}`);
+  console.log(`Binding constraint: ${selected.constraint === 'cash_available' ? 'cash available for down payment/closing' : `${selected.assumptions.housingPaymentPct}% debt-adjusted monthly payment cap`}`);
   console.log(`Estimated payment at max: ${formatMoney(selected.payment_at_recommended.total)} / month`);
   console.log(`Rate assumption: ${selected.assumptions.rateAssumptionPct}% (${selected.assumptions.rate_source})`);
   if (result.comparison) {
@@ -206,18 +145,49 @@ async function main() {
     }
   }
 
-  const normalized = normalizeAnswers(answers, profile, pmmsRates);
+  const normalized = normalizeAffordabilityAnswers(answers, profile, pmmsRates);
   const result = calculateAffordability(normalized);
+  const commandId = input?.commandId ?? makeCommandId('affordability');
   result.target = {
     state: normalized.targetState,
     area: normalized.targetArea,
   };
   result.profile_patch_preview = buildProfilePatchPreview(profile, result);
   result.submission_source = input?.source ?? 'afford-wizard';
+  const outputRecord = withSidecarMetadata(result, {
+    kind: 'affordability',
+    scope: 'buyer',
+    subjectKey: 'buyer-affordability',
+    commandId,
+    generatedAt: result.calculated_at,
+    expiresAt: expiresInDays(14, result.calculated_at),
+    sourceUrls: pmmsRates?.source ? [pmmsRates.source] : [],
+    status: 'ok',
+    warnings: result.warnings,
+  });
 
   mkdirSync(dirname(options.output), { recursive: true });
-  writeFileSync(options.output, `${JSON.stringify(result, null, 2)}\n`, 'utf8');
-  printSummary(result);
+  writeFileSync(options.output, `${JSON.stringify(outputRecord, null, 2)}\n`, 'utf8');
+  try {
+    recordArtifact({
+      path: options.output,
+      kind: 'affordability',
+      scope: 'buyer',
+      subjectKey: 'buyer-affordability',
+      commandId,
+      generatedAt: outputRecord.generatedAt,
+      expiresAt: outputRecord.expiresAt,
+      sourceUrls: outputRecord.sourceUrls,
+      status: outputRecord.status,
+      warnings: outputRecord.warnings,
+    });
+  } catch (error) {
+    if (!/outside repo root|under output/.test(error.message)) throw error;
+  }
+  if (options.input === DEFAULT_INPUT && existsSync(DEFAULT_INPUT)) {
+    unlinkSync(DEFAULT_INPUT);
+  }
+  printSummary(outputRecord);
   console.log(`Result written to ${options.output}`);
 }
 

@@ -113,6 +113,7 @@ console.log('\n2. Script execution');
 
 const scripts = [
   'scripts/browser/browser-session.mjs --status',
+  'scripts/browser/open-url-in-hosted-session.mjs --help',
   'scripts/browser/review-tabs.mjs --help',
   'scripts/research/research-coverage-audit.mjs',
   'scripts/research/research-source-plan.mjs --address "100 Test Dr" --city "Apex" --type development',
@@ -127,6 +128,7 @@ const scripts = [
   'scripts/research/shortlist-finalist-gate.mjs --help',
   'scripts/affordability/calculate-affordability.mjs --help',
   'scripts/affordability/apply-affordability.mjs --help',
+  'scripts/system/temp-artifact-check.mjs',
   'scripts/system/doctor.mjs',
   'scripts/config/profile-sync-check.mjs',
   'scripts/pipeline/verify-pipeline.mjs',
@@ -173,6 +175,24 @@ for (const script of scripts) {
 }
 
 {
+  const result = run('node scripts/tests/test-knowledge-store.mjs');
+  if (result.ok) {
+    pass('knowledge store indexing and reset tests');
+  } else {
+    fail(`knowledge store indexing and reset tests\n${result.output}`);
+  }
+}
+
+{
+  const result = run('node scripts/tests/test-generate-portals.mjs');
+  if (result.ok) {
+    pass('portal generation seed catalog tests');
+  } else {
+    fail(`portal generation seed catalog tests\n${result.output}`);
+  }
+}
+
+{
   const result = run('node scripts/tests/test-utility-options.mjs');
   if (result.ok) {
     pass('utility estimate calculation and sidecar tests');
@@ -202,6 +222,7 @@ const systemFiles = [
   'modes/deep.md',
   'templates/states.yml',
   'templates/portals.example.yml',
+  'templates/research-defaults.yml',
   '.claude/skills/home-ops/SKILL.md',
 ];
 

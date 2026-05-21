@@ -21,6 +21,8 @@ Read `DATA_CONTRACT.md` for the full split.
 Rule:
 - buyer-specific criteria belong in `buyer-profile.md`, `config/profile.yml`, `modes/_profile.md`, or `portals.yml`
 - do not put buyer-specific criteria into `modes/_shared.md`
+- learned local facts live under `output/knowledge/`, `output/areas/`, and output sidecar directories and are preserved by reset unless the user explicitly asks to purge them
+- one-off scripts and scratch files belong under `.home-ops/tmp/{commandId}/` or OS temp and should be removed after use
 
 ## Main Files
 
@@ -33,8 +35,11 @@ Rule:
 | `data/pipeline.md` | Pending listing inbox |
 | `data/scan-history.tsv` | Scan dedup history |
 | `reports/` | Listing evaluation reports |
+| `output/knowledge/` | Learned artifact index and command memory |
+| `output/areas/` | Reusable area facts and source references |
 | `modes/*` | Prompt-driven workflows |
 | `templates/states.yml` | Canonical listing states |
+| `templates/research-defaults.yml` | Reusable source seed catalog for generated output inventories |
 
 ## OpenCode Commands
 

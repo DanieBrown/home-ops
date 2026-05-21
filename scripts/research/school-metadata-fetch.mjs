@@ -35,6 +35,7 @@ import {
   safeClose,
 } from '../browser/browser-extract-utils.mjs';
 import { extractListing } from './extract-listing-details.mjs';
+import { expiresInDays, recordArtifact, subjectKeyForTarget, withSidecarMetadata } from '../shared/knowledge-store.mjs';
 
 const OUTPUT_DIR = join(ROOT, 'output', 'school-metadata');
 const DEFAULT_TIMEOUT_MS = 20000;
@@ -1233,8 +1234,36 @@ async function run() {
       ...capture,
       standardizedSchools: buildStandardizedSchools(capture.assignedSchools, capture.schools),
     };
-    await writeFile(buildOutputPath(target), `${JSON.stringify(record, null, 2)}\n`, 'utf8');
-    records.push(record);
+    const outputPath = buildOutputPath(target);
+    const sourceUrls = (record.schools ?? []).flatMap((school) => [
+      school.sourceUrl,
+      ...(school.sources ?? []).map((source) => source.url),
+    ]).filter(Boolean);
+    const sidecar = withSidecarMetadata(record, {
+      kind: 'school-metadata',
+      scope: 'property',
+      subject: target,
+      subjectKey: subjectKeyForTarget(target),
+      expiresAt: expiresInDays(90, record.generatedAt),
+      sourceUrls,
+      status: record.status,
+      warnings: record.note ? [record.note] : [],
+    });
+    await writeFile(outputPath, `${JSON.stringify(sidecar, null, 2)}\n`, 'utf8');
+    recordArtifact({
+      path: outputPath,
+      kind: 'school-metadata',
+      scope: 'property',
+      subject: target,
+      subjectKey: sidecar.subjectKey,
+      commandId: sidecar.commandId,
+      generatedAt: sidecar.generatedAt,
+      expiresAt: sidecar.expiresAt,
+      sourceUrls: sidecar.sourceUrls,
+      status: sidecar.status,
+      warnings: sidecar.warnings,
+    });
+    records.push(sidecar);
   }
 
   if (config.json) {

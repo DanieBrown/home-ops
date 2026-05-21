@@ -18,7 +18,7 @@ Run the environment preflight in `modes/_preflight.md` before anything else. Thi
 
 ## Goal
 
-Collect only the minimum financial inputs needed for a conservative estimate, calculate the selected fixed-rate loan term first, show the alternate fixed term as comparison context, then ask before updating:
+Collect exactly ten primary financial inputs needed for a conservative estimate, calculate the selected fixed-rate loan term first, show the alternate fixed term as comparison context, then ask before updating:
 
 - `config/profile.yml`
 - `buyer-profile.md`
@@ -35,15 +35,15 @@ Follow this flow:
 1. Tell the user: "Affordability wizard will open at http://127.0.0.1:4179/ -- fill it out and click Submit, then tell me when you're done."
 2. Launch the server in the background:
    - `node tools/afford-wizard/serve.mjs --once --port 4179`
-3. Open the wizard:
-   - `node scripts/profile-wizard/open-browser.mjs --url http://127.0.0.1:4179/`
-   - If that fails, tell the user to open the URL manually.
+3. Open the wizard in a new tab of the hosted Playwright/CDP browser session:
+   - `npm.cmd run afford:open`
+   - If that fails because the hosted session is missing or unreachable, run `npm.cmd run browser:setup`, leave Chrome open, then rerun the opener.
 4. Stop and wait for the user to confirm they clicked Submit.
 5. After confirmation, run:
    - `npm.cmd run afford:calculate -- --input .home-ops/afford-wizard-submission.json --output output/affordability/latest.json`
 6. Summarize:
    - selected loan term
-   - recommended max purchase price
+   - recommended purchase-price range
    - binding constraint: monthly payment cap or cash available
    - estimated monthly payment at the max
    - rate source
@@ -56,34 +56,26 @@ Follow this flow:
 
 ## Wizard Inputs
 
-Required:
+Primary inputs:
 
-- preferred loan term: `30-year fixed` or `15-year fixed`
-- annual salary for the buyer and optional co-buyer/contributors
-- optional monthly housing help from another contributor
-- monthly non-mortgage debt payments
-- cash available for down payment and closing after preserving emergency savings
-- rough credit-score band, not exact score
-- target state/area, prefilled from `config/profile.yml` when possible
-- conservatism slider, stored as the housing payment percentage of monthly take-home pay
-
-Optional advanced inputs:
-
-- monthly take-home override when the user knows the exact household take-home amount
-- estimated take-home percentage from salary
-- interest-rate override
-- annual property tax percentage
-- annual homeowners insurance percentage
-- monthly HOA estimate
-- closing-cost percentage
+1. Target state/area, prefilled from `config/profile.yml` when possible.
+2. Preferred fixed loan term: `30-year fixed` or `15-year fixed`.
+3. Actual monthly household take-home pay.
+4. Monthly non-mortgage debt payments.
+5. Cash the buyer can comfortably use for the home purchase.
+6. Target down-payment percentage.
+7. Rough credit-score band, not exact score.
+8. Housing-payment cap as a percent of take-home.
+9. HOA monthly budget or estimate.
+10. Minimum search floor preference: keep current profile min, auto 85% of max, custom amount, or no floor.
 
 If no rate override is provided, `scripts/affordability/calculate-affordability.mjs` attempts to fetch Freddie Mac PMMS rates for the selected term. If PMMS lookup fails and no override exists, tell the user to reopen the wizard and provide a rate override.
 
 ## Calculation Rules
 
-- Primary cap: monthly housing payment should stay at or below the selected percentage of monthly take-home pay. Default to 25%.
+- Primary cap: monthly housing payment should stay at or below the selected percentage of monthly take-home pay after subtracting monthly non-mortgage debt. Default to 25%.
 - Payment includes principal, interest, estimated property tax, homeowners insurance, HOA, and mortgage insurance when applicable.
-- Default down payment is 20%.
+- Down payment comes from the wizard answer, falling back to the profile and then 20%.
 - Closing-cost planning range is 2% to 5%.
 - Cash constraint must fit down payment plus high-end closing costs plus applicable credit/LTV pricing pressure.
 - For 30-year conventional scenarios, apply Fannie Mae purchase-money LLPA by credit tier and LTV as an upfront pricing-pressure estimate.
@@ -95,8 +87,7 @@ If no rate override is provided, `scripts/affordability/calculate-affordability.
 
 If the user accepts the update:
 
-- Update `search.hard_requirements.price_max` to the rounded-down recommended ceiling.
-- Preserve `search.hard_requirements.price_min` unless it exceeds the new max; then set it to 85% of the max, rounded down.
+- Update `search.hard_requirements.price_min` and `search.hard_requirements.price_max` from the calculated recommended range.
 - Update `financial.down_payment_pct`, `closing_cost_pct_min`, `closing_cost_pct_max`, `loan_term_years`, `housing_payment_pct`, `rate_assumption_pct`, and `rate_source`.
 - Add or replace the affordability snapshot in `buyer-profile.md`.
 - Add or replace the affordability heuristic in `modes/_profile.md`.
@@ -117,7 +108,7 @@ Return a concise summary with:
 
 - affordability result path
 - whether the profile was updated
-- selected-term price ceiling
+- selected-term recommended range
 - alternate-term comparison when available
 - warnings and confidence notes
 - validation result after an accepted update

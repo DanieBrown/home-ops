@@ -18,6 +18,7 @@ import { fileURLToPath } from 'url';
 import { ROOT } from '../shared/paths.mjs';
 import { parseReport, parseShortlist } from './research-utils.mjs';
 import { slugify } from '../shared/text-utils.mjs';
+import { expiresInDays, recordArtifact, subjectKeyForTarget, withSidecarMetadata } from '../shared/knowledge-store.mjs';
 
 const OUTPUT_DIR = join(ROOT, 'output', 'geocode');
 const DEFAULT_TIMEOUT_MS = 15000;
@@ -108,16 +109,41 @@ export async function ensureGeocode(target, { force = false } = {}) {
   }
 
   const result = await geocodeOne(target);
-  const record = {
+  const generatedAt = new Date().toISOString();
+  const outputPath = geocodeOutputPath(target);
+  const record = withSidecarMetadata({
     generatedAt: new Date().toISOString(),
     address: target.address,
     city: target.city,
     state: target.state || 'NC',
     ...result,
-  };
+  }, {
+    kind: 'geocode',
+    scope: 'property',
+    subject: target,
+    subjectKey: subjectKeyForTarget(target),
+    generatedAt,
+    expiresAt: expiresInDays(365, generatedAt),
+    sourceUrls: [CENSUS_URL],
+    status: result.status,
+    warnings: result.error ? [result.error] : [],
+  });
 
   await mkdir(OUTPUT_DIR, { recursive: true });
-  await writeFile(geocodeOutputPath(target), `${JSON.stringify(record, null, 2)}\n`, 'utf8');
+  await writeFile(outputPath, `${JSON.stringify(record, null, 2)}\n`, 'utf8');
+  recordArtifact({
+    path: outputPath,
+    kind: 'geocode',
+    scope: 'property',
+    subject: target,
+    subjectKey: record.subjectKey,
+    commandId: record.commandId,
+    generatedAt: record.generatedAt,
+    expiresAt: record.expiresAt,
+    sourceUrls: record.sourceUrls,
+    status: record.status,
+    warnings: record.warnings,
+  });
   return record;
 }
 

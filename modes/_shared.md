@@ -29,11 +29,15 @@ The system should optimize for:
 | canonical states | `templates/states.yml` | tracker updates and status normalization |
 | listing tracker | `data/listings.md` | any evaluation, compare, or tracker work |
 | pipeline inbox | `data/pipeline.md` | pipeline and scan workflows |
+| learned output index | `output/knowledge/index.json` | reusable generated facts |
+| area knowledge | `output/areas/{area-slug}.json` | local area facts and source references |
 
 Rules:
 - Never invent listing facts, school ratings, HOA values, flood status, or neighborhood sentiment.
 - Read `modes/_profile.md` after this file. User-specific guidance overrides shared defaults.
 - If evidence conflicts across sources, surface the conflict and lower confidence.
+- Treat `output/` sidecars as durable learned user-layer facts. Do not delete geocodes, permits, schools, utilities, sentiment, communities, listings, builder, HOA, source inventories, or area facts during ordinary reset/hunt work.
+- One-off scripts and scratch files belong under `.home-ops/tmp/{commandId}/` or the OS temp directory and should be removed after use.
 
 ## Batch Evaluation Safety
 
