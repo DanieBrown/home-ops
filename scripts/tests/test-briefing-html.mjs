@@ -116,6 +116,7 @@ assert.ok(richHtml.includes('gate-chip gate-fail'), 'gate fail chip renders');
 assert.ok(richHtml.includes('gate-chip gate-unknown'), 'gate unknown chip renders');
 assert.ok(richHtml.includes('axis-scoreboard'), 'axis scoreboard renders');
 assert.ok(richHtml.includes('conf-badge'), 'per-axis confidence chips render');
+assert.ok(richHtml.includes('sentiment: medium'), 'confidence chip content renders from axis data');
 assert.ok(richHtml.includes('MODERATE RISK'), 'risk chip renders');
 
 // No axis, no photos -> dashboard blocks are simply absent, page still renders.
@@ -123,5 +124,6 @@ const bareHtml = buildHtml([makeFinalist()], null, 'single', { trackerContent: '
 assert.ok(!bareHtml.includes('axis-scoreboard'));
 assert.ok(!bareHtml.includes('data:image/png'));
 assert.ok(bareHtml.includes('gate-chip'), 'gate chips come from the report, not the axis file');
+assert.ok(!bareHtml.includes('sentiment: medium'), 'no confidence chip content without axis data');
 
 console.log('test-briefing-html: all assertions passed');
