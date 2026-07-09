@@ -122,6 +122,7 @@ const scripts = [
   'scripts/research/construction-check.mjs --help',
   'scripts/research/utility-options-check.mjs --help',
   'scripts/reports/briefing-pdf.mjs --help',
+  'scripts/research/axis-sidecar-write.mjs --help',
   'scripts/system/cache-utils.mjs --help',
   'scripts/system/test-cache-loop.mjs',
   'scripts/research/deep-research-packet.mjs --help',
@@ -198,6 +199,15 @@ for (const script of scripts) {
     pass('utility estimate calculation and sidecar tests');
   } else {
     fail(`utility estimate calculation and sidecar tests\n${result.output}`);
+  }
+}
+
+{
+  const result = run('node scripts/tests/test-axis-sidecar.mjs');
+  if (result.ok) {
+    pass('axis sidecar validation and write tests');
+  } else {
+    fail(`axis sidecar validation and write tests\n${result.output}`);
   }
 }
 
