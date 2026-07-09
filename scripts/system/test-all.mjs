@@ -220,6 +220,15 @@ for (const script of scripts) {
   }
 }
 
+{
+  const result = run('node scripts/tests/test-briefing-html.mjs');
+  if (result.ok) {
+    pass('briefing HTML fixture tests');
+  } else {
+    fail(`briefing HTML fixture tests\n${result.output}`);
+  }
+}
+
 console.log(QUICK ? '\n3. Extended build checks (skipped --quick)' : '\n3. Extended build checks');
 
 console.log('\n4. Data contract validation');

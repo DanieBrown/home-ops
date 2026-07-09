@@ -36,6 +36,7 @@ const SCHOOL_METADATA_DIR = join(ROOT, 'output', 'school-metadata');
 const LISTING_DIR = join(ROOT, 'output', 'listings');
 const HOA_DIR = join(ROOT, 'output', 'hoa');
 const UTILITIES_DIR = join(ROOT, 'output', 'utilities');
+const AXIS_DIR = join(ROOT, 'output', 'axis');
 
 const HELP_TEXT = `Usage:
   node briefing-pdf.mjs [--profile chrome-host] [--no-open]
@@ -210,6 +211,12 @@ function buildGapList(report, finalist, profile) {
   }
   if (!finalist.sentiment) {
     gaps.push('Neighborhood sentiment from Facebook and Nextdoor has not been pulled yet.');
+  }
+  if (!finalist.axis) {
+    gaps.push('Axis-agent interpretation sidecar has not been written for this home (deep axis phase incomplete).');
+  }
+  if (finalist.axisMismatch) {
+    gaps.push(finalist.axisMismatch);
   }
   if (finalist.sentimentMismatch) {
     gaps.push(finalist.sentimentMismatch);
@@ -1574,7 +1581,7 @@ function buildFinalistSection(finalist, profile, options = {}) {
   `;
 }
 
-function buildHtml(finalists, profile, mode = 'batch') {
+export function buildHtml(finalists, profile, mode = 'batch', context = {}) {
   const generatedAt = new Date().toISOString().replace('T', ' ').slice(0, 16);
   const showRank = mode === 'batch';
   const finalistSections = finalists
@@ -2141,6 +2148,7 @@ function loadFinalist(reportPath, rank = 1) {
   const builderCompanion = loadCompanionForReport(report, BUILDER_DIR, 'Builder');
   const hoaCompanion = loadCompanionForReport(report, HOA_DIR, 'HOA');
   const utilitiesCompanion = loadUtilityOptionsForReport(report);
+  const axisCompanion = loadCompanionForReport(report, AXIS_DIR, 'Axis');
   const listing = loadListingFacts(report);
   const communityPayload = findCompanionJson(report, COMMUNITY_DIR);
   const community = communityPayload && communityPayload.community
@@ -2159,6 +2167,7 @@ function loadFinalist(reportPath, rank = 1) {
     packet: packetCompanion.data,
     listing,
     community,
+    axis: axisCompanion.data,
     constructionMismatch: constructionCompanion.mismatchMessage,
     permitsMismatch: permitsCompanion.mismatchMessage,
     sentimentMismatch: sentimentCompanion.mismatchMessage,
@@ -2166,6 +2175,7 @@ function loadFinalist(reportPath, rank = 1) {
     hoaMismatch: hoaCompanion.mismatchMessage,
     utilitiesMismatch: utilitiesCompanion.mismatchMessage,
     packetMismatch: packetCompanion.mismatchMessage,
+    axisMismatch: axisCompanion.mismatchMessage,
   };
 }
 
