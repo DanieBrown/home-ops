@@ -99,5 +99,21 @@ assert.equal(onDisk.reportPath, 'reports/001-100-test-dr-2026-07-08.md');
 assert.equal(onDisk.address, '100 Test Dr');
 assert.ok(existsSync(join(root, 'output', 'knowledge', 'index.json')));
 
+const { CONTRACTS } = await import('../hooks/contract-shared.mjs');
+const deepSingle = CONTRACTS['deep-single'].required;
+const singleAxisReq = deepSingle.find((entry) => entry.id === 'axis-sidecar');
+assert.ok(singleAxisReq, 'deep-single contract must include an axis-sidecar requirement');
+assert.ok(singleAxisReq.patterns.some((rx) => rx.test('node scripts/research/axis-sidecar-write.mjs --report r.md --input a.json')));
+assert.ok(singleAxisReq.requires.includes('deep-research-packet-single'));
+const singlePdfReq = deepSingle.find((entry) => entry.id === 'briefing-pdf-deep-single');
+assert.ok(singlePdfReq.requires.includes('axis-sidecar'), 'briefing-pdf-deep-single must require axis-sidecar');
+
+const deepShortlist = CONTRACTS['deep-shortlist'].required;
+const batchAxisReq = deepShortlist.find((entry) => entry.id === 'axis-sidecar');
+assert.ok(batchAxisReq, 'deep-shortlist contract must include an axis-sidecar requirement');
+assert.ok(batchAxisReq.requires.includes('deep-research-packet'));
+const batchPdfReq = deepShortlist.find((entry) => entry.id === 'briefing-pdf');
+assert.ok(batchPdfReq.requires.includes('axis-sidecar'), 'batch briefing-pdf must require axis-sidecar');
+
 rmSync(root, { recursive: true, force: true });
 console.log('test-axis-sidecar: all assertions passed');

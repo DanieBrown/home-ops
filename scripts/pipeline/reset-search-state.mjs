@@ -24,6 +24,7 @@ const ZILLOW_BLOCKED_PATH = join(HOME_OPS_DIR, 'zillow-session-blocked.json');
 // Transient output subdirs that can bias repeat runs. Durable learning
 // sidecars stay in output/ by default so reset/hunt does not erase local facts.
 const OUTPUT_CACHE_SUBDIRS = [
+  'axis',
   'briefings',
   'cache',
   'deep-packets',
@@ -140,7 +141,7 @@ Clears:
   - data/scan-history.tsv (back to header only)
 
 Also clears (research caches that bias re-runs):
-  - output/briefings/, output/cache/
+  - output/axis/, output/briefings/, output/cache/
   - output/deep-packets/, output/evaluate-packets/
 
 Preserves:

@@ -17,7 +17,7 @@ const req = (id, description, patterns, opts = {}) => ({
   last_exit_code: null,
 });
 
-const CONTRACTS = {
+export const CONTRACTS = {
   scan: {
     mode: 'scan',
     description: '/home-ops scan -- portal scan that writes to data/pipeline.md',
@@ -178,6 +178,10 @@ const CONTRACTS = {
         requires: ['research-source-plan-single', 'community-lookup-single', 'sentiment-extract-single', 'sentiment-public-extract-single', 'construction-check-single', 'county-permits-check-single', 'school-metadata-fetch-single', 'builder-check-single', 'hoa-docs-check-single', 'utility-options-check-single'],
         isGate: true,
       }),
+      req('axis-sidecar', 'Persist merged axis-agent outputs to output/axis/{slug}.json', [
+        /axis-sidecar-write\.mjs\b/,
+        /npm(?:\.cmd)?\s+run\s+axis:write\b/,
+      ], { requires: ['deep-research-packet-single'], isGate: true }),
       req('review-tabs-single', 'Replace browser tabs with listing URL', [
         /review-tabs\.mjs[^\n]*urls\b/,
         /npm(?:\.cmd)?\s+run\s+browser:review[^\n]*urls\b/,
@@ -187,7 +191,7 @@ const CONTRACTS = {
       req('briefing-pdf-deep-single', 'Render deep briefing PDF (single home or combined multi-URL)', [
         /briefing-pdf\.mjs[^\n]*--reports?\b/,
         /npm(?:\.cmd)?\s+run\s+brief:(?:single|combined)\b/,
-      ], { requires: ['review-tabs-single'], isGate: true }),
+      ], { requires: ['review-tabs-single', 'axis-sidecar'], isGate: true }),
     ],
   },
   'deep-shortlist': {
@@ -225,6 +229,10 @@ const CONTRACTS = {
         /deep-research-packet\.mjs[^\n]*--shortlist/,
         /npm(?:\.cmd)?\s+run\s+prepare:deep[^\n]*--shortlist/,
       ], { requires: ['research-source-plan', 'community-lookup', 'sentiment-extract', 'construction-check', 'sentiment-public-extract', 'utility-options-check'], isGate: true }),
+      req('axis-sidecar', 'Persist merged axis-agent outputs to output/axis/{slug}.json (per home)', [
+        /axis-sidecar-write\.mjs\b/,
+        /npm(?:\.cmd)?\s+run\s+axis:write\b/,
+      ], { requires: ['deep-research-packet'], isGate: true }),
       req('promote-finalists', 'Auto-promote top-3 into Refined Top 3 section', [
         /promote-finalists\.mjs\b/,
         /npm(?:\.cmd)?\s+run\s+promote:finalists\b/,
@@ -245,7 +253,7 @@ const CONTRACTS = {
         /npm(?:\.cmd)?\s+run\s+brief:top3\b/,
       ], {
         isGate: true,
-        requires: ['review-tabs-top3'],
+        requires: ['review-tabs-top3', 'axis-sidecar'],
       }),
     ],
   },
