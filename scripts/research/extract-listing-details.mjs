@@ -24,7 +24,7 @@
 
 import { mkdir, writeFile } from 'fs/promises';
 import { existsSync } from 'fs';
-import { dirname, join } from 'path';
+import { dirname, join, relative } from 'path';
 import { fileURLToPath } from 'url';
 import { ROOT } from '../shared/paths.mjs';
 import { slugify } from '../shared/text-utils.mjs';
@@ -980,6 +980,79 @@ export async function extractListing(url, opts = {}) {
   return listing;
 }
 
+// ---------------------------------------------------------------------------
+// Photo caching
+// The briefing PDF embeds photos as base64 data URIs, so they must exist on
+// disk at capture time -- remote hotlinks 403 or stall networkidle at render.
+// ---------------------------------------------------------------------------
+
+const PHOTO_DOWNLOAD_TIMEOUT_MS = 10000;
+const PHOTO_MAX_COUNT = 3;
+
+export async function savePhotoBuffers(slug, buffers, { root = ROOT } = {}) {
+  const photoDir = join(root, 'output', 'listings', 'photos', slug);
+  const localPaths = [];
+  let wroteDir = false;
+  for (let index = 0; index < buffers.length; index += 1) {
+    const buffer = buffers[index];
+    if (!buffer || buffer.length === 0) continue;
+    if (!wroteDir) {
+      await mkdir(photoDir, { recursive: true });
+      wroteDir = true;
+    }
+    const filePath = join(photoDir, `photo-${index + 1}.jpg`);
+    await writeFile(filePath, buffer);
+    localPaths.push(relative(root, filePath).replace(/\\/g, '/'));
+  }
+  return localPaths;
+}
+
+async function fetchPhotoBuffer(requestContext, url) {
+  if (requestContext) {
+    try {
+      const response = await requestContext.get(url, { timeout: PHOTO_DOWNLOAD_TIMEOUT_MS });
+      if (response.ok()) return Buffer.from(await response.body());
+    } catch { /* fall through to plain fetch */ }
+  }
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), PHOTO_DOWNLOAD_TIMEOUT_MS);
+    const response = await fetch(url, { signal: controller.signal });
+    clearTimeout(timer);
+    if (response.ok) return Buffer.from(await response.arrayBuffer());
+  } catch { /* unrecoverable for this photo */ }
+  return null;
+}
+
+export async function downloadListingPhotos(listing, profileName) {
+  const urls = (listing.photos?.urls ?? []).slice(0, PHOTO_MAX_COUNT);
+  if (urls.length === 0) return listing;
+
+  let browser = null;
+  let requestContext = null;
+  try {
+    const attached = await attachHostedBrowser(ROOT, profileName);
+    browser = attached.browser;
+    requestContext = attached.context.request;
+  } catch {
+    listing.coverageNotes.push('photo download: hosted session unavailable, using direct fetch only');
+  }
+
+  const buffers = [];
+  for (const url of urls) {
+    buffers.push(await fetchPhotoBuffer(requestContext, url));
+  }
+  if (browser) await safeClose({ browser });
+
+  const localPaths = await savePhotoBuffers(buildSlug(listing), buffers);
+  if (localPaths.length > 0) {
+    listing.photos.localPaths = localPaths;
+  } else {
+    listing.coverageNotes.push('photo download failed for all listing photos');
+  }
+  return listing;
+}
+
 async function writeListing(listing) {
   const slug = buildSlug(listing);
   const outputPath = join(OUTPUT_DIR, `${slug}.json`);
@@ -1062,6 +1135,7 @@ async function main() {
   }
 
   const listing = await extractListing(config.url, { profileName: config.profileName });
+  await downloadListingPhotos(listing, config.profileName);
   const { outputPath, listing: writtenListing } = await writeListing(listing);
 
   if (config.json) {
