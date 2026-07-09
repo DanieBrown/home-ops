@@ -1571,6 +1571,54 @@ function buildConfidenceChips(finalist) {
     .join('');
 }
 
+function divergingBarSvg(score) {
+  const clamped = Math.max(-1, Math.min(1, Number(score) || 0));
+  const width = 220;
+  const half = width / 2;
+  const barWidth = Math.round(Math.abs(clamped) * half);
+  const x = clamped < 0 ? half - barWidth : half;
+  const fill = clamped < 0 ? '#dc2626' : '#16a34a';
+  return `<svg class="diverge" width="${width}" height="12" viewBox="0 0 ${width} 12"><rect x="0" y="3" width="${width}" height="6" rx="3" fill="#f3f4f6"></rect><line x1="${half}" y1="0" x2="${half}" y2="12" stroke="#9ca3af" stroke-width="1"></line><rect x="${x}" y="3" width="${Math.max(2, barWidth)}" height="6" rx="3" fill="${fill}"></rect></svg>`;
+}
+
+function buildSentimentAxisSection(finalist) {
+  const axisSentiment = finalist.axis?.sentiment;
+  if (!axisSentiment?.sentimentScores) return '';
+  const dimensions = Object.entries(axisSentiment.sentimentScores).map(([dimension, entry]) => {
+    const quotes = (entry?.quotes ?? []).slice(0, 3)
+      .map((quote) => `<li class="quote">&ldquo;${escapeHtml(summarizeSection(quote, 200))}&rdquo;</li>`)
+      .join('');
+    const meta = [
+      `${Number(entry?.evidenceCount ?? 0)} signal${Number(entry?.evidenceCount ?? 0) === 1 ? '' : 's'}`,
+      entry?.proximityMix ? String(entry.proximityMix) : '',
+      entry?.source ? String(entry.source) : 'sidecar',
+    ].filter(Boolean).join(' · ');
+    return `
+      <div class="sentiment-dimension">
+        <div class="sentiment-row">
+          <span class="sentiment-name">${escapeHtml(dimension.replace(/_/g, ' '))}</span>
+          ${divergingBarSvg(entry?.score)}
+          <span class="num ${Number(entry?.score) < 0 ? 'neg' : 'pos'}">${escapeHtml(String(entry?.score ?? '--'))}</span>
+          <span class="subtle">${escapeHtml(meta)}</span>
+        </div>
+        ${quotes ? `<ul class="quote-list">${quotes}</ul>` : ''}
+      </div>`;
+  }).join('');
+  const redFlags = (axisSentiment.redFlagsTriggered ?? [])
+    .map((flag) => `<li>${escapeHtml(flag)}</li>`).join('');
+  const coverage = Object.entries(axisSentiment.sourceCoverage ?? {})
+    .map(([key, status]) => `<span class="coverage-chip">${escapeHtml(key)}: ${escapeHtml(String(status))}</span>`)
+    .join(' ');
+  return `
+    <div class="panel wide sentiment-axis">
+      <h3>Neighborhood Sentiment <span class="subtle">axis-agent interpretation, buyer-weighted</span></h3>
+      ${dimensions}
+      ${redFlags ? `<div class="redflag-box"><h4>Deal-breaker red flags</h4><ul>${redFlags}</ul></div>` : ''}
+      ${coverage ? `<p class="coverage-row">${coverage}</p>` : ''}
+      ${axisSentiment.confidence ? `<p class="muted">Confidence: ${escapeHtml(String(axisSentiment.confidence))}</p>` : ''}
+    </div>`;
+}
+
 function wrapReportPage(content, extraClass = '') {
   const body = String(content ?? '').trim();
   if (!body) return '';
@@ -1633,7 +1681,7 @@ function buildFinalistSection(finalist, profile, options = {}) {
     </tr>
   `).join('');
 
-  const sentimentBlock = sentiment
+  const sentimentBlock = buildSentimentAxisSection(finalist) || (sentiment
     ? `
       <div class="panel wide">
         <h3>Neighborhood Sentiment <span class="subtle">profile-weighted</span></h3>
@@ -1648,7 +1696,7 @@ function buildFinalistSection(finalist, profile, options = {}) {
       <div class="panel wide unreviewed">
         <h3>Neighborhood Sentiment</h3>
         <p class="muted">Not yet captured from Facebook or Nextdoor. Listed in the research gaps below.</p>
-      </div>`;
+      </div>`);
 
   const gapItems = buildGapList(report, finalist, profile);
   const gapBlock = gapItems.length > 0
@@ -2290,6 +2338,24 @@ export function buildHtml(finalists, profile, mode = 'batch', context = {}) {
   .risk-chip-low { background: #dcfce7; color: #166534; }
   .risk-chip-moderate { background: #fef3c7; color: #92400e; }
   .risk-chip-high { background: #fee2e2; color: #991b1b; }
+  /* Sentiment axis page */
+  .sentiment-dimension { padding: 6px 0; border-bottom: 1px dashed #e5e7eb; }
+  .sentiment-dimension:last-of-type { border-bottom: 0; }
+  .sentiment-row { display: flex; align-items: center; gap: 10px; }
+  .sentiment-name { min-width: 110px; font-weight: 600; font-size: 9.5pt; color: #1f2937; }
+  .quote-list { margin: 4px 0 0 120px; padding-left: 12px; }
+  .quote { font-size: 8.6pt; color: #475569; font-style: italic; }
+  .redflag-box {
+    background: #fef2f2; border: 1px solid #fecaca; border-radius: 6px;
+    padding: 8px 10px; margin-top: 10px;
+  }
+  .redflag-box h4 { margin: 0 0 5px; color: #991b1b; font-size: 8.5pt; text-transform: uppercase; letter-spacing: 0.04em; }
+  .redflag-box ul { margin: 0; padding-left: 14px; font-size: 8.8pt; }
+  .coverage-row { margin-top: 8px; }
+  .coverage-chip {
+    display: inline-block; padding: 2px 8px; margin-right: 4px;
+    border: 1px solid #e5e7eb; border-radius: 999px; font-size: 7.6pt; color: #475569;
+  }
 </style>
 </head>
 <body>

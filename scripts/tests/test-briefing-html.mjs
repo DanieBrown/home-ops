@@ -126,4 +126,13 @@ assert.ok(!bareHtml.includes('data:image/png'));
 assert.ok(bareHtml.includes('gate-chip'), 'gate chips come from the report, not the axis file');
 assert.ok(!bareHtml.includes('sentiment: medium'), 'no confidence chip content without axis data');
 
+// --- Task 6: sentiment axis section ---
+assert.ok(richHtml.includes('sentiment-axis'), 'axis sentiment section renders when axis data exists');
+assert.ok(richHtml.includes('Lovely block parties'), 'verbatim quote renders');
+assert.ok(richHtml.includes('class="diverge"'), 'diverging bar SVG renders');
+assert.ok(richHtml.includes('Deal-breaker red flags'), 'red flag callout renders');
+assert.ok(richHtml.includes('facebook: blocked'), 'source coverage chips render');
+assert.ok(!richHtml.includes('Not yet captured from Facebook or Nextdoor'), 'legacy placeholder replaced when axis data exists');
+assert.ok(bareHtml.includes('Not yet captured from Facebook or Nextdoor'), 'legacy fallback preserved without axis data');
+
 console.log('test-briefing-html: all assertions passed');
