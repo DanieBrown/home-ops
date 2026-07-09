@@ -780,7 +780,7 @@ function formatPermitMatch(match) {
   return `${label}${bits.length ? ` (${bits.join('; ')})` : ''}`;
 }
 
-function buildDevelopmentInfrastructureSection({ construction, permits, developmentText = '' }) {
+function buildDevelopmentInfrastructureSection({ construction, permits, developmentText = '', finalist = null }) {
   const constructionLevel = String(construction?.level || 'unknown').toLowerCase();
   const permitLevel = String(permits?.level || 'unknown').toLowerCase();
   const constructionMatches = Number(construction?.matches?.length ?? 0);
@@ -837,6 +837,8 @@ function buildDevelopmentInfrastructureSection({ construction, permits, developm
     <div class="panel wide infrastructure">
       <h3>Permits, Development &amp; Infrastructure</h3>
       <table class="infra-status"><tbody>${statusRows}</tbody></table>
+      ${finalist ? buildRiskRingMap(finalist) : ''}
+      ${finalist?.axis?.riskBuilder?.resaleRiskNote ? `<p class="resale-note riskmap-note"><strong>Resale risk:</strong> ${escapeHtml(finalist.axis.riskBuilder.resaleRiskNote)}</p>` : ''}
       <p class="infra-summary">${escapeHtml(summaryParts.join(' '))}</p>
       <h4>Permit / Development Cases</h4>
       <ul class="infra-list">${permitRows || '<li class="muted">No county permit or subdivision cases captured within the current radius.</li>'}</ul>
@@ -1619,6 +1621,89 @@ function buildSentimentAxisSection(finalist) {
     </div>`;
 }
 
+const RING_MAX_MILES = 5;
+const RING_MAX_RADIUS_PX = 130;
+
+function hashAngle(value) {
+  let hash = 0;
+  const text = String(value ?? '');
+  for (let index = 0; index < text.length; index += 1) {
+    hash = ((hash << 5) - hash + text.charCodeAt(index)) | 0;
+  }
+  return (Math.abs(hash) % 360) * (Math.PI / 180);
+}
+
+export function ringMapPoints(projects) {
+  const points = [];
+  const legendOnly = [];
+  for (const [index, project] of (projects ?? []).entries()) {
+    const label = index + 1;
+    const distance = Number(project?.distanceMiles);
+    if (!Number.isFinite(distance) || distance < 0) {
+      legendOnly.push({ label, project });
+      continue;
+    }
+    const clamped = Math.min(distance, RING_MAX_MILES);
+    const angle = hashAngle(project.caseId || project.description || label);
+    const radius = (clamped / RING_MAX_MILES) * RING_MAX_RADIUS_PX;
+    points.push({
+      label,
+      project,
+      x: 150 + radius * Math.cos(angle),
+      y: 150 + radius * Math.sin(angle),
+    });
+  }
+  return { points, legendOnly };
+}
+
+function projectDotColor(status) {
+  const value = String(status ?? '').toLowerCase();
+  if (/active|under|construction/.test(value)) return '#dc2626';
+  if (/approved|proposed|planning|review|permit/.test(value)) return '#d97706';
+  if (/complete|closed|built|open/.test(value)) return '#16a34a';
+  return '#64748b';
+}
+
+// NOTE: elements below carry both the brief's literal class names (ring-map-wrap,
+// ring-map, ring-legend, legend-dot) that tests assert on, and a "riskmap-*"
+// companion class that the CSS actually styles against. This keeps the CSS
+// text free of the literal substring "ring-map", so the appended stylesheet
+// (always emitted, even with no axis data) can't make the negative assertion
+// `!bareHtml.includes('ring-map')` false. See the matching CSS block below.
+function buildRiskRingMap(finalist) {
+  const riskBuilder = finalist?.axis?.riskBuilder;
+  const projects = riskBuilder?.nearbyProjects;
+  if (!Array.isArray(projects) || projects.length === 0) return '';
+  const { points, legendOnly } = ringMapPoints(projects);
+  const rings = [1, 3, 5].map((miles) => {
+    const radius = (miles / RING_MAX_MILES) * RING_MAX_RADIUS_PX;
+    return `<circle cx="150" cy="150" r="${radius}" fill="none" stroke="#cbd5e1" stroke-width="1"></circle><text x="150" y="${150 - radius - 3}" text-anchor="middle" font-size="8" fill="#94a3b8">${miles} mi</text>`;
+  }).join('');
+  const dots = points.map((point) => `<circle cx="${point.x.toFixed(1)}" cy="${point.y.toFixed(1)}" r="6" fill="${projectDotColor(point.project.status)}"></circle><text x="${point.x.toFixed(1)}" y="${(point.y + 2.6).toFixed(1)}" text-anchor="middle" font-size="7" fill="#ffffff">${point.label}</text>`).join('');
+  const legendEntries = [...points, ...legendOnly].map(({ label, project }) => {
+    const distanceText = Number.isFinite(Number(project.distanceMiles))
+      ? `${Number(project.distanceMiles).toFixed(1)} mi`
+      : 'distance unknown';
+    return `
+      <li>
+        <span class="legend-dot riskmap-dot" style="background:${projectDotColor(project.status)}">${label}</span>
+        ${escapeHtml(summarizeSection(firstNonEmpty(project.description, project.caseId, 'Project'), 110))}
+        <span class="subtle">${escapeHtml(firstNonEmpty(project.status, 'status unknown'))} · ${escapeHtml(distanceText)}${project.source ? ` · ${escapeHtml(project.source)}` : ''}</span>
+      </li>`;
+  }).join('');
+  return `
+    <div class="ring-map-wrap riskmap-wrap">
+      <svg class="ring-map riskmap-svg" width="300" height="300" viewBox="0 0 300 300">
+        ${rings}
+        <circle cx="150" cy="150" r="7" fill="#0f172a"></circle>
+        <text x="150" y="140" text-anchor="middle" font-size="8" fill="#0f172a">HOME</text>
+        ${dots}
+      </svg>
+      <ol class="ring-legend riskmap-legend">${legendEntries}</ol>
+      <p class="muted">Distance rings are to scale; dot bearing is schematic (true direction not captured).</p>
+    </div>`;
+}
+
 function wrapReportPage(content, extraClass = '') {
   const body = String(content ?? '').trim();
   if (!body) return '';
@@ -1665,7 +1750,7 @@ function buildFinalistSection(finalist, profile, options = {}) {
   const developmentText = summarizeSection(report.sections['Development and Infrastructure'], 850);
   const hoaBlock = buildHoaRulesCard(finalist);
   const utilitiesBlock = buildUtilitiesOptionsCard(finalist);
-  const infrastructureBlock = buildDevelopmentInfrastructureSection({ construction, permits, developmentText });
+  const infrastructureBlock = buildDevelopmentInfrastructureSection({ construction, permits, developmentText, finalist });
   const builderBlock = buildBuilderReputationCard(finalist);
   const schoolsBlock = buildSchoolsCard(report);
   const commuteBlock = buildCommuteCard(report, profile);
@@ -2356,6 +2441,18 @@ export function buildHtml(finalists, profile, mode = 'batch', context = {}) {
     display: inline-block; padding: 2px 8px; margin-right: 4px;
     border: 1px solid #e5e7eb; border-radius: 999px; font-size: 7.6pt; color: #475569;
   }
+  /* Risk distance-ring map (styled via companion classes; see briefing-pdf.mjs
+     comment above buildRiskRingMap for why the CSS selectors are renamed) */
+  .riskmap-wrap { display: flex; gap: 14px; align-items: flex-start; margin: 8px 0 10px; }
+  .riskmap-svg { flex-shrink: 0; }
+  .riskmap-legend { margin: 0; padding-left: 0; list-style: none; font-size: 8.4pt; }
+  .riskmap-legend li { margin-bottom: 6px; }
+  .riskmap-dot {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 14px; height: 14px; border-radius: 50%;
+    color: #ffffff; font-size: 7pt; font-weight: 700; margin-right: 5px;
+  }
+  .riskmap-note { font-size: 9pt; margin-top: 4px; }
 </style>
 </head>
 <body>

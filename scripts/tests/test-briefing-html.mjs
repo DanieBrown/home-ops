@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict';
 import { ROOT } from '../shared/paths.mjs';
 import { parseReport } from '../research/research-utils.mjs';
-import { buildHtml, parseGateRows, computeCityMedianPricePerSqft } from '../reports/briefing-pdf.mjs';
+import { buildHtml, parseGateRows, computeCityMedianPricePerSqft, ringMapPoints } from '../reports/briefing-pdf.mjs';
 
 const report = parseReport(ROOT, 'scripts/tests/fixtures/briefing/046-fixture-home.md');
 assert.equal(report.address, '100 Fixture Dr');
@@ -134,5 +134,25 @@ assert.ok(richHtml.includes('Deal-breaker red flags'), 'red flag callout renders
 assert.ok(richHtml.includes('facebook: blocked'), 'source coverage chips render');
 assert.ok(!richHtml.includes('Not yet captured from Facebook or Nextdoor'), 'legacy placeholder replaced when axis data exists');
 assert.ok(bareHtml.includes('Not yet captured from Facebook or Nextdoor'), 'legacy fallback preserved without axis data');
+
+// --- Task 7: risk ring map ---
+const { points, legendOnly } = ringMapPoints(axisFixture.riskBuilder.nearbyProjects);
+assert.equal(points.length, 2, 'projects with distanceMiles become dots');
+assert.equal(legendOnly.length, 1, 'projects without distance are legend-only');
+for (const point of points) {
+  const dx = point.x - 150;
+  const dy = point.y - 150;
+  const radius = Math.sqrt(dx * dx + dy * dy);
+  assert.ok(radius <= 130.5, 'dots stay inside the 5-mile ring');
+}
+const rerun = ringMapPoints(axisFixture.riskBuilder.nearbyProjects);
+assert.deepEqual(rerun.points.map((p) => [p.x, p.y]), points.map((p) => [p.x, p.y]), 'angles are deterministic');
+assert.deepEqual(ringMapPoints([]), { points: [], legendOnly: [] });
+
+assert.ok(richHtml.includes('ring-map'), 'ring map renders in the infrastructure page');
+assert.ok(richHtml.includes('Collector road widening'), 'project appears in ring legend');
+assert.ok(richHtml.includes('Fixture resale note.'), 'axis resale note renders');
+assert.ok(richHtml.includes('bearing is schematic'), 'schematic-bearing caption present');
+assert.ok(!bareHtml.includes('ring-map'), 'no ring map without axis data');
 
 console.log('test-briefing-html: all assertions passed');
