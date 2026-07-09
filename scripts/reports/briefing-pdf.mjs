@@ -17,12 +17,13 @@ import { fileURLToPath, pathToFileURL } from 'url';
 import { chromium } from 'playwright';
 import YAML from 'yaml';
 import { readSessionState } from '../browser/browser-session.mjs';
-import { ROOT } from '../shared/paths.mjs';
+import { ROOT, LISTINGS_FILE } from '../shared/paths.mjs';
 import {
   parseReport,
   parseShortlist,
 } from '../research/research-utils.mjs';
 import { slugify } from '../shared/text-utils.mjs';
+import { parseListingRow } from '../shared/listings.mjs';
 
 const DEFAULT_PROFILE = 'chrome-host';
 const OUTPUT_DIR = join(ROOT, 'output', 'briefings');
@@ -287,16 +288,6 @@ function buildDirectionsUrl(origin, destination) {
   return `https://www.google.com/maps/dir/?api=1&travelmode=driving&origin=${encodeURIComponent(origin)}&destination=${encodeURIComponent(destination)}`;
 }
 
-function formatNumber(value) {
-  const numeric = typeof value === 'number' ? value : Number(String(value ?? '').replace(/[^0-9.\-]/g, ''));
-  return Number.isFinite(numeric) ? numeric.toLocaleString() : '';
-}
-
-function formatListingMoney(value) {
-  const numeric = typeof value === 'number' ? value : Number(String(value ?? '').replace(/[^0-9.\-]/g, ''));
-  return Number.isFinite(numeric) ? `$${numeric.toLocaleString()}` : '';
-}
-
 function loadListingFacts(report) {
   const payload = findCompanionJson(report, LISTING_DIR);
   if (!payload || !companionMatchesReport(payload, report)) return null;
@@ -402,36 +393,6 @@ function collectSourceLinks(finalist) {
   }
 
   return collector.links;
-}
-
-function buildFactsCard(finalist) {
-  const report = finalist.report;
-  const listing = finalist.listing;
-  const facts = [
-    ['Price', firstNonEmpty(report.metadata.price, formatListingMoney(listing?.price))],
-    ['Beds / Baths', firstNonEmpty(report.metadata.bedsBaths, listing?.beds || listing?.baths ? `${listing?.beds ?? '--'}/${listing?.baths ?? '--'}` : '')],
-    ['SqFt', firstNonEmpty(report.metadata.sqft, formatNumber(listing?.sqftFinished))],
-    ['Lot', firstNonEmpty(report.metadata.lot, formatNumber(listing?.lotSqft) ? `${formatNumber(listing?.lotSqft)} sqft` : '')],
-    ['Year Built', firstNonEmpty(report.metadata.yearBuilt, listing?.yearBuilt)],
-    ['Garage', listing?.garage ? `${listing.garage} spaces` : ''],
-    ['HOA', firstNonEmpty(report.metadata.hoa, listing?.hoaMonthly != null ? `$${listing.hoaMonthly}/mo` : '')],
-    ['DOM', firstNonEmpty(report.metadata.daysOnMarket, listing?.daysOnMarket != null ? `${listing.daysOnMarket} days` : '')],
-    ['Status', firstNonEmpty(report.metadata.verification, listing?.listingStatus)],
-    ['MLS', listing?.mls || ''],
-  ].filter(([, value]) => String(value ?? '').trim());
-
-  const rows = facts.map(([label, value]) => `
-    <tr>
-      <th>${escapeHtml(label)}</th>
-      <td>${escapeHtml(value)}</td>
-    </tr>
-  `).join('');
-
-  return `
-    <div class="panel facts">
-      <h3>Listing Snapshot</h3>
-      <table>${rows || '<tr><td class="muted">No structured facts captured.</td></tr>'}</table>
-    </div>`;
 }
 
 function formatHoaDues(value, fallback = '') {
@@ -1438,6 +1399,178 @@ function buildSchoolsCard(report) {
     </div>`;
 }
 
+// ---------------------------------------------------------------------------
+// Overview dashboard builders (axis-first)
+// ---------------------------------------------------------------------------
+
+function photoDataUri(localPath) {
+  const absolute = join(ROOT, localPath);
+  if (!existsSync(absolute)) return '';
+  try {
+    const buffer = readFileSync(absolute);
+    if (buffer.length > 2 * 1024 * 1024) return '';
+    const ext = absolute.toLowerCase().endsWith('.png') ? 'png' : 'jpeg';
+    return `data:image/${ext};base64,${buffer.toString('base64')}`;
+  } catch {
+    return '';
+  }
+}
+
+function buildPhotoStrip(finalist) {
+  const localPaths = finalist.listing?.photos?.localPaths ?? [];
+  const uris = localPaths.map(photoDataUri).filter(Boolean).slice(0, 3);
+  if (uris.length === 0) return '';
+  const [hero, ...thumbs] = uris;
+  const thumbHtml = thumbs.map((uri) => `<div class="photo-thumb" style="background-image:url('${uri}')"></div>`).join('');
+  return `
+    <div class="photo-strip">
+      <div class="photo-hero" style="background-image:url('${hero}')"></div>
+      ${thumbHtml ? `<div class="photo-thumbs">${thumbHtml}</div>` : ''}
+    </div>`;
+}
+
+function parseMoneyNumber(value) {
+  const numeric = typeof value === 'number' ? value : Number(String(value ?? '').replace(/[^0-9.]/g, ''));
+  return Number.isFinite(numeric) && numeric > 0 ? numeric : null;
+}
+
+export function computeCityMedianPricePerSqft(trackerContent, city) {
+  const wanted = String(city ?? '').toLowerCase().trim();
+  if (!wanted) return null;
+  const values = String(trackerContent ?? '')
+    .split(/\r?\n/)
+    .map((line, index) => (line.trim().startsWith('|') ? parseListingRow(line, index) : null))
+    .filter(Boolean)
+    .filter((row) => row.city.toLowerCase().trim() === wanted)
+    .map((row) => {
+      const price = parseMoneyNumber(row.price);
+      const sqft = parseMoneyNumber(row.sqft);
+      return price && sqft ? price / sqft : null;
+    })
+    .filter((value) => Number.isFinite(value))
+    .sort((left, right) => left - right);
+  if (values.length < 3) return null;
+  const mid = Math.floor(values.length / 2);
+  const median = values.length % 2 ? values[mid] : (values[mid - 1] + values[mid]) / 2;
+  return { median, sampleSize: values.length };
+}
+
+function buildKpiTiles(finalist, medianInfo) {
+  const report = finalist.report;
+  const listing = finalist.listing;
+  const price = parseMoneyNumber(listing?.price) ?? parseMoneyNumber(report.metadata.price);
+  const sqft = parseMoneyNumber(listing?.sqftFinished) ?? parseMoneyNumber(report.metadata.sqft);
+  const pricePerSqft = price && sqft ? price / sqft : null;
+  let ppsfDetail = '';
+  if (pricePerSqft && medianInfo) {
+    const deltaPct = Math.round(((pricePerSqft - medianInfo.median) / medianInfo.median) * 100);
+    ppsfDetail = `${deltaPct >= 0 ? '+' : ''}${deltaPct}% vs ${report.city} tracker median (n=${medianInfo.sampleSize})`;
+  }
+  const tiles = [
+    ['Price', price ? `$${price.toLocaleString()}` : firstNonEmpty(report.metadata.price, '--'), ''],
+    ['$/SqFt', pricePerSqft ? `$${Math.round(pricePerSqft)}` : '--', ppsfDetail],
+    ['Beds/Baths', firstNonEmpty(report.metadata.bedsBaths, listing?.beds != null ? `${listing.beds}/${listing.baths ?? '--'}` : '--'), ''],
+    ['SqFt', sqft ? sqft.toLocaleString() : '--', ''],
+    ['Lot', firstNonEmpty(report.metadata.lot, listing?.lotSqft ? `${Number(listing.lotSqft).toLocaleString()} sqft` : '--'), ''],
+    ['Year', firstNonEmpty(report.metadata.yearBuilt, listing?.yearBuilt, '--'), ''],
+    ['HOA', firstNonEmpty(report.metadata.hoa, listing?.hoaMonthly != null ? `$${listing.hoaMonthly}/mo` : '--'), ''],
+    ['DOM', firstNonEmpty(report.metadata.daysOnMarket, listing?.daysOnMarket != null ? `${listing.daysOnMarket}d` : '--'), ''],
+    ['Status', firstNonEmpty(report.metadata.verification, listing?.listingStatus, '--'), listing?.mls ? `MLS ${listing.mls}` : ''],
+  ];
+  const cells = tiles.map(([label, value, detail]) => `
+    <div class="kpi-tile">
+      <div class="kpi-value">${escapeHtml(String(value))}</div>
+      <div class="kpi-label">${escapeHtml(label)}</div>
+      ${detail ? `<div class="kpi-detail">${escapeHtml(detail)}</div>` : ''}
+    </div>`).join('');
+  return `<div class="kpi-band">${cells}</div>`;
+}
+
+export function parseGateRows(gateSection) {
+  const rows = [];
+  for (const line of String(gateSection ?? '').split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith('|') || /^\|\s*:?-{2,}/.test(trimmed)) continue;
+    const cols = trimmed.split('|').slice(1, -1).map((col) => col.trim());
+    if (cols.length < 2) continue;
+    const [requirement, result] = cols;
+    if (!requirement || /^requirement$/i.test(requirement)) continue;
+    const normalized = result.toLowerCase();
+    let state = 'unknown';
+    if (/^(pass|yes|meets)/.test(normalized)) state = 'pass';
+    else if (/^(fail|no\b)/.test(normalized)) state = 'fail';
+    rows.push({ requirement, result, state });
+  }
+  return rows;
+}
+
+function buildGateChips(report) {
+  const rows = parseGateRows(report.sections['Hard Requirement Gate']);
+  if (rows.length === 0) return '';
+  const chips = rows.map((row) => {
+    const mark = row.state === 'pass' ? '&#10003;' : row.state === 'fail' ? '&#10007;' : '?';
+    return `<span class="gate-chip gate-${row.state}" title="${escapeHtml(row.result)}"><span class="gate-mark">${mark}</span>${escapeHtml(row.requirement)}</span>`;
+  }).join('');
+  return `
+    <div class="panel wide gate">
+      <h3>Hard Requirement Gate</h3>
+      <div class="gate-chips">${chips}</div>
+    </div>`;
+}
+
+function gaugeSvg(value, { min = -1, max = 1 } = {}) {
+  const clamped = Math.max(min, Math.min(max, Number(value) || 0));
+  const pct = (clamped - min) / (max - min);
+  const width = 160;
+  const fill = clamped < 0 ? '#dc2626' : '#16a34a';
+  return `<svg class="gauge" width="${width}" height="10" viewBox="0 0 ${width} 10"><rect x="0" y="2" width="${width}" height="6" rx="3" fill="#e5e7eb"></rect><rect x="0" y="2" width="${Math.max(3, Math.round(pct * width))}" height="6" rx="3" fill="${fill}"></rect></svg>`;
+}
+
+function buildAxisScoreboard(finalist) {
+  const axis = finalist.axis;
+  if (!axis) return '';
+  const rows = [];
+  for (const [dimension, entry] of Object.entries(axis.sentiment?.sentimentScores ?? {})) {
+    rows.push(`
+      <tr>
+        <th>${escapeHtml(dimension.replace(/_/g, ' '))}</th>
+        <td>${gaugeSvg(entry?.score)}</td>
+        <td class="num ${Number(entry?.score) < 0 ? 'neg' : 'pos'}">${escapeHtml(String(entry?.score ?? '--'))}</td>
+      </tr>`);
+  }
+  if (axis.schools?.weightedSchoolScore != null) {
+    rows.push(`
+      <tr>
+        <th>schools (weighted)</th>
+        <td>${gaugeSvg(axis.schools.weightedSchoolScore, { min: 0, max: 1 })}</td>
+        <td class="num pos">${escapeHtml(String(axis.schools.weightedSchoolScore))}</td>
+      </tr>`);
+  }
+  const risk = axis.riskBuilder?.riskLevel;
+  const riskChip = risk
+    ? `<p><span class="risk-chip risk-chip-${escapeHtml(String(risk))}">${escapeHtml(String(risk).toUpperCase())} RISK</span></p>`
+    : '';
+  if (rows.length === 0 && !riskChip) return '';
+  return `
+    <div class="panel wide axis-scoreboard axis-panel">
+      <h3>Axis Scores <span class="subtle">weight-applied, from axis agents</span></h3>
+      ${riskChip}
+      ${rows.length ? `<table><tbody>${rows.join('')}</tbody></table>` : ''}
+    </div>`;
+}
+
+function buildConfidenceChips(finalist) {
+  if (!finalist.axis) return '';
+  return [
+    ['sentiment', finalist.axis.sentiment?.confidence],
+    ['risk', finalist.axis.riskBuilder?.confidence],
+    ['schools', finalist.axis.schools?.confidence],
+  ]
+    .filter(([, level]) => level)
+    .map(([label, level]) => `<span class="conf-badge conf-${escapeHtml(String(level))}">${escapeHtml(label)}: ${escapeHtml(String(level))}</span>`)
+    .join('');
+}
+
 function wrapReportPage(content, extraClass = '') {
   const body = String(content ?? '').trim();
   if (!body) return '';
@@ -1482,7 +1615,6 @@ function buildFinalistSection(finalist, profile, options = {}) {
   const concerns = buildTailoredConcerns(report, finalist).slice(0, 4);
   const recommendationText = firstNonEmpty(report.sections.Recommendation, recommendation);
   const developmentText = summarizeSection(report.sections['Development and Infrastructure'], 850);
-  const factsBlock = buildFactsCard(finalist);
   const hoaBlock = buildHoaRulesCard(finalist);
   const utilitiesBlock = buildUtilitiesOptionsCard(finalist);
   const infrastructureBlock = buildDevelopmentInfrastructureSection({ construction, permits, developmentText });
@@ -1537,10 +1669,14 @@ function buildFinalistSection(finalist, profile, options = {}) {
       <h3>Top Concerns</h3>
       <ul>${(concerns.length ? concerns : ['(none captured)']).map((s) => `<li>${escapeHtml(s)}</li>`).join('')}</ul>
     </div>`;
+  const medianInfo = computeCityMedianPricePerSqft(options.trackerContent ?? '', report.city);
   const overviewPage = wrapReportPage(`
+    ${buildPhotoStrip(finalist)}
+    ${buildKpiTiles(finalist, medianInfo)}
+    ${buildGateChips(report)}
+    ${buildAxisScoreboard(finalist)}
     <div class="overview-grid">
-      ${factsBlock}
-      <div class="panel decision">
+      <div class="panel decision wide">
         <h3>Decision Read</h3>
         <p>${escapeHtml(summarizeSection(plainText(recommendationText), 800))}</p>
       </div>
@@ -1569,6 +1705,7 @@ function buildFinalistSection(finalist, profile, options = {}) {
           <div class="badges">
             <span class="score-badge">Score ${escapeHtml(scoreDisplay)}</span>
             <span class="rec-badge rec-${escapeHtml(recClass)}">${escapeHtml(recommendation)}</span>
+            ${buildConfidenceChips(finalist)}
           </div>
           ${linkRowHtml}
         </div>
@@ -1585,7 +1722,11 @@ export function buildHtml(finalists, profile, mode = 'batch', context = {}) {
   const generatedAt = new Date().toISOString().replace('T', ' ').slice(0, 16);
   const showRank = mode === 'batch';
   const finalistSections = finalists
-    .map((finalist, idx) => buildFinalistSection(finalist, profile, { showRank, isFirst: idx === 0 }))
+    .map((finalist, idx) => buildFinalistSection(finalist, profile, {
+      showRank,
+      isFirst: idx === 0,
+      trackerContent: context.trackerContent ?? '',
+    }))
     .join('\n');
   const buyerLabel = profile?.buyer?.full_name ? ` &middot; Prepared for ${escapeHtml(profile.buyer.full_name)}` : '';
 
@@ -2106,6 +2247,49 @@ export function buildHtml(finalists, profile, mode = 'batch', context = {}) {
   .sources th:nth-child(1), .sources td:nth-child(1) { width: 22%; }
   .sources th:nth-child(2), .sources td:nth-child(2) { width: 16%; }
   .sources td { font-size: 7.7pt; word-break: break-all; }
+
+  /* Overview dashboard */
+  .photo-strip { display: flex; gap: 6px; margin-bottom: 12px; height: 2.2in; }
+  .photo-hero { flex: 2; border-radius: 8px; background-size: cover; background-position: center; }
+  .photo-thumbs { flex: 1; display: flex; flex-direction: column; gap: 6px; }
+  .photo-thumb { flex: 1; border-radius: 8px; background-size: cover; background-position: center; }
+  .kpi-band {
+    display: grid; grid-template-columns: repeat(9, minmax(0, 1fr));
+    gap: 6px; margin-bottom: 12px;
+  }
+  .kpi-tile {
+    border: 1px solid #e5e7eb; border-radius: 6px; padding: 7px 6px;
+    text-align: center; background: #f8fafc;
+  }
+  .kpi-value { font-size: 10.5pt; font-weight: 700; color: #0f172a; }
+  .kpi-label { font-size: 7pt; text-transform: uppercase; letter-spacing: 0.06em; color: #64748b; margin-top: 2px; }
+  .kpi-detail { font-size: 6.6pt; color: #475569; margin-top: 2px; }
+  .gate { margin-bottom: 12px; }
+  .gate-chips { display: flex; flex-wrap: wrap; gap: 5px; }
+  .gate-chip {
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 3px 9px; border-radius: 999px; font-size: 8pt; font-weight: 600;
+  }
+  .gate-pass { background: #dcfce7; color: #166534; }
+  .gate-fail { background: #fee2e2; color: #991b1b; }
+  .gate-unknown { background: #fef3c7; color: #92400e; }
+  .gate-mark { font-weight: 800; }
+  .axis-panel { margin-bottom: 12px; }
+  .axis-panel th { width: 30%; text-transform: none; letter-spacing: 0; background: #f8fafc; }
+  .gauge { vertical-align: middle; }
+  .conf-badge {
+    padding: 3px 8px; border-radius: 999px; font-size: 8pt; font-weight: 600;
+  }
+  .conf-high { background: #dcfce7; color: #166534; }
+  .conf-medium { background: #fef3c7; color: #92400e; }
+  .conf-low { background: #fee2e2; color: #991b1b; }
+  .risk-chip {
+    padding: 3px 10px; border-radius: 999px; font-size: 8.5pt; font-weight: 800;
+    letter-spacing: 0.04em;
+  }
+  .risk-chip-low { background: #dcfce7; color: #166534; }
+  .risk-chip-moderate { background: #fef3c7; color: #92400e; }
+  .risk-chip-high { background: #fee2e2; color: #991b1b; }
 </style>
 </head>
 <body>
@@ -2284,7 +2468,8 @@ async function run() {
     outputPath = join(OUTPUT_DIR, `top3-briefing-${dateStamp}.pdf`);
   }
 
-  const html = buildHtml(finalists, profile, mode);
+  const trackerContent = existsSync(LISTINGS_FILE) ? readFileSync(LISTINGS_FILE, 'utf8') : '';
+  const html = buildHtml(finalists, profile, mode, { trackerContent });
   await renderPdf(html, outputPath);
   const relPath = relative(ROOT, outputPath).replace(/\\/g, '/');
   console.log(`Wrote briefing PDF: ${relPath}`);
