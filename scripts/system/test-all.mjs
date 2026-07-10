@@ -95,7 +95,7 @@ function scanForPatterns(files, patterns) {
 
 console.log('\nHome-ops test suite\n');
 
-const skipDirs = new Set(['.git', 'node_modules', 'output', 'reports', 'batch/logs']);
+const skipDirs = new Set(['.git', 'node_modules', 'output', 'reports', 'batch/logs', '.superpowers', '.home-ops']);
 
 console.log('1. Syntax checks');
 

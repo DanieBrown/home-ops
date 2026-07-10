@@ -72,7 +72,7 @@ briefing-pdf.mjs --report ... →  output/briefings/{slug}-deep-{date}.pdf
 
 Multi-URL flow uses the same gates, repeated per-URL during capture, with one combined `briefing-pdf.mjs --reports …` call at the end. The combined call satisfies the same `briefing-pdf-deep-single` gate — exactly **one** PDF is produced per deep run regardless of single-URL vs. multi-URL input.
 
-Batch flow (`deep-shortlist` contract): see Phase A/B/C below; gates are `research-audit`, `deep-research-packet`, `promote-finalists`, `finalist-gate`, `review-tabs-top3`, `briefing-pdf`.
+Batch flow (`deep-shortlist` contract): see Phase A/B/C below; gates are `research-audit`, `deep-research-packet`, `axis-sidecar`, `promote-finalists`, `finalist-gate`, `review-tabs-top3`, `briefing-pdf`.
 
 ## Run-to-Completion Contract
 

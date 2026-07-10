@@ -32,7 +32,8 @@ Durable learned stores include:
 - `output/areas/{area-slug}.json` -- reusable area facts and source references.
 - `output/geocode/`, `output/permits/`, `output/construction/`, `output/school-metadata/`, `output/utilities/`, `output/sentiment/`, `output/communities/`, `output/listings/`, `output/builder/`, and `output/hoa/`.
 - `output/*-sources.json` source inventories.
-- `output/axis/` -- per-home axis-agent interpretation sidecars (generated, cleared by reset).
+
+Transient generated output (cleared by `reset:data`, never treated as learned facts): `output/axis/`, `output/briefings/`, `output/cache/`, `output/deep-packets/`, `output/evaluate-packets/`.
 
 One-off scripts and scratch artifacts must live under `.home-ops/tmp/{commandId}/` or the OS temp directory and be removed after use.
 
