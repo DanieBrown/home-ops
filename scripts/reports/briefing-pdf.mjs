@@ -1291,9 +1291,17 @@ function parseSchoolRowsFromReport(report) {
   return rows;
 }
 
-function buildSchoolsCard(report) {
+function buildSchoolsCard(report, finalist = null) {
   const metadata = loadSchoolMetadata(report);
   const schoolRows = mergeSchoolRowsForPdf(metadata);
+
+  const axisSchools = finalist?.axis?.schools;
+  const axisFlags = (axisSchools?.flags ?? [])
+    .map((flag) => `<li>${escapeHtml(String(flag).replace(/-/g, ' '))}</li>`)
+    .join('');
+  const axisExtras = `
+    ${axisSchools?.weightedSchoolScore != null ? `<p class="schoolgauge-note school-weighted">Weighted school score ${gaugeSvg(axisSchools.weightedSchoolScore, { min: 0, max: 1 })} <span class="num pos">${escapeHtml(String(axisSchools.weightedSchoolScore))}</span></p>` : ''}
+    ${axisFlags ? `<ul class="school-flags">${axisFlags}</ul>` : ''}`;
 
   if (schoolRows.length > 0) {
     const rows = schoolRows.map((school) => {
@@ -1355,6 +1363,7 @@ function buildSchoolsCard(report) {
           <tbody>${rows}</tbody>
         </table>
         ${ethnicityBars}
+        ${axisExtras}
         <p class="muted">${escapeHtml(sourceNote)} Performance shows Math/Read proficiency when available, otherwise GreatSchools subratings.</p>
       </div>`;
   }
@@ -1379,6 +1388,7 @@ function buildSchoolsCard(report) {
           <thead><tr><th>School</th><th>Level</th><th>Assignment</th><th class="num">Rating</th><th class="num">Enrollment</th><th class="num">Stu/Tch</th><th>Calendar / Cap</th><th>Metadata</th></tr></thead>
           <tbody>${rows}</tbody>
         </table>
+        ${axisExtras}
         <p class="muted">Rendered from the report's School Review table because no structured school sidecar was available.</p>
       </div>`;
   }
@@ -1397,6 +1407,7 @@ function buildSchoolsCard(report) {
     <div class="panel wide schools">
       <h3>Schools &amp; Ratings</h3>
       <ul class="school-list">${rows}</ul>
+      ${axisExtras}
       ${footnote}
     </div>`;
 }
@@ -1752,7 +1763,7 @@ function buildFinalistSection(finalist, profile, options = {}) {
   const utilitiesBlock = buildUtilitiesOptionsCard(finalist);
   const infrastructureBlock = buildDevelopmentInfrastructureSection({ construction, permits, developmentText, finalist });
   const builderBlock = buildBuilderReputationCard(finalist);
-  const schoolsBlock = buildSchoolsCard(report);
+  const schoolsBlock = buildSchoolsCard(report, finalist);
   const commuteBlock = buildCommuteCard(report, profile);
   const sourceLedgerBlock = buildSourceLedger(finalist);
 
@@ -1816,15 +1827,18 @@ function buildFinalistSection(finalist, profile, options = {}) {
       ${concernBlock}
       ${gapBlock}
     </div>`, 'report-page-overview');
+  const compactCards = [utilitiesBlock, hoaBlock, builderBlock, commuteBlock]
+    .filter((block) => String(block ?? '').trim());
+  const compactPages = [];
+  for (let index = 0; index < compactCards.length; index += 2) {
+    compactPages.push(wrapReportPage(compactCards.slice(index, index + 2).join('\n'), 'report-page-compact pagepack'));
+  }
   const reportPages = [
     overviewPage,
-    wrapReportPage(utilitiesBlock, 'report-page-utilities'),
-    wrapReportPage(hoaBlock, 'report-page-hoa'),
-    wrapReportPage(builderBlock, 'report-page-builder'),
+    wrapReportPage(sentimentBlock, 'report-page-sentiment'),
     wrapReportPage(infrastructureBlock, 'report-page-infrastructure'),
     wrapReportPage(schoolsBlock, 'report-page-schools'),
-    wrapReportPage(sentimentBlock, 'report-page-sentiment'),
-    wrapReportPage(commuteBlock, 'report-page-commute'),
+    ...compactPages,
     wrapReportPage(sourceLedgerBlock, 'report-page-sources'),
   ].filter(Boolean).join('\n');
 
@@ -1844,7 +1858,7 @@ function buildFinalistSection(finalist, profile, options = {}) {
         </div>
       </header>
 
-      <div class="report-pages">
+      <div class="pages-shell">
         ${reportPages}
       </div>
     </section>
@@ -1990,18 +2004,24 @@ export function buildHtml(finalists, profile, mode = 'batch', context = {}) {
   }
 
   /* Section pages and cards */
-  .report-pages { display: block; }
+  .pages-shell { display: block; }
   .report-page {
     page-break-before: always;
     break-before: page;
-    min-height: 9.35in;
     padding: 0;
   }
   .report-page:first-of-type {
     page-break-before: auto;
     break-before: auto;
-    min-height: 8.1in;
   }
+  .pagepack .panel,
+  .pagepack .card {
+    break-inside: avoid;
+    page-break-inside: avoid;
+    margin-bottom: 12px;
+  }
+  .school-flags { margin: 6px 0 0; padding-left: 16px; font-size: 8.6pt; color: #92400e; }
+  .schoolgauge-note { font-size: 9pt; margin-top: 8px; }
   .overview-grid {
     display: grid;
     grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
@@ -2535,7 +2555,7 @@ function loadFinalists() {
   return shortlist.refinedTop3.map((row, index) => loadFinalist(row.reportPath, row.rank || index + 1));
 }
 
-async function renderPdf(html, outputPath) {
+async function renderPdf(html, outputPath, footerLeft = 'Home-Ops Decision Brief') {
   // Use a plain chromium launch (not the hosted session) for rendering -- we
   // do not want to push a non-user page into the hosted browser just for PDF
   // generation. Then we open the rendered file:// URL in the hosted session.
@@ -2548,7 +2568,14 @@ async function renderPdf(html, outputPath) {
       path: outputPath,
       format: 'Letter',
       printBackground: true,
-      margin: { top: '0.5in', bottom: '0.5in', left: '0.5in', right: '0.5in' },
+      displayHeaderFooter: true,
+      headerTemplate: '<div></div>',
+      footerTemplate: `
+        <div style="width:100%;font-size:7pt;color:#9ca3af;padding:0 0.5in;display:flex;justify-content:space-between;">
+          <span>${escapeHtml(footerLeft)}</span>
+          <span><span class="pageNumber"></span> / <span class="totalPages"></span></span>
+        </div>`,
+      margin: { top: '0.5in', bottom: '0.65in', left: '0.5in', right: '0.5in' },
     });
   } finally {
     await browser.close();
@@ -2633,7 +2660,12 @@ async function run() {
 
   const trackerContent = existsSync(LISTINGS_FILE) ? readFileSync(LISTINGS_FILE, 'utf8') : '';
   const html = buildHtml(finalists, profile, mode, { trackerContent });
-  await renderPdf(html, outputPath);
+  const footerLeft = mode === 'single'
+    ? [finalists[0].report.address, finalists[0].report.city].filter(Boolean).join(', ')
+    : mode === 'combined'
+      ? 'Home-Ops URL Deep Briefing'
+      : 'Home-Ops Top 3 Finalist Briefing';
+  await renderPdf(html, outputPath, footerLeft);
   const relPath = relative(ROOT, outputPath).replace(/\\/g, '/');
   console.log(`Wrote briefing PDF: ${relPath}`);
 

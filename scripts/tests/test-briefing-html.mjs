@@ -155,4 +155,16 @@ assert.ok(richHtml.includes('Fixture resale note.'), 'axis resale note renders')
 assert.ok(richHtml.includes('bearing is schematic'), 'schematic-bearing caption present');
 assert.ok(!bareHtml.includes('ring-map'), 'no ring map without axis data');
 
+// --- Task 8: schools additions + packing ---
+assert.ok(richHtml.includes('school-weighted'), 'weighted school gauge renders with axis data');
+assert.ok(richHtml.includes('ratio above district mean'), 'axis school flags render');
+
+const pageCount = (richHtml.match(/class="report-page/g) ?? []).length;
+// With this fixture: overview, sentiment-axis, infrastructure, schools,
+// 1 compact page (utilities "unreviewed" placeholder is the only compact card
+// -- HOA/builder/commute are empty), and sources (the fixture report's URL
+// yields one source-ledger link) = 6 pages.
+assert.equal(pageCount, 6, `expected 6 report pages, got ${pageCount}`);
+assert.ok(richHtml.includes('report-page-compact'), 'compact packing page exists');
+
 console.log('test-briefing-html: all assertions passed');
