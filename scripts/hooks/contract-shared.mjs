@@ -179,8 +179,8 @@ export const CONTRACTS = {
         isGate: true,
       }),
       req('axis-sidecar', 'Persist merged axis-agent outputs to output/axis/{slug}.json', [
-        /axis-sidecar-write\.mjs\b/,
-        /npm(?:\.cmd)?\s+run\s+axis:write\b/,
+        /axis-sidecar-write\.mjs[^\n]*--report\b/,
+        /npm(?:\.cmd)?\s+run\s+axis:write[^\n]*--report\b/,
       ], { requires: ['deep-research-packet-single'], isGate: true }),
       req('review-tabs-single', 'Replace browser tabs with listing URL', [
         /review-tabs\.mjs[^\n]*urls\b/,
@@ -230,8 +230,8 @@ export const CONTRACTS = {
         /npm(?:\.cmd)?\s+run\s+prepare:deep[^\n]*--shortlist/,
       ], { requires: ['research-source-plan', 'community-lookup', 'sentiment-extract', 'construction-check', 'sentiment-public-extract', 'utility-options-check'], isGate: true }),
       req('axis-sidecar', 'Persist merged axis-agent outputs to output/axis/{slug}.json (per home)', [
-        /axis-sidecar-write\.mjs\b/,
-        /npm(?:\.cmd)?\s+run\s+axis:write\b/,
+        /axis-sidecar-write\.mjs[^\n]*--report\b/,
+        /npm(?:\.cmd)?\s+run\s+axis:write[^\n]*--report\b/,
       ], { requires: ['deep-research-packet'], isGate: true }),
       req('promote-finalists', 'Auto-promote top-3 into Refined Top 3 section', [
         /promote-finalists\.mjs\b/,

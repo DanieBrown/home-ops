@@ -104,6 +104,7 @@ const deepSingle = CONTRACTS['deep-single'].required;
 const singleAxisReq = deepSingle.find((entry) => entry.id === 'axis-sidecar');
 assert.ok(singleAxisReq, 'deep-single contract must include an axis-sidecar requirement');
 assert.ok(singleAxisReq.patterns.some((rx) => rx.test('node scripts/research/axis-sidecar-write.mjs --report r.md --input a.json')));
+assert.ok(!singleAxisReq.patterns.some((rx) => rx.test('node scripts/research/axis-sidecar-write.mjs --help')), 'deep-single axis-sidecar gate must not be satisfiable by --help');
 assert.ok(singleAxisReq.requires.includes('deep-research-packet-single'));
 const singlePdfReq = deepSingle.find((entry) => entry.id === 'briefing-pdf-deep-single');
 assert.ok(singlePdfReq.requires.includes('axis-sidecar'), 'briefing-pdf-deep-single must require axis-sidecar');
@@ -111,6 +112,8 @@ assert.ok(singlePdfReq.requires.includes('axis-sidecar'), 'briefing-pdf-deep-sin
 const deepShortlist = CONTRACTS['deep-shortlist'].required;
 const batchAxisReq = deepShortlist.find((entry) => entry.id === 'axis-sidecar');
 assert.ok(batchAxisReq, 'deep-shortlist contract must include an axis-sidecar requirement');
+assert.ok(batchAxisReq.patterns.some((rx) => rx.test('node scripts/research/axis-sidecar-write.mjs --report r.md --input a.json')));
+assert.ok(!batchAxisReq.patterns.some((rx) => rx.test('node scripts/research/axis-sidecar-write.mjs --help')), 'deep-shortlist axis-sidecar gate must not be satisfiable by --help');
 assert.ok(batchAxisReq.requires.includes('deep-research-packet'));
 const batchPdfReq = deepShortlist.find((entry) => entry.id === 'briefing-pdf');
 assert.ok(batchPdfReq.requires.includes('axis-sidecar'), 'batch briefing-pdf must require axis-sidecar');
