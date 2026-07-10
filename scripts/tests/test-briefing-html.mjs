@@ -93,7 +93,7 @@ const axisFixture = {
     sourceCoverage: 'captured',
     confidence: 'high',
   },
-  verdict: { recommendation: 'pursue', confidence: 'medium', rationale: 'Fixture.', inPersonChecks: [] },
+  verdict: { recommendation: 'pursue', confidence: 'medium', rationale: 'Verdict rationale fixture.', inPersonChecks: ['Confirm fence height'] },
 };
 
 const richFinalist = makeFinalist({
@@ -166,5 +166,21 @@ const pageCount = (richHtml.match(/class="report-page/g) ?? []).length;
 // yields one source-ledger link) = 6 pages.
 assert.equal(pageCount, 6, `expected 6 report pages, got ${pageCount}`);
 assert.ok(richHtml.includes('report-page-compact'), 'compact packing page exists');
+
+// --- Fix wave: final whole-branch review ---
+
+// Fix 2: axis red flags + high risk feed Top Concerns.
+assert.ok(richHtml.includes('Deal-breaker red flag from neighborhood sentiment'), 'axis red flags feed top concerns');
+assert.ok(!bareHtml.includes('Deal-breaker red flag from neighborhood sentiment'));
+
+// Fix 3: persisted verdict renders in the Decision Read panel (axis-first hierarchy).
+assert.ok(richHtml.includes('PURSUE'), 'verdict recommendation renders uppercased');
+assert.ok(richHtml.includes('Verdict rationale fixture.'), 'verdict rationale renders');
+assert.ok(richHtml.includes('Confirm fence height'), 'in-person checks render');
+assert.ok(richHtml.includes('Check in person'), 'in-person checks heading renders');
+assert.ok(!bareHtml.includes('Check in person'), 'no in-person checks heading without axis verdict');
+
+// Fix 6: projects farther than the 5-mile ring are legend-only, not clamped onto the outer ring.
+assert.equal(ringMapPoints([{ description: 'Far project', status: 'active', distanceMiles: 7 }]).legendOnly.length, 1);
 
 console.log('test-briefing-html: all assertions passed');

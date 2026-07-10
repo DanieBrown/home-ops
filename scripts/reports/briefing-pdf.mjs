@@ -750,10 +750,6 @@ function buildCoverToc(finalists) {
     </div>`;
 }
 
-function buildConstructionBlurb(construction) {
-  return buildDevelopmentInfrastructureSection({ construction });
-}
-
 function statusTone(level) {
   const normalized = String(level || '').toLowerCase();
   if (normalized === 'high') return 'risk-high';
@@ -952,6 +948,14 @@ function buildTailoredConcerns(report, finalist) {
     concerns.push(text);
   };
   const concerns = [];
+
+  for (const flag of finalist?.axis?.sentiment?.redFlagsTriggered ?? []) {
+    push(`Deal-breaker red flag from neighborhood sentiment: "${flag}"`);
+  }
+  if (finalist?.axis?.riskBuilder?.riskLevel === 'high') {
+    const topProject = (finalist.axis.riskBuilder.nearbyProjects ?? [])[0];
+    push(`Axis risk level HIGH${topProject?.description ? ` — nearest flagged project: ${topProject.description}` : ''}.`);
+  }
 
   for (const bullet of extractBullets(report.sections['Risks and Open Questions'], 6)) {
     push(bullet);
@@ -1434,10 +1438,10 @@ function buildPhotoStrip(finalist) {
   const uris = localPaths.map(photoDataUri).filter(Boolean).slice(0, 3);
   if (uris.length === 0) return '';
   const [hero, ...thumbs] = uris;
-  const thumbHtml = thumbs.map((uri) => `<div class="photo-thumb" style="background-image:url('${uri}')"></div>`).join('');
+  const thumbHtml = thumbs.map((uri) => `<div class="photo-thumb" style="background-image:url('${escapeHtml(uri)}')"></div>`).join('');
   return `
     <div class="photo-strip">
-      <div class="photo-hero" style="background-image:url('${hero}')"></div>
+      <div class="photo-hero" style="background-image:url('${escapeHtml(hero)}')"></div>
       ${thumbHtml ? `<div class="photo-thumbs">${thumbHtml}</div>` : ''}
     </div>`;
 }
@@ -1447,6 +1451,8 @@ function parseMoneyNumber(value) {
   return Number.isFinite(numeric) && numeric > 0 ? numeric : null;
 }
 
+// The subject home's own tracker row is intentionally included in the median
+// ("tracker median"), which biases the delta toward 0 at small n.
 export function computeCityMedianPricePerSqft(trackerContent, city) {
   const wanted = String(city ?? '').toLowerCase().trim();
   if (!wanted) return null;
@@ -1604,7 +1610,7 @@ function buildSentimentAxisSection(finalist) {
     const meta = [
       `${Number(entry?.evidenceCount ?? 0)} signal${Number(entry?.evidenceCount ?? 0) === 1 ? '' : 's'}`,
       entry?.proximityMix ? String(entry.proximityMix) : '',
-      entry?.source ? String(entry.source) : 'sidecar',
+      entry?.source ? String(entry.source) : '',
     ].filter(Boolean).join(' · ');
     return `
       <div class="sentiment-dimension">
@@ -1650,13 +1656,12 @@ export function ringMapPoints(projects) {
   for (const [index, project] of (projects ?? []).entries()) {
     const label = index + 1;
     const distance = Number(project?.distanceMiles);
-    if (!Number.isFinite(distance) || distance < 0) {
+    if (!Number.isFinite(distance) || distance < 0 || distance > RING_MAX_MILES) {
       legendOnly.push({ label, project });
       continue;
     }
-    const clamped = Math.min(distance, RING_MAX_MILES);
     const angle = hashAngle(project.caseId || project.description || label);
-    const radius = (clamped / RING_MAX_MILES) * RING_MAX_RADIUS_PX;
+    const radius = (distance / RING_MAX_MILES) * RING_MAX_RADIUS_PX;
     points.push({
       label,
       project,
@@ -1669,8 +1674,8 @@ export function ringMapPoints(projects) {
 
 function projectDotColor(status) {
   const value = String(status ?? '').toLowerCase();
-  if (/active|under|construction/.test(value)) return '#dc2626';
   if (/approved|proposed|planning|review|permit/.test(value)) return '#d97706';
+  if (/active|under|construction/.test(value)) return '#dc2626';
   if (/complete|closed|built|open/.test(value)) return '#16a34a';
   return '#64748b';
 }
@@ -1814,6 +1819,10 @@ function buildFinalistSection(finalist, profile, options = {}) {
       <ul>${(concerns.length ? concerns : ['(none captured)']).map((s) => `<li>${escapeHtml(s)}</li>`).join('')}</ul>
     </div>`;
   const medianInfo = computeCityMedianPricePerSqft(options.trackerContent ?? '', report.city);
+  const verdict = finalist.axis?.verdict;
+  const decisionBody = verdict
+    ? `<p><strong>${escapeHtml(String(verdict.recommendation ?? '').toUpperCase())}</strong> — ${escapeHtml(summarizeSection(String(verdict.rationale ?? ''), 600))}</p>${(verdict.inPersonChecks ?? []).length ? `<h4>Check in person</h4><ul>${(verdict.inPersonChecks ?? []).map((check) => `<li>${escapeHtml(check)}</li>`).join('')}</ul>` : ''}`
+    : `<p>${escapeHtml(summarizeSection(plainText(recommendationText), 800))}</p>`;
   const overviewPage = wrapReportPage(`
     ${buildPhotoStrip(finalist)}
     ${buildKpiTiles(finalist, medianInfo)}
@@ -1822,7 +1831,7 @@ function buildFinalistSection(finalist, profile, options = {}) {
     <div class="overview-grid">
       <div class="panel decision wide">
         <h3>Decision Read</h3>
-        <p>${escapeHtml(summarizeSection(plainText(recommendationText), 800))}</p>
+        ${decisionBody}
       </div>
       ${concernBlock}
       ${gapBlock}
@@ -2076,6 +2085,7 @@ export function buildHtml(finalists, profile, mode = 'batch', context = {}) {
   .concerns h3 { color: #991b1b; }
   .decision { background: #f8fafc; border-color: #cbd5e1; }
   .decision h3, .facts h3 { color: #334155; }
+  .decision h4 { margin: 8px 0 4px; color: #334155; font-size: 8.5pt; text-transform: uppercase; letter-spacing: 0.04em; }
 
   .construction { text-align: left; }
   .pressure-level {
@@ -2661,7 +2671,7 @@ async function run() {
   const trackerContent = existsSync(LISTINGS_FILE) ? readFileSync(LISTINGS_FILE, 'utf8') : '';
   const html = buildHtml(finalists, profile, mode, { trackerContent });
   const footerLeft = mode === 'single'
-    ? [finalists[0].report.address, finalists[0].report.city].filter(Boolean).join(', ')
+    ? [finalists[0].report.address, finalists[0].report.city].filter(Boolean).join(', ') || 'Home-Ops Decision Brief'
     : mode === 'combined'
       ? 'Home-Ops URL Deep Briefing'
       : 'Home-Ops Top 3 Finalist Briefing';

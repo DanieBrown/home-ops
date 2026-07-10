@@ -150,7 +150,7 @@ Once the axis agents return:
    ```
    node scripts/research/axis-sidecar-write.mjs --report reports/{N}-{slug}-{date}.md --input .home-ops/tmp/{commandId}/axis-{slug}.json
    ```
-   The script validates the payload and writes `output/axis/{slug}.json` — the briefing PDF reads it to render the axis scoreboard, sentiment quotes, and risk ring map. If validation fails, fix the payload and re-run; do not skip this step (the `briefing-pdf-deep-single` gate requires it).
+   The script validates the payload and writes `output/axis/{slug}.json` — the briefing PDF reads it to render the axis scoreboard, sentiment quotes, and risk ring map. If validation fails, fix the payload and re-run; do not skip this step (the `briefing-pdf-deep-single` gate requires it). If an axis agent produced no usable output, write that block as `{"status": "missing-input", "confidence": "low"}` rather than inventing data.
 
 3. Replace browser tabs with the listing URL first:
    ```
