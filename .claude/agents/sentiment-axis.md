@@ -44,6 +44,7 @@ Also accept any explicit paths the parent agent passes you.
 - **Do NOT** edit files (no `Edit`/`Write`).
 - **Do NOT** spawn other agents.
 - Re-run at most one capture script per home and stop.
+- Return strict JSON only (no prose around it) — the main agent persists your output verbatim into `output/axis/{slug}.json` via `axis-sidecar-write.mjs`.
 
 ## Output schema (per home)
 

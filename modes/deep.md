@@ -60,6 +60,9 @@ deep-single-final-runner.mjs  →  research-source-plan, community-lookup, senti
         ↓
 [main agent] update report    →  enrich the same reports/{N}-{slug}-{date}.md with deep findings
         ↓
+[main agent] merge axis JSON  →  .home-ops/tmp/{commandId}/axis-{slug}.json
+axis-sidecar-write.mjs        →  output/axis/{slug}.json
+        ↓ (gate: axis-sidecar)
 review-tabs.mjs urls --replace
         ↓ (gate: review-tabs-single)
 briefing-pdf.mjs --report ... →  output/briefings/{slug}-deep-{date}.pdf
@@ -143,12 +146,18 @@ Once the axis agents return:
 1. Review the axis outputs with the deep packet and eval report. Update the same canonical report `reports/{N}-{slug}-{YYYY-MM-DD}.md` with the deep findings instead of creating a second markdown report. A single URL should leave exactly one report for that physical home. Organize the added deep content around the seven research axes below.
    If `output/hoa/{slug}.json` exists, add a brief `HOA Rules and Restrictions` subsection before `Risks and Open Questions`. Use only captured HOA docs or listing-derived HOA clues; when docs are missing or blocked, mark HOA rules as unconfirmed and request the resale/disclosure packet.
 
-2. Replace browser tabs with the listing URL first:
+2. Persist the axis layer. Merge the three axis agents' JSON outputs plus your own verdict synthesis into one JSON object with top-level keys `sentiment`, `riskBuilder`, `schools`, and `verdict` (`{recommendation, confidence, rationale, inPersonChecks}`). Write it to `.home-ops/tmp/{commandId}/axis-{slug}.json`, then run:
+   ```
+   node scripts/research/axis-sidecar-write.mjs --report reports/{N}-{slug}-{date}.md --input .home-ops/tmp/{commandId}/axis-{slug}.json
+   ```
+   The script validates the payload and writes `output/axis/{slug}.json` — the briefing PDF reads it to render the axis scoreboard, sentiment quotes, and risk ring map. If validation fails, fix the payload and re-run; do not skip this step (the `briefing-pdf-deep-single` gate requires it).
+
+3. Replace browser tabs with the listing URL first:
    ```
    node scripts/browser/review-tabs.mjs urls <listing-url> --replace
    ```
 
-3. Render **exactly one** briefing PDF and open it in the hosted session:
+4. Render **exactly one** briefing PDF and open it in the hosted session:
    ```
    node scripts/reports/briefing-pdf.mjs --report reports/{N}-{slug}-{YYYY-MM-DD}.md
    ```
@@ -192,6 +201,8 @@ After all URLs have completed Phases 0–2, launch the three axis agents in **a 
 For each home (using the axis agent outputs):
 
 1. Write the deep brief: `reports/{slug}-deep-{YYYY-MM-DD}.md`
+
+For each home, write the merged axis JSON and run axis-sidecar-write.mjs as in the single-home Phase 4 step 2.
 
 After all briefs are written, replace the browser tabs with all listing URLs first:
 ```
@@ -275,6 +286,8 @@ The agents read pre-written JSON sidecars first. They MAY use Playwright MCP onl
 10. Stream axis agent results back as they land. Do not wait for the slowest agent before starting the brief skeleton.
 
 11. Review all three axis outputs with the deep packets and evaluation reports. Resolve conflicts.
+
+11a. For each home in the cohort, merge that home's axis outputs + verdict into `.home-ops/tmp/{commandId}/axis-{slug}.json` and run `node scripts/research/axis-sidecar-write.mjs --report <that home's report> --input <that tmp file>`. One sidecar per home; the batch `briefing-pdf` gate requires at least one successful axis-sidecar write.
 
 12. Write the combined brief to `reports/deep-shortlist-{YYYY-MM-DD}.md`.
 
@@ -364,6 +377,7 @@ Per-home: does this fit the buyer's stated priorities, and what would need in-pe
 - Distinguish clearly between evidence, inference, and unresolved questions.
 - Include a per-home source-coverage ledger at the top of each home's section showing what was captured, blocked, or missing.
 - If sentiment, construction, permits, school metadata, or builder files are missing for a home, say that directly and lower confidence — do not paper over the gap.
+- Persist every home's axis interpretation to output/axis/{slug}.json before rendering the PDF.
 - Persist the refined top 3 back into `data/shortlist.md` after writing the batch brief.
 - **Single-home final state: exactly 2 tabs** (listing URL + briefing PDF). Open the PDF last.
 - **Batch final state: exactly 4 tabs** (three finalists + briefing PDF). Open the PDF last.

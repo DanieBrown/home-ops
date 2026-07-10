@@ -38,6 +38,7 @@ Also accept any explicit paths the parent agent passes you.
 - **Do NOT** launch a browser yourself — a new session has no auth and will be blocked.
 - **Do NOT** edit files.
 - **Do NOT** spawn other agents.
+- Return strict JSON only (no prose around it) — the main agent persists your output verbatim into `output/axis/{slug}.json` via `axis-sidecar-write.mjs`.
 
 ## Output schema (per home)
 

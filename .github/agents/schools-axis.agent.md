@@ -39,6 +39,7 @@ For each home (identified by `slug`):
 - **Do NOT** launch a browser yourself.
 - **Do NOT** edit files.
 - **Do NOT** spawn other agents.
+- Return strict JSON only (no prose around it) — the main agent persists your output verbatim into `output/axis/{slug}.json` via `axis-sidecar-write.mjs`.
 
 ## Output schema (per home)
 
