@@ -18,7 +18,7 @@ Run the environment preflight in `modes/_preflight.md` before anything else. Thi
 
 ## Goal
 
-Collect exactly ten primary financial inputs needed for a conservative estimate, calculate the selected fixed-rate loan term first, show the alternate fixed term as comparison context, then ask before updating:
+Collect the financial inputs needed for a conservative estimate, calculate the selected fixed-rate loan term first, show the alternate fixed term as comparison context, then ask before updating:
 
 - `config/profile.yml`
 - `buyer-profile.md`
@@ -45,12 +45,17 @@ Follow this flow:
    - selected loan term
    - recommended purchase-price range
    - binding constraint: monthly payment cap or cash available
-   - estimated monthly payment at the max
-   - rate source
+   - estimated monthly payment at the max, with the principal/interest, tax, insurance, PMI, and HOA breakdown
+   - cash to close at the max and cash remaining afterward
+   - debt-to-income check versus gross pay when salary inputs were provided
+   - rate source (note when it is a cached PMMS rate)
    - alternate-term comparison if available
    - profile patch preview
-7. Ask whether to update the profile with the calculated range. Do not update buyer-layer files unless the user explicitly accepts.
-8. If accepted, run:
+7. If the user asks what income a specific price requires (for example "what would it take to afford $X"), rerun with the target-price flag instead of re-opening the wizard:
+   - `npm.cmd run afford:calculate -- --input .home-ops/afford-wizard-submission.json --output output/affordability/latest.json --target-price X`
+   - The result gains an `income_needed` block with required monthly take-home, approximate annual gross salary, and cash to close at that price.
+8. Ask whether to update the profile with the calculated range. Do not update buyer-layer files unless the user explicitly accepts.
+9. If accepted, run:
    - `npm.cmd run afford:apply -- --input output/affordability/latest.json`
    - `npm.cmd run sync-check`
 
@@ -59,17 +64,22 @@ Follow this flow:
 Primary inputs:
 
 1. Target state/area, prefilled from `config/profile.yml` when possible.
-2. Preferred fixed loan term: `30-year fixed` or `15-year fixed`.
-3. Actual monthly household take-home pay.
+2. Preferred fixed loan term: `30-year fixed` or `15-year fixed`. Live PMMS averages are shown when available.
+3. Household income, in either mode:
+   - direct monthly take-home pay, or
+   - annual salaries (primary, secondary, other) plus a take-home percent and optional outside monthly contribution. Salary mode also enables a debt-to-income sanity check against gross pay.
 4. Monthly non-mortgage debt payments.
 5. Cash the buyer can comfortably use for the home purchase.
 6. Target down-payment percentage.
 7. Rough credit-score band, not exact score.
 8. Housing-payment cap as a percent of take-home.
 9. HOA monthly budget or estimate.
-10. Minimum search floor preference: keep current profile min, auto 85% of max, custom amount, or no floor.
+10. Rate and cost assumptions: optional interest-rate override (blank uses the live PMMS average), property tax percent, homeowners insurance percent, and closing-cost low/high percents.
+11. Minimum search floor preference: keep current profile min, auto 85% of max, custom amount, or no floor.
 
-If no rate override is provided, `scripts/affordability/calculate-affordability.mjs` attempts to fetch Freddie Mac PMMS rates for the selected term. If PMMS lookup fails and no override exists, tell the user to reopen the wizard and provide a rate override.
+If no rate override is provided, `scripts/affordability/calculate-affordability.mjs` fetches Freddie Mac PMMS rates for the selected term. Successful lookups are cached in `.home-ops/pmms-rates-cache.json`; if the live lookup fails, the calculator falls back to the cached rates and flags the rate source as cached. Only when there is no override and no cache does the run fail -- in that case tell the user to reopen the wizard and enter an override on the Rates step.
+
+Optional prefill help: if a credit-score source is available to the assistant (for example a connected Credit Karma account), offer to look up the buyer's current score band before they fill in the credit step so they pick the right tier. Never write the raw score anywhere.
 
 ## Calculation Rules
 
@@ -109,6 +119,9 @@ Return a concise summary with:
 - affordability result path
 - whether the profile was updated
 - selected-term recommended range
+- monthly payment breakdown, cash to close, and cash remaining at the recommended max
+- debt-to-income check when gross income is known
 - alternate-term comparison when available
+- income-needed snapshot when a target price was requested
 - warnings and confidence notes
 - validation result after an accepted update

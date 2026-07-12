@@ -15,7 +15,14 @@ const DEFAULT_ANSWERS = {
   target_state: '',
   target_area: '',
   loan_term_years: '30',
+  income_mode: 'take_home',
   monthly_take_home: '',
+  primary_annual_salary: '',
+  secondary_annual_salary: '',
+  other_annual_income: '',
+  other_monthly_contribution: '0',
+  take_home_pct: '70',
+  interest_rate_override: '',
   monthly_debt: '0',
   cash_available: '',
   down_payment_pct: '20',
@@ -34,13 +41,14 @@ const DEFAULT_ANSWERS = {
 const steps = [
   { key: 'target', label: 'Target', title: 'Target state and area', hint: 'Home-Ops will prefill this from the profile when it can.' },
   { key: 'term', label: 'Term', title: 'Preferred fixed loan term', hint: 'Choose the fixed-rate term the main estimate should use.' },
-  { key: 'takehome', label: 'Take-home', title: 'Actual monthly household take-home pay', hint: 'Use the amount that lands in the household after taxes and normal payroll deductions.' },
+  { key: 'income', label: 'Income', title: 'Household income', hint: 'Enter monthly take-home directly, or build it from annual salaries so the estimate can also sanity-check debt-to-income against gross pay.' },
   { key: 'debt', label: 'Debt', title: 'Monthly non-mortgage debt payments', hint: 'Include car payments, student loans, credit cards, personal loans, and other required monthly debt.' },
   { key: 'cash', label: 'Cash', title: 'Cash you can comfortably use for the home purchase', hint: 'Include money for down payment and closing costs. Do not include emergency savings or money you want to keep untouched.' },
   { key: 'down', label: 'Down', title: 'Target down-payment percentage', hint: 'Lower down payments may keep more cash available, but can add mortgage insurance.' },
   { key: 'credit', label: 'Credit', title: 'Rough credit-score band', hint: 'A broad band is enough. The result stores the pricing assumption, not your exact score.' },
   { key: 'cap', label: 'Cap', title: 'Housing-payment cap as percent of take-home', hint: 'Home-Ops applies this to take-home pay after subtracting monthly debt.' },
   { key: 'hoa', label: 'HOA', title: 'HOA monthly budget or estimate', hint: 'Use a comfortable monthly HOA number, or 0 if you want the search to assume none.' },
+  { key: 'rates', label: 'Rates', title: 'Rate and cost assumptions', hint: 'Leave the override blank to use the live Freddie Mac PMMS average. Adjust taxes, insurance, and closing costs if you know your local numbers.' },
   { key: 'floor', label: 'Floor', title: 'Minimum search floor preference', hint: 'Choose how Home-Ops should set the lower end of the profile search range.' },
 ];
 
@@ -48,6 +56,7 @@ const state = {
   step: 0,
   profile: {},
   answers: { ...DEFAULT_ANSWERS },
+  rates: null,
   estimate: null,
   estimateError: '',
   estimating: false,
@@ -84,6 +93,29 @@ function escapeHtml(value) {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
+}
+
+function annualGross() {
+  return numberValue('primary_annual_salary') + numberValue('secondary_annual_salary') + numberValue('other_annual_income');
+}
+
+function estimatedTakeHome() {
+  if (state.answers.income_mode === 'salary') {
+    const takeHomePct = numberValue('take_home_pct') || 70;
+    return (annualGross() * (takeHomePct / 100)) / 12 + numberValue('other_monthly_contribution');
+  }
+  return numberValue('monthly_take_home');
+}
+
+function pmmsRateLine() {
+  if (!state.rates) return '';
+  const parts = [];
+  if (Number.isFinite(state.rates.rate30Pct)) parts.push(`30-year ${state.rates.rate30Pct}%`);
+  if (Number.isFinite(state.rates.rate15Pct)) parts.push(`15-year ${state.rates.rate15Pct}%`);
+  if (parts.length === 0) return '';
+  const suffix = state.rates.fromCache ? ' (cached from an earlier lookup)' : '';
+  const asOf = state.rates.asOf ? ` as of ${state.rates.asOf}` : '';
+  return `Freddie Mac PMMS averages${asOf}: ${parts.join(', ')}${suffix}.`;
 }
 
 function firstProfileState(profile) {
@@ -158,6 +190,8 @@ function resultPreview() {
         <div><span>Monthly cap</span><strong>${money(selected.monthly_payment_cap)}</strong></div>
         <div><span>Payment at max</span><strong>${money(selected.payment_at_recommended.total)}</strong></div>
         <div><span>Cash needed high</span><strong>${money(selected.upfront_cash_at_recommended.total_high)}</strong></div>
+        <div><span>Cash left after</span><strong>${money(selected.cash_remaining_at_recommended)}</strong></div>
+        ${selected.dti_check ? `<div><span>Back-end DTI</span><strong>${selected.dti_check.back_end_pct.toFixed(1)}% (${escapeHtml(selected.dti_check.status)})</strong></div>` : ''}
         <div><span>Constraint</span><strong>${selected.constraint === 'cash_available' ? 'Cash' : 'Payment'}</strong></div>
       </div>
     </section>`;
@@ -171,13 +205,37 @@ function renderStepBody(step) {
           <label><span>State</span>${input('target_state', { type: 'text', required: true, placeholder: 'NC' })}</label>
           <label><span>Area</span>${input('target_area', { type: 'text', required: true, placeholder: 'Apex, Cary, Holly Springs' })}</label>
         </div>`;
-    case 'term':
-      return optionGrid('loan_term_years', [
-        { value: '30', label: '30-year fixed', detail: 'Lower monthly payment, higher total interest.' },
-        { value: '15', label: '15-year fixed', detail: 'Higher monthly payment, faster payoff.' },
+    case 'term': {
+      const ratesNote = pmmsRateLine();
+      return `
+        ${optionGrid('loan_term_years', [
+          { value: '30', label: '30-year fixed', detail: 'Lower monthly payment, higher total interest.' },
+          { value: '15', label: '15-year fixed', detail: 'Higher monthly payment, faster payoff.' },
+        ])}
+        ${ratesNote ? `<section class="agent-note">${escapeHtml(ratesNote)}</section>` : ''}`;
+    }
+    case 'income': {
+      const modeGrid = optionGrid('income_mode', [
+        { value: 'take_home', label: 'Monthly take-home', detail: 'I know the amount that lands in the household each month.' },
+        { value: 'salary', label: 'Annual salaries', detail: 'Build take-home from gross salaries; also enables a debt-to-income check.' },
       ]);
-    case 'takehome':
-      return `<label class="conversation-field compact"><span>Monthly take-home pay</span>${input('monthly_take_home', { type: 'number', min: 1, step: 100, placeholder: '11000', required: true })}</label>`;
+      if (state.answers.income_mode === 'salary') {
+        const estimated = estimatedTakeHome();
+        return `
+          ${modeGrid}
+          <div class="identity-grid">
+            <label><span>Primary annual salary</span>${input('primary_annual_salary', { type: 'number', min: 0, step: 1000, placeholder: '140000' })}</label>
+            <label><span>Second annual salary</span>${input('secondary_annual_salary', { type: 'number', min: 0, step: 1000, placeholder: '0' })}</label>
+            <label><span>Other annual income</span>${input('other_annual_income', { type: 'number', min: 0, step: 1000, placeholder: '0' })}</label>
+            <label><span>Take-home percent of gross</span>${input('take_home_pct', { type: 'number', min: 30, max: 100, step: 1, placeholder: '70' })}</label>
+            <label><span>Other monthly contribution</span>${input('other_monthly_contribution', { type: 'number', min: 0, step: 100, placeholder: '0' })}</label>
+          </div>
+          <section class="agent-note">Estimated monthly take-home: ${money(estimated)}${annualGross() > 0 ? ` from ${money(annualGross())} gross per year.` : '. Enter at least one salary.'}</section>`;
+      }
+      return `
+        ${modeGrid}
+        <label class="conversation-field compact"><span>Monthly take-home pay</span>${input('monthly_take_home', { type: 'number', min: 1, step: 100, placeholder: '11000', required: true })}</label>`;
+    }
     case 'debt':
       return `<label class="conversation-field compact"><span>Monthly non-mortgage debt</span>${input('monthly_debt', { type: 'number', min: 0, step: 25, placeholder: '0', required: true })}</label>`;
     case 'cash':
@@ -205,6 +263,18 @@ function renderStepBody(step) {
         </div>`;
     case 'hoa':
       return `<label class="conversation-field compact"><span>Monthly HOA budget</span>${input('hoa_monthly', { type: 'number', min: 0, step: 25, placeholder: '0', required: true })}</label>`;
+    case 'rates': {
+      const ratesNote = pmmsRateLine();
+      return `
+        ${ratesNote ? `<section class="agent-note">${escapeHtml(ratesNote)}</section>` : '<section class="agent-note">Live PMMS rates are unavailable right now. Enter an interest-rate override below so the estimate can run.</section>'}
+        <div class="identity-grid">
+          <label><span>Interest-rate override % (blank = live rate)</span>${input('interest_rate_override', { type: 'number', min: 0, max: 15, step: 0.01, placeholder: '' })}</label>
+          <label><span>Property tax % of price per year</span>${input('property_tax_pct', { type: 'number', min: 0, max: 5, step: 0.05 })}</label>
+          <label><span>Homeowners insurance % per year</span>${input('insurance_pct', { type: 'number', min: 0, max: 3, step: 0.05 })}</label>
+          <label><span>Closing costs low %</span>${input('closing_cost_pct_min', { type: 'number', min: 0, max: 10, step: 0.5 })}</label>
+          <label><span>Closing costs high %</span>${input('closing_cost_pct_max', { type: 'number', min: 0, max: 10, step: 0.5 })}</label>
+        </div>`;
+    }
     case 'floor':
       return `
         ${optionGrid('price_floor_mode', [
@@ -279,7 +349,24 @@ function validateStep() {
     if (!state.answers.target_state.trim()) errors.push('Enter a target state.');
     if (!state.answers.target_area.trim()) errors.push('Enter a target area.');
   }
-  if (step.key === 'takehome' && numberValue('monthly_take_home') <= 0) errors.push('Enter monthly take-home pay.');
+  if (step.key === 'income') {
+    if (state.answers.income_mode === 'salary') {
+      if (annualGross() <= 0) errors.push('Enter at least one annual salary.');
+      const takeHomePct = numberValue('take_home_pct');
+      if (takeHomePct <= 0 || takeHomePct > 100) errors.push('Enter a take-home percent between 1 and 100.');
+    } else if (numberValue('monthly_take_home') <= 0) {
+      errors.push('Enter monthly take-home pay.');
+    }
+  }
+  if (step.key === 'rates') {
+    const override = state.answers.interest_rate_override;
+    if (String(override ?? '').trim() !== '' && (numberValue('interest_rate_override') <= 0 || numberValue('interest_rate_override') > 15)) {
+      errors.push('Enter an interest-rate override between 0 and 15, or leave it blank.');
+    }
+    if (numberValue('closing_cost_pct_min') > numberValue('closing_cost_pct_max')) {
+      errors.push('Closing-cost low percent cannot exceed the high percent.');
+    }
+  }
   if (step.key === 'cash' && numberValue('cash_available') <= 0) errors.push('Enter cash available for the purchase.');
   if (step.key === 'down' && (numberValue('down_payment_pct') < 0 || numberValue('down_payment_pct') >= 100)) errors.push('Enter a down-payment percentage below 100.');
   if (step.key === 'cap' && numberValue('housing_payment_pct') <= 0) errors.push('Choose a housing-payment cap.');
@@ -291,7 +378,7 @@ function validateStep() {
 }
 
 function canEstimate() {
-  return numberValue('monthly_take_home') > 0
+  return estimatedTakeHome() > 0
     && numberValue('cash_available') > 0
     && numberValue('down_payment_pct') >= 0
     && numberValue('down_payment_pct') < 100;
@@ -384,6 +471,20 @@ el.breadcrumbs.addEventListener('click', (event) => {
   }
 });
 
+async function loadRates() {
+  try {
+    const response = await fetch('/api/rates');
+    const payload = await response.json();
+    if (payload.ok && payload.rates) {
+      state.rates = payload.rates;
+      const step = steps[state.step];
+      if (step && (step.key === 'term' || step.key === 'rates')) render();
+    }
+  } catch {
+    // Rates are contextual; the estimate endpoint handles fallback on its own.
+  }
+}
+
 async function init() {
   const response = await fetch('/api/profile');
   const payload = await response.json();
@@ -391,6 +492,7 @@ async function init() {
   hydrateFromProfile(state.profile, payload.savedAnswers);
   render();
   scheduleEstimate();
+  loadRates();
 }
 
 init().catch((error) => {

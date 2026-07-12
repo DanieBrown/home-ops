@@ -180,19 +180,30 @@ export function firstProfileArea(profile) {
   return areas.map((area) => area.name).filter(Boolean).join(', ');
 }
 
-export function estimateMonthlyTakeHomeFromAnswers(answers = {}) {
-  const direct = toNumber(answers.monthly_take_home);
-  if (Number.isFinite(direct) && direct > 0) return direct;
-
-  const annualGross = (toNumber(answers.primary_annual_salary) ?? 0)
+function annualGrossFromAnswers(answers = {}) {
+  return (toNumber(answers.primary_annual_salary) ?? 0)
     + (toNumber(answers.secondary_annual_salary) ?? 0)
     + (toNumber(answers.other_annual_income) ?? 0);
+}
+
+export function estimateMonthlyTakeHomeFromAnswers(answers = {}) {
+  const salaryMode = answers.income_mode === 'salary';
+  const direct = toNumber(answers.monthly_take_home);
+  if (!salaryMode && Number.isFinite(direct) && direct > 0) return direct;
+
+  const annualGross = annualGrossFromAnswers(answers);
   const takeHomePct = toNumber(answers.take_home_pct) ?? 70;
   const monthlyHelp = toNumber(answers.other_monthly_contribution) ?? 0;
   const override = toNumber(answers.monthly_take_home_override);
   if (Number.isFinite(override) && override > 0) return override + monthlyHelp;
   if (annualGross > 0 || monthlyHelp > 0) return (annualGross * (takeHomePct / 100) / 12) + monthlyHelp;
-  return direct;
+  return salaryMode ? null : direct;
+}
+
+export function estimateMonthlyGrossFromAnswers(answers = {}) {
+  const annualGross = annualGrossFromAnswers(answers);
+  if (annualGross > 0) return annualGross / 12;
+  return null;
 }
 
 export function normalizeAffordabilityAnswers(answers = {}, profile = {}, pmmsRates = null) {
@@ -205,15 +216,19 @@ export function normalizeAffordabilityAnswers(answers = {}, profile = {}, pmmsRa
     throw new Error('No interest rate is available. Reopen the affordability wizard and enter an interest-rate override, then submit again.');
   }
 
+  const pmmsLabel = pmmsRates?.fromCache
+    ? `Freddie Mac PMMS cached (${pmmsRates?.asOf ?? 'date unknown'})`
+    : `Freddie Mac PMMS (${pmmsRates?.asOf ?? 'latest available'})`;
   const rateSource = Number.isFinite(overrideRate) && overrideRate > 0
     ? 'User override'
-    : `Freddie Mac PMMS (${pmmsRates?.asOf ?? 'latest available'})`;
+    : pmmsLabel;
   const profileHoa = toNumber(profile?.search?.soft_preferences?.hoa_max_monthly);
   const hard = profile?.search?.hard_requirements ?? {};
 
   return {
     termYears,
     monthlyTakeHomePay: estimateMonthlyTakeHomeFromAnswers(answers),
+    monthlyGrossIncome: estimateMonthlyGrossFromAnswers(answers),
     monthlyDebt: toNumber(answers.monthly_debt) ?? 0,
     cashAvailable: toNumber(answers.cash_available),
     creditTier: answers.credit_tier ?? 'unknown',
@@ -223,7 +238,7 @@ export function normalizeAffordabilityAnswers(answers = {}, profile = {}, pmmsRa
     rate30Pct: pmmsRates?.rate30Pct,
     rate15Pct: pmmsRates?.rate15Pct,
     rateSource,
-    comparisonRateSource: pmmsRates ? `Freddie Mac PMMS (${pmmsRates.asOf ?? 'latest available'})` : rateSource,
+    comparisonRateSource: pmmsRates ? pmmsLabel : rateSource,
     propertyTaxPct: toNumber(answers.property_tax_pct) ?? 1.0,
     insurancePct: toNumber(answers.insurance_pct) ?? 0.35,
     hoaMonthly: toNumber(answers.hoa_monthly) ?? profileHoa ?? 0,
@@ -384,8 +399,28 @@ export function calculateScenario(input) {
     llpa_pricing_pressure: recommendedPriceMax * (1 - assumptions.downPaymentPct / 100) * (llpa.pct / 100),
   };
   upfrontCash.total_high = upfrontCash.down_payment + upfrontCash.closing_cost_high + upfrontCash.llpa_pricing_pressure;
+  const cashRemaining = cashAvailable - upfrontCash.total_high;
+
+  const monthlyGrossIncome = toNumber(input.monthlyGrossIncome);
+  let dtiCheck = null;
+  if (Number.isFinite(monthlyGrossIncome) && monthlyGrossIncome > 0) {
+    const frontEndPct = (paymentAtRecommended.total / monthlyGrossIncome) * 100;
+    const backEndPct = ((paymentAtRecommended.total + Math.max(0, monthlyDebt)) / monthlyGrossIncome) * 100;
+    dtiCheck = {
+      monthly_gross_income: monthlyGrossIncome,
+      front_end_pct: frontEndPct,
+      back_end_pct: backEndPct,
+      status: backEndPct <= 36 ? 'ok' : backEndPct <= 43 ? 'caution' : 'high',
+    };
+  }
 
   const warnings = [];
+  if (dtiCheck?.status === 'caution') {
+    warnings.push(`Estimated back-end DTI at the recommended max is ${dtiCheck.back_end_pct.toFixed(1)}% of gross income, above the 36% conventional guideline; lenders may still approve but the budget is tighter than the take-home cap suggests.`);
+  }
+  if (dtiCheck?.status === 'high') {
+    warnings.push(`Estimated back-end DTI at the recommended max is ${dtiCheck.back_end_pct.toFixed(1)}% of gross income, above the 43% qualified-mortgage threshold; many lenders will not approve this payment level.`);
+  }
   if (monthlyDebt > 0) {
     warnings.push(`Existing monthly debt reduced the ${housingPaymentPct}% housing cap before estimating the purchase range; have a lender review total DTI before relying on this estimate.`);
   }
@@ -410,6 +445,8 @@ export function calculateScenario(input) {
     debt_adjusted_monthly_take_home: debtAdjustedTakeHomePay,
     payment_at_recommended: paymentAtRecommended,
     upfront_cash_at_recommended: upfrontCash,
+    cash_remaining_at_recommended: cashRemaining,
+    dti_check: dtiCheck,
     assumptions: {
       ...assumptions,
       credit_tier: normalizeCreditTier(input.creditTier),

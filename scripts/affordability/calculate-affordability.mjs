@@ -5,13 +5,14 @@ import { dirname, join, resolve } from 'path';
 import { pathToFileURL } from 'url';
 import YAML from 'yaml';
 import {
-  PMMS_URL,
   buildProfilePatchPreview,
   calculateAffordability,
+  calculateIncomeNeeded,
   formatMoney,
   normalizeAffordabilityAnswers,
   toNumber,
 } from './affordability-core.mjs';
+import { fetchPmmsRates, getPmmsRates } from './pmms-rates.mjs';
 import { HOME_OPS_DIR, OUTPUT_DIR, PROFILE_PATH, ROOT } from '../shared/paths.mjs';
 import { expiresInDays, makeCommandId, recordArtifact, withSidecarMetadata } from '../shared/knowledge-store.mjs';
 
@@ -26,10 +27,11 @@ Options:
   --input            Affordability wizard submission JSON. Defaults to .home-ops/afford-wizard-submission.json.
   --output           Result JSON path. Defaults to output/affordability/latest.json.
   --no-fetch-rates   Do not fetch Freddie Mac PMMS rates. Requires an interest-rate override in the input.
+  --target-price     Also report the income needed to afford this purchase price under the same assumptions.
   --help             Show this help text.`;
 
 function parseArgs(argv) {
-  const options = { input: DEFAULT_INPUT, output: DEFAULT_OUTPUT, fetchRates: true, help: false };
+  const options = { input: DEFAULT_INPUT, output: DEFAULT_OUTPUT, fetchRates: true, help: false, targetPrice: null };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
     if (arg === '--help' || arg === '-h') {
@@ -42,6 +44,12 @@ function parseArgs(argv) {
       index += 1;
     } else if (arg === '--no-fetch-rates') {
       options.fetchRates = false;
+    } else if (arg === '--target-price') {
+      options.targetPrice = toNumber(argv[index + 1]);
+      if (!Number.isFinite(options.targetPrice) || options.targetPrice <= 0) {
+        throw new Error('--target-price requires a positive number.');
+      }
+      index += 1;
     } else {
       throw new Error(`Unknown option: ${arg}`);
     }
@@ -65,43 +73,7 @@ function extractAnswers(input) {
   return input?.payload?.answers ?? input?.answers ?? input;
 }
 
-function stripTags(html) {
-  return html
-    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
-    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
-    .replace(/<[^>]+>/g, ' ')
-    .replace(/&nbsp;|&#160;/gi, ' ')
-    .replace(/&amp;/gi, '&')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
-export async function fetchPmmsRates({ timeoutMs = 8000 } = {}) {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    const response = await fetch(PMMS_URL, {
-      headers: { 'user-agent': 'home-ops-affordability/1.0' },
-      signal: controller.signal,
-    });
-    if (!response.ok) throw new Error(`Freddie Mac PMMS returned HTTP ${response.status}`);
-    const text = stripTags(await response.text());
-    const asOf = text.match(/as of ([A-Za-z]+ \d{1,2}, \d{4})/)?.[1] ?? null;
-    const rate30Pct = toNumber(text.match(/30-year fixed-rate mortgage\s+averaged\s+([\d.]+)%/i)?.[1]);
-    const rate15Pct = toNumber(text.match(/15-year fixed-rate mortgage\s+averaged\s+([\d.]+)%/i)?.[1]);
-    if (!Number.isFinite(rate30Pct) && !Number.isFinite(rate15Pct)) {
-      throw new Error('Could not parse 30-year or 15-year PMMS rates.');
-    }
-    return {
-      source: PMMS_URL,
-      asOf,
-      rate30Pct,
-      rate15Pct,
-    };
-  } finally {
-    clearTimeout(timer);
-  }
-}
+export { fetchPmmsRates, getPmmsRates };
 
 function printSummary(result) {
   const selected = result.selected;
@@ -109,10 +81,28 @@ function printSummary(result) {
   console.log(`Selected term: ${selected.term_years}-year fixed`);
   console.log(`Recommended range: ${formatMoney(result.recommended_price_min)} to ${formatMoney(result.recommended_price_max)}`);
   console.log(`Binding constraint: ${selected.constraint === 'cash_available' ? 'cash available for down payment/closing' : `${selected.assumptions.housingPaymentPct}% debt-adjusted monthly payment cap`}`);
-  console.log(`Estimated payment at max: ${formatMoney(selected.payment_at_recommended.total)} / month`);
+  const payment = selected.payment_at_recommended;
+  const paymentParts = [
+    `P&I ${formatMoney(payment.principal_interest)}`,
+    `tax ${formatMoney(payment.property_tax)}`,
+    `insurance ${formatMoney(payment.homeowners_insurance)}`,
+  ];
+  if (payment.mortgage_insurance > 0) paymentParts.push(`PMI ${formatMoney(payment.mortgage_insurance)}`);
+  if (payment.hoa > 0) paymentParts.push(`HOA ${formatMoney(payment.hoa)}`);
+  console.log(`Estimated payment at max: ${formatMoney(payment.total)} / month (${paymentParts.join(', ')})`);
+  const upfront = selected.upfront_cash_at_recommended;
+  console.log(`Cash to close at max (high estimate): ${formatMoney(upfront.total_high)} (down payment ${formatMoney(upfront.down_payment)}, closing up to ${formatMoney(upfront.closing_cost_high)}, pricing pressure ${formatMoney(upfront.llpa_pricing_pressure)})`);
+  console.log(`Cash remaining after purchase: ${formatMoney(selected.cash_remaining_at_recommended)}`);
+  if (selected.dti_check) {
+    console.log(`Estimated DTI vs gross income: front-end ${selected.dti_check.front_end_pct.toFixed(1)}%, back-end ${selected.dti_check.back_end_pct.toFixed(1)}% (${selected.dti_check.status})`);
+  }
   console.log(`Rate assumption: ${selected.assumptions.rateAssumptionPct}% (${selected.assumptions.rate_source})`);
   if (result.comparison) {
     console.log(`Comparison max (${result.comparison.term_years}-year fixed): ${formatMoney(result.comparison.recommended_price_max)}`);
+  }
+  if (result.income_needed) {
+    const needed = result.income_needed;
+    console.log(`\nIncome needed for ${formatMoney(needed.target_price)}: ${formatMoney(needed.required_household_monthly_take_home)} take-home / month (about ${formatMoney(needed.required_annual_gross_salary)} gross salary / year), with ${formatMoney(needed.upfront_cash_at_target.total_high)} cash to close.`);
   }
   if (result.warnings.length > 0) {
     console.log('\nWarnings:');
@@ -137,7 +127,10 @@ async function main() {
   let pmmsRates = null;
   if (options.fetchRates) {
     try {
-      pmmsRates = await fetchPmmsRates();
+      pmmsRates = await getPmmsRates();
+      if (pmmsRates.fromCache) {
+        console.warn(`WARN: PMMS rate lookup failed (${pmmsRates.fetchError}); using cached rates from ${pmmsRates.cachedAt ?? 'an earlier run'}.`);
+      }
     } catch (error) {
       const hasOverride = Number.isFinite(toNumber(answers.interest_rate_override)) && toNumber(answers.interest_rate_override) > 0;
       if (!hasOverride) throw error;
@@ -147,6 +140,24 @@ async function main() {
 
   const normalized = normalizeAffordabilityAnswers(answers, profile, pmmsRates);
   const result = calculateAffordability(normalized);
+  if (Number.isFinite(options.targetPrice) && options.targetPrice > 0) {
+    result.income_needed = calculateIncomeNeeded({
+      targetPrice: options.targetPrice,
+      termYears: normalized.termYears,
+      rateAssumptionPct: normalized.rateAssumptionPct,
+      housingPaymentPct: normalized.housingPaymentPct,
+      takeHomePct: toNumber(answers.take_home_pct) ?? 70,
+      monthlyContribution: toNumber(answers.other_monthly_contribution) ?? 0,
+      creditTier: normalized.creditTier,
+      downPaymentPct: normalized.downPaymentPct,
+      propertyTaxPct: normalized.propertyTaxPct,
+      insurancePct: normalized.insurancePct,
+      hoaMonthly: normalized.hoaMonthly,
+      closingCostPctMin: normalized.closingCostPctMin,
+      closingCostPctMax: normalized.closingCostPctMax,
+      rateSource: normalized.rateSource,
+    });
+  }
   const commandId = input?.commandId ?? makeCommandId('affordability');
   result.target = {
     state: normalized.targetState,
@@ -163,7 +174,6 @@ async function main() {
     expiresAt: expiresInDays(14, result.calculated_at),
     sourceUrls: pmmsRates?.source ? [pmmsRates.source] : [],
     status: 'ok',
-    warnings: result.warnings,
   });
 
   mkdirSync(dirname(options.output), { recursive: true });

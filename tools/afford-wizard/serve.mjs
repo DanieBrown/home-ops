@@ -5,7 +5,7 @@ import { createServer } from 'http';
 import { dirname, extname, join, resolve } from 'path';
 import { fileURLToPath } from 'url';
 import YAML from 'yaml';
-import { fetchPmmsRates } from '../../scripts/affordability/calculate-affordability.mjs';
+import { getPmmsRates } from '../../scripts/affordability/pmms-rates.mjs';
 import {
   buildProfilePatchPreview,
   calculateAffordability,
@@ -161,26 +161,21 @@ async function handleAnswerSave(req, res) {
   }
 }
 
-async function handleRates(_req, res) {
-  try {
-    const now = Date.now();
-    if (!cachedRates || now - cachedRatesAt > 15 * 60 * 1000) {
-      cachedRates = await fetchPmmsRates({ timeoutMs: 8000 });
-      cachedRatesAt = now;
-    }
-    sendJson(res, 200, { ok: true, rates: cachedRates });
-  } catch (error) {
-    sendJson(res, 502, { ok: false, error: error.message });
-  }
-}
-
 async function getRates() {
   const now = Date.now();
   if (!cachedRates || now - cachedRatesAt > 15 * 60 * 1000) {
-    cachedRates = await fetchPmmsRates({ timeoutMs: 8000 });
+    cachedRates = await getPmmsRates({ timeoutMs: 8000 });
     cachedRatesAt = now;
   }
   return cachedRates;
+}
+
+async function handleRates(_req, res) {
+  try {
+    sendJson(res, 200, { ok: true, rates: await getRates() });
+  } catch (error) {
+    sendJson(res, 502, { ok: false, error: error.message });
+  }
 }
 
 async function handleEstimate(req, res) {

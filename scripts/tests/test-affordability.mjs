@@ -9,12 +9,15 @@ import YAML from 'yaml';
 import {
   calculateAffordability,
   calculateIncomeNeeded,
+  estimateMonthlyGrossFromAnswers,
+  estimateMonthlyTakeHomeFromAnswers,
   getLlpaPct,
   monthlyPrincipalInterest,
   normalizeAffordabilityAnswers,
   roundDown,
 } from '../affordability/affordability-core.mjs';
 import { applyAffordabilityToFiles } from '../affordability/apply-affordability.mjs';
+import { getPmmsRates } from '../affordability/pmms-rates.mjs';
 
 function approx(actual, expected, tolerance = 0.5) {
   assert.ok(Math.abs(actual - expected) <= tolerance, `Expected ${actual} to be within ${tolerance} of ${expected}`);
@@ -362,6 +365,141 @@ function approx(actual, expected, tolerance = 0.5) {
     assert.equal(combined.includes('4321'), false, 'Raw debt should not be written.');
     assert.equal(combined.includes('123456'), false, 'Raw cash available should not be written.');
     assert.equal(combined.includes('760_779'), false, 'Raw credit-tier key should not be written.');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+{
+  // Salary income mode ignores a stale direct take-home answer.
+  const takeHome = estimateMonthlyTakeHomeFromAnswers({
+    income_mode: 'salary',
+    monthly_take_home: '9999',
+    primary_annual_salary: '120000',
+    take_home_pct: '70',
+  });
+  approx(takeHome, 7000, 0.01);
+
+  const gross = estimateMonthlyGrossFromAnswers({
+    income_mode: 'salary',
+    primary_annual_salary: '120000',
+    secondary_annual_salary: '60000',
+  });
+  approx(gross, 15000, 0.01);
+  assert.equal(estimateMonthlyGrossFromAnswers({ monthly_take_home: '9000' }), null);
+
+  const normalized = normalizeAffordabilityAnswers({
+    income_mode: 'salary',
+    monthly_take_home: '9999',
+    primary_annual_salary: '180000',
+    secondary_annual_salary: '60000',
+    take_home_pct: '70',
+    monthly_debt: '0',
+    cash_available: '150000',
+    interest_rate_override: '6.5',
+  }, {}, null);
+  approx(normalized.monthlyGrossIncome, 20000, 0.01);
+  approx(normalized.monthlyTakeHomePay, 14000, 0.01);
+}
+
+{
+  // True-snapshot fields: cash remaining at recommended price and gross-income DTI check.
+  const base = {
+    termYears: 30,
+    monthlyTakeHomePay: 10000,
+    monthlyDebt: 500,
+    cashAvailable: 150000,
+    creditTier: '760_779',
+    rateAssumptionPct: 6.5,
+    rate30Pct: 6.5,
+    rate15Pct: 5.8,
+    rateSource: 'fixture',
+    propertyTaxPct: 1,
+    insurancePct: 0.35,
+    hoaMonthly: 0,
+    closingCostPctMin: 2,
+    closingCostPctMax: 5,
+  };
+  const withGross = calculateAffordability({ ...base, monthlyGrossIncome: 15000 });
+  const selected = withGross.selected;
+  assert.ok(Number.isFinite(selected.cash_remaining_at_recommended));
+  approx(
+    selected.cash_remaining_at_recommended,
+    150000 - selected.upfront_cash_at_recommended.total_high,
+    0.01,
+  );
+  assert.ok(selected.dti_check, 'dti_check should exist when gross income is known.');
+  approx(selected.dti_check.front_end_pct, (selected.payment_at_recommended.total / 15000) * 100, 0.05);
+  approx(selected.dti_check.back_end_pct, ((selected.payment_at_recommended.total + 500) / 15000) * 100, 0.05);
+  assert.ok(['ok', 'caution', 'high'].includes(selected.dti_check.status));
+
+  const withoutGross = calculateAffordability(base);
+  assert.equal(withoutGross.selected.dti_check, null);
+}
+
+{
+  // PMMS rates: successful fetch writes the cache; failed fetch falls back to it.
+  const dir = mkdtempSync(join(tmpdir(), 'home-ops-pmms-'));
+  try {
+    const cachePath = join(dir, 'pmms-cache.json');
+    const fixture = { source: 'fixture', asOf: 'July 10, 2026', rate30Pct: 6.4, rate15Pct: 5.7 };
+    const fresh = await getPmmsRates({ cachePath, fetcher: async () => fixture });
+    assert.equal(fresh.rate30Pct, 6.4);
+    assert.ok(!fresh.fromCache);
+
+    const cached = await getPmmsRates({ cachePath, fetcher: async () => { throw new Error('offline'); } });
+    assert.equal(cached.rate30Pct, 6.4);
+    assert.equal(cached.fromCache, true);
+    assert.ok(cached.fetchError.includes('offline'));
+
+    await assert.rejects(
+      () => getPmmsRates({ cachePath: join(dir, 'missing.json'), fetcher: async () => { throw new Error('offline'); } }),
+      /offline/,
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+{
+  // CLI --target-price enables the income-needed snapshot in the output JSON.
+  const dir = mkdtempSync(join(tmpdir(), 'home-ops-afford-'));
+  try {
+    const inputPath = join(dir, 'target-price-submission.json');
+    const outputPath = join(dir, 'target-price-result.json');
+    writeFileSync(inputPath, JSON.stringify({
+      source: 'afford-wizard',
+      payload: {
+        answers: {
+          loan_term_years: '30',
+          monthly_take_home: '11000',
+          monthly_debt: '0',
+          cash_available: '150000',
+          credit_tier: '760_779',
+          housing_payment_pct: '28',
+          interest_rate_override: '6.5',
+          property_tax_pct: '1',
+          insurance_pct: '0.35',
+          hoa_monthly: '0',
+          closing_cost_pct_min: '2',
+          closing_cost_pct_max: '5',
+        },
+      },
+    }), 'utf8');
+    execFileSync(process.execPath, [
+      'scripts/affordability/calculate-affordability.mjs',
+      '--input',
+      inputPath,
+      '--output',
+      outputPath,
+      '--no-fetch-rates',
+      '--target-price',
+      '700000',
+    ], { stdio: 'pipe' });
+    const result = JSON.parse(readFileSync(outputPath, 'utf8'));
+    assert.equal(result.income_needed.target_price, 700000);
+    assert.ok(result.income_needed.required_annual_gross_salary > 0);
+    assert.ok(Number.isFinite(result.selected.cash_remaining_at_recommended));
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
