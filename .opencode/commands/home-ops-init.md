@@ -7,6 +7,7 @@ Initialize the hosted browser session using home-ops init mode.
 Examples:
 - `/home-ops init`
 - `/home-ops init --zillow --redfin --relator`
+- `/home-ops init --relator --refresh-site-data`
 
 Additional context:
 $ARGUMENTS

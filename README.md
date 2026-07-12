@@ -50,6 +50,7 @@ npm run verify
 
 ## Core commands
 - `/home-ops init`: refresh portal browser sessions
+- `/home-ops init --relator --refresh-site-data`: clear one portal's cookies/cache/site data and open a clean homepage for manual verification
 - `/home-ops afford`: estimate conservative affordability and optionally update price range
 - `/home-ops scan`: find new listings from saved searches
 - `/home-ops evaluate`: review pending listings or one target

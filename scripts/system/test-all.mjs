@@ -113,6 +113,7 @@ console.log('\n2. Script execution');
 
 const scripts = [
   'scripts/browser/browser-session.mjs --status',
+  'scripts/browser/refresh-site-data.mjs --help',
   'scripts/browser/open-url-in-hosted-session.mjs --help',
   'scripts/browser/review-tabs.mjs --help',
   'scripts/research/research-coverage-audit.mjs',
@@ -190,6 +191,15 @@ for (const script of scripts) {
     pass('portal generation seed catalog tests');
   } else {
     fail(`portal generation seed catalog tests\n${result.output}`);
+  }
+}
+
+{
+  const result = run('node scripts/tests/test-refresh-site-data.mjs');
+  if (result.ok) {
+    pass('browser site-data refresh tests');
+  } else {
+    fail(`browser site-data refresh tests\n${result.output}`);
   }
 }
 

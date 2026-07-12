@@ -60,6 +60,7 @@ Available commands:
   /home-ops init            -> Launch or confirm the hosted browser session for portal logins
   /home-ops hunt            -> Reset, scan, batch-evaluate the refreshed pipeline, then run the deep shortlist flow (rerank, finalist gate, top-3 briefing PDF)
   /home-ops init --zillow --redfin --relator -> Initialize only those platform sessions in the hosted browser
+  /home-ops init --relator --refresh-site-data -> Clear Realtor.com site data and open a clean homepage for manual verification
   /home-ops evaluate        -> Evaluate one address or listing URL, or batch-evaluate pending pipeline homes when no target is supplied
   /home-ops compare         -> Compare and rank multiple homes
   /home-ops scan            -> Scan configured portals for new listings

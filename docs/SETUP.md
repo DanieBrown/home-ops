@@ -54,6 +54,29 @@ npm run browser:status
 
 Realtor.com may still return a request-processing block page even with a real browser session. Treat that as blocked and retry later rather than assuming the session is valid.
 
+If a single portal appears to have stale or corrupt client-side state, use the
+targeted refresh helper while the hosted browser is open:
+
+```bash
+# Home-Ops command
+/home-ops init --relator --refresh-site-data
+
+# low-level Windows PowerShell equivalent
+npm.cmd run browser:refresh -- --relator
+```
+
+The helper closes only matching portal tabs, clears that portal's first-party
+cookies and origin storage (local storage, IndexedDB, Cache Storage, service
+workers, and related site data), clears Chrome's shared HTTP cache, and opens a
+clean portal homepage. It preserves other portals' cookies. Complete any login
+or human-verification step manually before rerunning `/home-ops skim --relator`
+or `/home-ops scan --relator`.
+
+This can repair local browser state, but it cannot remove a server-side or
+network-level restriction. Do not loop refresh attempts or use fingerprint,
+proxy, or challenge-bypass techniques. If the clean homepage remains blocked,
+retry later or leave Realtor.com out of that run.
+
 Google explicitly blocks sign-in from browsers controlled through software automation, so Google-based sign-in should be attempted in the hosted real Chrome window, not inside a Playwright-launched browser. If a portal still rejects Google or Apple sign-in, try the site's direct email/password login form instead of federated OAuth.
 
 On Windows PowerShell, use `npm.cmd` instead of `npm` if execution policy blocks `npm.ps1`.

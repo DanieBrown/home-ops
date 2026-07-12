@@ -49,6 +49,29 @@ Unlike `/home-ops init`, skim does not wait for the user to sign in before proce
 - The user can sign in manually in that tab and then refresh it.
 - For a full authenticated session across all portals, run `/home-ops init` first.
 
+## Portal Site-Data Recovery
+
+If one portal repeatedly shows stale content or a request-processing block,
+refresh that portal before rerunning skim:
+
+```text
+/home-ops init --relator --refresh-site-data
+
+# low-level Windows PowerShell equivalent
+npm.cmd run browser:refresh -- --relator
+```
+
+The refresh command requires the hosted browser to be open. It closes only the
+selected portal's tabs, clears that portal's first-party cookies and origin
+storage, clears the shared HTTP cache, and opens one clean homepage. Other
+portal cookies remain intact. Complete sign-in or a human-verification prompt
+manually, then rerun `/home-ops skim --relator`.
+
+Do not automatically loop refresh-and-skim attempts. A persistent block may be
+server-side and is not fixed by local cookies or cache. In that case, retry
+later or omit the portal; do not change fingerprints, proxies, or challenge
+handling to evade the restriction.
+
 ## Output Summary
 
 Return a concise summary with:

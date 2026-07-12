@@ -49,6 +49,7 @@ Rule:
 | `/home-ops-profile` | Interview the buyer and update buyer profile files |
 | `/home-ops-afford` | Estimate conservative affordability and optionally update buyer price range |
 | `/home-ops-init` | Launch or confirm the hosted browser session for portal login |
+| `/home-ops init --relator --refresh-site-data` | Clear one portal's client-side browser state and open a clean homepage |
 | `/home-ops-hunt` | Run reset, scan, evaluate, and the deep shortlist branch sequentially against a live hosted session |
 | `/home-ops-evaluate` | Evaluate one listing or batch-evaluate pending pipeline homes |
 | `/home-ops-compare` | Compare multiple homes |

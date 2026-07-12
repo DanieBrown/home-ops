@@ -11,7 +11,11 @@
       "Bash(node -e \"const j = JSON.parse\\(require\\('fs'\\).readFileSync\\('output/listings/101-jewell-farm-ln-holly-springs-nc.json','utf8'\\)\\); console.log\\('platform:', j.platform\\); console.log\\('schools:', JSON.stringify\\(j.assignedSchools, null, 2\\)\\);\")",
       "Bash(node -e ' *)",
       "Bash(node scripts/research/extract-listing-details.mjs --url \"https://www.realtor.com/realestateandhomes-detail/101-Jewell-Farm-Ln_Holly-Springs_NC_27540_M57922-30867?from=srp-list-card\" --profile chrome-host)",
-      "Bash(node scripts/system/probe-realtor-schools.mjs \"https://www.realtor.com/realestateandhomes-detail/101-Jewell-Farm-Ln_Holly-Springs_NC_27540_M57922-30867?from=srp-list-card\")"
+      "Bash(node scripts/system/probe-realtor-schools.mjs \"https://www.realtor.com/realestateandhomes-detail/101-Jewell-Farm-Ln_Holly-Springs_NC_27540_M57922-30867?from=srp-list-card\")",
+      "PowerShell(node --version)",
+      "PowerShell(npm --version)",
+      "Bash(node scripts/tests/test-briefing-html.mjs)",
+      "Bash(node scripts/tests/test-utility-options.mjs)"
     ]
   },
   "hooks": {

@@ -8,6 +8,7 @@
     "browser:setup": "node scripts/system/bootstrap.mjs --python --install-python && node scripts/browser/browser-session.mjs configured --caller setup --hosted --channel chrome",
     "browser:setup:edge": "node scripts/system/bootstrap.mjs --python --install-python && node scripts/browser/browser-session.mjs configured --caller setup --hosted --channel msedge --profile edge-host",
     "browser:review": "node scripts/browser/review-tabs.mjs",
+    "browser:refresh": "node scripts/system/bootstrap.mjs && node scripts/browser/refresh-site-data.mjs",
     "browser:status": "node scripts/system/bootstrap.mjs && node scripts/browser/browser-session.mjs --status --profile chrome-host",
     "browser:session": "node scripts/system/bootstrap.mjs --python --install-python && node scripts/browser/browser-session.mjs",
     "evaluate:pending": "node scripts/pipeline/evaluate-pending.mjs",
