@@ -666,6 +666,11 @@ function printSummary(results) {
     console.log(`Builder evidence: ${result.builderStatus}${result.builderName ? ` (${result.builderName})` : ''}`);
     console.log(`HOA rules evidence: ${result.hoaStatus}`);
     console.log(`Utility/provider options: ${result.utilityStatus}${result.utilityEstimateTypical == null ? '' : ` ($${Number(result.utilityEstimateTypical).toFixed(0)}/mo typical)`}`);
+    // A null value here means the dimension was not captured -- say "unconfirmed"
+    // rather than print an empty field that could read as "nothing found".
+    console.log(`Site hazards: ${result.hazardsStatus} (flood zone ${result.floodZone ?? 'unconfirmed'})`);
+    console.log(`Parcel & tax: ${result.parcelStatus} (est. annual tax ${result.estimatedAnnualTax ?? 'unconfirmed'})`);
+    console.log(`Road access: ${result.accessStatus} (nearest counted road ${result.nearestRoad ?? 'unconfirmed'})`);
     console.log(`Development sources queued: ${result.developmentSources}`);
     console.log(`School sources queued: ${result.schoolSources}`);
     console.log(`Audit blockers carried forward: ${result.auditBlockers}`);
