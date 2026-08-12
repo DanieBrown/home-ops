@@ -8,6 +8,9 @@ import {
   PROFILE_PATH,
   PORTALS_PATH,
 } from '../shared/paths.mjs';
+import { slugify } from '../shared/text-utils.mjs';
+import { parseSubdivisionFromLegalDescription } from './neighborhood-resolution.mjs';
+import { readResearchDefaults } from '../shared/research-defaults.mjs';
 
 export { ROOT, REPORTS_DIR, SHORTLIST_PATH, PROFILE_PATH, PORTALS_PATH };
 
@@ -554,8 +557,50 @@ export function extractSchoolNames(report) {
   });
 }
 
+function slugForReport(report) {
+  return slugify(`${report?.address ?? ''}-${report?.city ?? ''}-${report?.state || 'NC'}`);
+}
+
+function readPropertySidecar(kind, report) {
+  const slug = slugForReport(report);
+  if (!slug) return null;
+  return readJsonIfExists(join(ROOT, 'output', kind, `${slug}.json`));
+}
+
+/**
+ * The report is written before capture runs, and the agent writing it
+ * doesn't know the subdivision either -- so subdivision hints can't come
+ * from report prose alone without being circular. These sidecars are
+ * populated earlier in the deep pipeline (community-lookup, parcel-tax-check,
+ * extract-listing-details, hoa-docs-check) and are read here as a purely
+ * additive seed; a report with no sidecars yet falls through to prose
+ * unchanged.
+ */
+function subdivisionHintsFromSidecars(report) {
+  const hints = [];
+
+  const community = readPropertySidecar('communities', report);
+  if (community?.community) hints.push(community.community);
+
+  const parcel = readPropertySidecar('parcel', report);
+  const legalName = parcel?.parcel?.legalDescription
+    ? parseSubdivisionFromLegalDescription(parcel.parcel.legalDescription)
+    : null;
+  if (legalName) hints.push(legalName);
+
+  const listing = readPropertySidecar('listings', report);
+  if (listing?.communityName) hints.push(listing.communityName);
+
+  const hoa = readPropertySidecar('hoa', report);
+  const hoaName = hoa?.hoa?.communityName || hoa?.hoa?.associationName;
+  if (hoaName) hints.push(hoaName);
+
+  return dedupeStrings(hints);
+}
+
 export function extractSubdivisionHints(report) {
   const manualHint = report.manualSubdivisionHint ? [report.manualSubdivisionHint] : [];
+  const sidecarHints = subdivisionHintsFromSidecars(report);
   const sourceText = [
     report.sections['Quick Take'],
     report.sections['Neighborhood Sentiment'],
@@ -565,6 +610,7 @@ export function extractSubdivisionHints(report) {
 
   return dedupeStrings([
     ...manualHint,
+    ...sidecarHints,
     ...Array.from(sourceText.matchAll(regex), (match) => match[1]),
   ]);
 }
@@ -791,13 +837,54 @@ function buildSchoolSourceUrl(key, fallbackUrl, report) {
   return fallbackUrl;
 }
 
+/**
+ * Google Maps queries built from schools or a single address return
+ * directory entries (name, hours) with zero review text -- those targets
+ * don't accumulate reviews. This targets places that do: HOA amenities,
+ * parks, grocery, and named intersections, seeded from
+ * templates/research-defaults.yml sentiment.google_maps_poi_categories so
+ * the catalog stays editable without a code change. Only the first three
+ * queries become search URLs (buildSentimentSearchUrls), so category order
+ * here is the priority order.
+ */
+function buildGoogleMapsPoiQueries(subdivisionHints, roadHints, cityName) {
+  const categories = readResearchDefaults().sentiment?.google_maps_poi_categories ?? [];
+  const subdivision = subdivisionHints[0] ?? null;
+  const road = roadHints[0] ?? null;
+  const queries = [];
+
+  for (const category of categories) {
+    if (category.requires === 'subdivision' && !subdivision) continue;
+    if (category.requires === 'road' && !road) continue;
+    const query = String(category.query_template ?? '')
+      .replace('{subdivision_or_city}', subdivision || cityName)
+      .replace('{subdivision}', subdivision ?? '')
+      .replace('{city}', cityName)
+      .replace('{road}', road ?? '')
+      .trim();
+    appendQuery(queries, query);
+  }
+
+  return dedupeStrings(queries);
+}
+
 function buildSentimentQueries(key, report, areaContext) {
   const subdivisionHints = extractSubdivisionHints(report);
   const roadHints = extractRoadHints(report);
   const schoolNames = extractSchoolNames(report);
   const cityName = dedupeStrings([report.city, areaContext.matchedArea?.name])[0] ?? report.city;
-  const queries = [];
 
+  if (key === 'google_maps') {
+    const poiQueries = buildGoogleMapsPoiQueries(subdivisionHints, roadHints, cityName);
+    if (poiQueries.length > 0) {
+      appendQuery(poiQueries, `${cityName} traffic`);
+      return dedupeStrings(poiQueries).slice(0, 5);
+    }
+    // No subdivision/road hints at all for this home -- fall through to the
+    // generic query set below rather than searching nothing.
+  }
+
+  const queries = [];
   subdivisionHints.forEach((hint) => appendQuery(queries, hint));
   subdivisionHints.forEach((hint) => appendQuery(queries, `${hint} ${cityName}`));
   schoolNames.slice(0, 2).forEach((name) => appendQuery(queries, name));
@@ -949,10 +1036,11 @@ export function buildSentimentSourcePlan(report, context) {
         note: source.note ?? '',
         loginRequired: source.login_required !== false,
         lookbackDays: Number.isFinite(source.lookback_days) ? source.lookback_days : null,
-        // Facebook and Nextdoor require login and are reached via Playwright
-        // against the hosted session via communityUrls from community-lookup.
-        // Google Maps is public and can expose searchUrls directly.
-        browserSupported: key === 'facebook' || key === 'nextdoor',
+        // Facebook, Nextdoor, and Twitter require login and are reached via
+        // Playwright against the hosted session via communityUrls from
+        // community-lookup. Google Maps is public and can expose searchUrls
+        // directly.
+        browserSupported: key === 'facebook' || key === 'nextdoor' || key === 'twitter',
         publicFetchSupported: key === 'google_maps',
         searchUrls: buildSentimentSearchUrls(key, source, recommendedQueries),
         recommendedQueries,

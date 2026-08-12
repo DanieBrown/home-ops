@@ -52,17 +52,17 @@ Also accept any explicit paths the parent agent passes you.
 {
   "slug": "...",
   "sentimentScores": {
-    "crime_safety":     { "score": -0.4, "signalDirection": "negative", "evidenceCount": 6, "proximityMix": "near|adjacent|regional", "quotes": ["..."], "source": "sidecar|fallback-capture" },
+    "crime_safety":     { "score": -0.4, "signalDirection": "negative", "evidenceCount": 6, "proximityMix": { "subdivision": 2, "street": 0, "school-zone": 1, "municipal": 3 }, "quotes": ["..."], "source": "sidecar|fallback-capture" },
     "traffic_commute":  { ... },
     "community":        { ... },
     "livability":       { ... }
   },
   "redFlagsTriggered": ["deal-breaker phrase that matched a snippet"],
   "sourceCoverage": {
-    "google_maps": "...",
-    "facebook":    "...",
-    "nextdoor":    "...",
-    "twitter":     "..."
+    "google_maps": "captured|no-match|blocked|missing",
+    "facebook":    "captured|no-match|blocked|skipped-below-tier|missing",
+    "nextdoor":    "captured|no-match|blocked|skipped-below-tier|missing",
+    "twitter":     "captured|no-match|blocked|skipped-below-tier|missing"
   },
   "confidence": "high|medium|low",
   "notes": "1-2 sentences if helpful"
@@ -71,11 +71,23 @@ Also accept any explicit paths the parent agent passes you.
 
 Quote 2–3 raw snippets per dimension when available. Apply buyer weights from `config/profile.yml` `sentiment.weights`. Cross-reference `deal_breakers` for `redFlagsTriggered`.
 
+## Tier-aware scoring (specificity ladder)
+
+Every snippet in `output/sentiment/{slug}.json` carries a proximity tier: `subdivision` (the resolved neighborhood), `street`, `school-zone`, or `municipal` (city-wide) — either on the snippet itself (`snippet.proximity.level` / `snippet.tier`) or on its parent `queryResults[].tier`. `municipal` is always available, so a run with no resolved subdivision still has evidence; it is never silence, but it is weaker evidence about *this home* specifically.
+
+- **Google Maps snippets already have the tier multiplier baked into `theme.hits`/`positiveHits`/`negativeHits`** during capture (via `config/profile.yml` `sentiment.proximity_tiers`) — use those numbers as given.
+- **Facebook/Nextdoor/Twitter snippets do not** — their `hits` are raw counts. When you roll these up, weight each snippet by its tier's multiplier from `sentiment.proximity_tiers` (defaults: subdivision 1.0, street 0.8, school-zone 0.6, municipal 0.3) before combining with the Google Maps numbers.
+- `proximityMix` reports the count of contributing evidence at each tier, so a reader can see at a glance whether a score describes the street or the whole city. Never collapse it to a single "confidence-boosting" number.
+- In `notes` or prose, state the tier plainly when it matters: "Community sentiment reflects Apex-wide chatter, not this subdivision specifically" is correct; presenting municipal-tier evidence as if it described the street is not.
+- `nextdoor`/`facebook`/`twitter` reporting `"skipped-below-tier"` (Nextdoor's neighborhood-feed URL structurally requires a resolved subdivision, so it may skip when no subdivision was resolved) is an architectural limit, not a capture failure — do not describe it as blocked or as an error.
+
 ## Confidence rubric
 
-- **high**: ≥3 sources captured, dimension scores agree, no key gaps
-- **medium**: 1–2 sources captured, mixed signals, or one fallback capture used
-- **low**: most sources missing, or fallback capture also failed
+Tier dominance overrides raw source count — four sources that all only reached municipal tier is **not** high confidence about this home's street.
+
+- **high**: ≥3 sources captured, at least one reaching `subdivision` or `street` tier, dimension scores agree, no key gaps
+- **medium**: 1–2 sources captured, or evidence is dominated by `school-zone` tier, or mixed signals, or one fallback capture was used
+- **low**: evidence exists only at `municipal` tier, most sources missing/blocked, or the fallback capture also failed
 
 ## When you cannot proceed
 

@@ -203,6 +203,37 @@ builder:
     taylor morrison|fuquay varina: https://www.bbb.org/us/nc/cary/profile/home-builders/taylor-morrison-raleigh-division-0593-90289760/addressId/118685
     taylor morrison|holly springs: https://www.bbb.org/us/nc/cary/profile/home-builders/taylor-morrison-raleigh-division-0593-90289760/addressId/118685
 
+sentiment:
+  # Phase 4 of the sentiment-capture goal prompt: schools and single
+  # addresses attract almost no Google reviews. These categories target
+  # places that actually accumulate local commentary, ordered so the three
+  # queries buildSentimentSearchUrls turns into URLs (it only takes the
+  # first three) are the ones most likely to return real review text.
+  # {subdivision} / {city} / {road} are filled in per-home; a category is
+  # skipped when its required hint isn't available for that home.
+  google_maps_poi_categories:
+    - key: subdivision_amenity
+      label: HOA amenity or pool
+      query_template: "{subdivision} pool"
+      requires: subdivision
+    - key: parks_greenways
+      label: Nearby parks and greenways
+      query_template: "parks near {subdivision_or_city}"
+    - key: grocery
+      label: Nearby grocery
+      query_template: "grocery near {city}"
+    - key: major_intersection
+      label: Major intersection or road (traffic complaints)
+      query_template: "{road} traffic"
+      requires: road
+    - key: subdivision_place
+      label: The subdivision itself, when Maps carries it as a place
+      query_template: "{subdivision}"
+      requires: subdivision
+    - key: pharmacy
+      label: Nearby pharmacy
+      query_template: "pharmacy near {city}"
+
 community:
   invalid_patterns:
     - pattern: map my location along with the neighborhood you are in at the moment

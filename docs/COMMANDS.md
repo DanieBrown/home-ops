@@ -143,7 +143,8 @@ for the refined finalists.
 | `plan:research` *(alias: `research:source-plan`)* | `research-source-plan.mjs` | `output/source-plan/` | Concrete per-home lookup plan from `portals.yml`. `--type all\|development\|school\|sentiment`. |
 | `lookup:community` | `community-lookup.mjs` | `output/communities/` | Resolve an address to its named community, the key for Nextdoor/Facebook URLs. `--profile`. |
 | `extract:sentiment` *(alias: `sentiment:extract`)* | `sentiment-browser-extract.mjs` | `output/sentiment/` | Facebook and Nextdoor evidence via the hosted session. `--profile`, `--concurrency`, `--quick`. |
-| `sentiment:public` | `sentiment-public-extract.mjs` | `output/sentiment/` | Google Maps public sentiment (the `traffic_commute` source). |
+| `sentiment:public` | `sentiment-public-extract.mjs` | `output/sentiment/` | Google Maps public sentiment (the `traffic_commute` source). `--profile` routes through the hosted session to read the Reviews tab instead of place cards; without it, falls back to crawl4ai/fetch. |
+| `sentiment:doctor` | `sentiment-doctor.mjs` | — (reads only) | Per-source coverage diagnostic: opted-in in the profile, present in the plan, attempted, status, snippet count, and the exact field that caused any skip. |
 | `check:construction` *(alias: `construction:check`)* | `construction-check.mjs` | `output/construction/` | NCDOT projects near the home. `--quick`. |
 | `permits:check` | `county-permits-check.mjs` | `output/permits/` | County GIS permits and development cases within 5 miles. `--radius <m>`. |
 | `permits:discover` | `county-services-discover.mjs` | `output/county-sources.json` | Probe a county's ArcGIS catalog for usable services. `--all`, `--county <name>`, `--base-url <url>`. |

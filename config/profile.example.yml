@@ -60,6 +60,14 @@ sentiment:
     traffic_commute: 0.19
     community: 0.31
     livability: 0.19
+  # Specificity ladder for captured evidence: a subdivision-tagged snippet
+  # counts at full weight, a municipal (city-wide) one is heavily discounted.
+  # municipal is always available, so a run never scores on pure silence.
+  proximity_tiers:
+    subdivision: 1.0
+    street: 0.8
+    school_zone: 0.6
+    municipal: 0.3
 
 commute:
   destinations:

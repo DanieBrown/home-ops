@@ -66,22 +66,45 @@ export function buildProfileRedFlagPatterns(profile) {
   return patterns;
 }
 
+// The specificity ladder (Phase 3 of the sentiment-capture goal prompt):
+// a snippet degrades in *tier*, never to silence. `municipal` is always
+// available (the city name is always known), so every run can classify
+// something instead of dropping evidence outright. Buyer-tunable at
+// config/profile.yml sentiment.proximity_tiers -- these are the fallback
+// defaults when a buyer hasn't overridden them.
+export const PROXIMITY_TIER_ORDER = ['subdivision', 'street', 'school-zone', 'municipal'];
+export const DEFAULT_PROXIMITY_TIER_MULTIPLIERS = {
+  subdivision: 1.0,
+  street: 0.8,
+  'school-zone': 0.6,
+  municipal: 0.3,
+};
+
+export function resolveProximityTierMultipliers(profile) {
+  const configured = profile?.sentiment?.proximity_tiers ?? {};
+  return {
+    subdivision: Number.isFinite(configured.subdivision) ? configured.subdivision : DEFAULT_PROXIMITY_TIER_MULTIPLIERS.subdivision,
+    street: Number.isFinite(configured.street) ? configured.street : DEFAULT_PROXIMITY_TIER_MULTIPLIERS.street,
+    'school-zone': Number.isFinite(configured.school_zone) ? configured.school_zone : DEFAULT_PROXIMITY_TIER_MULTIPLIERS['school-zone'],
+    municipal: Number.isFinite(configured.municipal) ? configured.municipal : DEFAULT_PROXIMITY_TIER_MULTIPLIERS.municipal,
+  };
+}
+
 /**
- * Build proximity hint groups for a given home. Returned object provides:
- *   - strong: list of phrases (subdivision name, road names, school names)
- *     whose presence in a snippet means the post is about the home's
- *     immediate area.
- *   - weak: list of phrases (city name) whose presence indicates a
- *     city-wide post that should contribute fractional weight.
+ * Build proximity hint groups for a given home, one array per tier:
+ *   - subdivision: the resolved neighborhood name and any subdivision hints
+ *   - street: road/street names
+ *   - schoolZone: assigned school names -- a genuine local-geography proxy
+ *   - municipal: the city name -- always available, the floor of the ladder
  */
 export function buildProximityHints({ subdivisionHints = [], roadHints = [], schoolNames = [], city = '', communityName = null } = {}) {
-  const strong = [];
-  if (communityName) strong.push(communityName);
-  for (const hint of subdivisionHints) if (hint) strong.push(hint);
-  for (const hint of roadHints) if (hint) strong.push(hint);
-  for (const name of schoolNames) if (name) strong.push(name);
-  const weak = city ? [city] : [];
-  return { strong: dedupe(strong), weak: dedupe(weak) };
+  const subdivision = [];
+  if (communityName) subdivision.push(communityName);
+  for (const hint of subdivisionHints) if (hint) subdivision.push(hint);
+  const street = dedupe(roadHints);
+  const schoolZone = dedupe(schoolNames);
+  const municipal = city ? [city] : [];
+  return { subdivision: dedupe(subdivision), street, schoolZone, municipal };
 }
 
 function dedupe(values) {
@@ -89,18 +112,27 @@ function dedupe(values) {
 }
 
 /**
- * Classify how close a snippet is to the home. Returns:
- *   - "strong": at least one strong hint matched (full weight, multiplier 1.0)
- *   - "weak":   only city/general matched (fractional weight, multiplier 0.4)
- *   - "none":   no hint matched (multiplier 0; caller should drop)
+ * Classify how close a snippet is to the home by walking the specificity
+ * ladder from most to least specific and returning the first tier that
+ * matched. "none" means no hint at all matched (including the city name),
+ * which the caller should drop -- everything else is a genuine, labelled
+ * finding at some tier.
  */
-export function classifyProximity(text, hints) {
+export function classifyProximity(text, hints, tierMultipliers = DEFAULT_PROXIMITY_TIER_MULTIPLIERS) {
   if (!text) return { level: 'none', multiplier: 0, matchedHints: [] };
   const haystack = String(text).toLowerCase();
-  const strongMatched = hints.strong.filter((hint) => haystack.includes(String(hint).toLowerCase()));
-  if (strongMatched.length > 0) return { level: 'strong', multiplier: 1.0, matchedHints: strongMatched };
-  const weakMatched = hints.weak.filter((hint) => haystack.includes(String(hint).toLowerCase()));
-  if (weakMatched.length > 0) return { level: 'weak', multiplier: 0.4, matchedHints: weakMatched };
+  const tiersToCheck = [
+    ['subdivision', hints.subdivision ?? []],
+    ['street', hints.street ?? []],
+    ['school-zone', hints.schoolZone ?? []],
+    ['municipal', hints.municipal ?? []],
+  ];
+  for (const [level, phrases] of tiersToCheck) {
+    const matched = phrases.filter((hint) => haystack.includes(String(hint).toLowerCase()));
+    if (matched.length > 0) {
+      return { level, multiplier: tierMultipliers[level] ?? DEFAULT_PROXIMITY_TIER_MULTIPLIERS[level] ?? 0, matchedHints: matched };
+    }
+  }
   return { level: 'none', multiplier: 0, matchedHints: [] };
 }
 

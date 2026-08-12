@@ -11,16 +11,24 @@
  * and the `community` cache, so subsequent runs on the same address are free.
  */
 
+import { existsSync, readFileSync } from 'fs';
 import { mkdir, writeFile } from 'fs/promises';
 import { join } from 'path';
+import { fileURLToPath } from 'url';
 import { chromium } from 'playwright';
+import YAML from 'yaml';
 import { readSessionState } from '../browser/browser-session.mjs';
 import { ROOT } from '../shared/paths.mjs';
 import {
+  arcgisQuery,
   loadResearchConfig,
   parseReport,
   parseShortlist,
 } from './research-utils.mjs';
+import {
+  queryOverpassNeighborhood,
+  resolveNeighborhood,
+} from './neighborhood-resolution.mjs';
 import {
   getCacheEntry,
   isCacheFresh,
@@ -42,6 +50,27 @@ const PAGE_TIMEOUT_MS = 30000;
 const RESULT_TIMEOUT_MS = 15000;
 const invalidCommunityPatterns = compileConfiguredPatterns(readResearchDefaults().community?.invalid_patterns ?? []);
 const FIELD_LABEL_TOKENS = new Set(['address', 'city', 'state', 'zipcode', 'zip', 'code', 'county']);
+
+function readJsonIfExists(path) {
+  if (!existsSync(path)) return null;
+  try { return JSON.parse(readFileSync(path, 'utf8')); } catch { return null; }
+}
+
+function loadLocalSidecars(target) {
+  const slug = slugify(`${target.address}-${target.city}-${target.state || 'NC'}`);
+  if (!slug) return { parcelSidecar: null, listingSidecar: null, hoaSidecar: null };
+  return {
+    parcelSidecar: readJsonIfExists(join(ROOT, 'output', 'parcel', `${slug}.json`)),
+    listingSidecar: readJsonIfExists(join(ROOT, 'output', 'listings', `${slug}.json`)),
+    hoaSidecar: readJsonIfExists(join(ROOT, 'output', 'hoa', `${slug}.json`)),
+  };
+}
+
+function loadArcgisRegistry() {
+  const path = join(ROOT, 'config', 'county-arcgis-registry.yml');
+  if (!existsSync(path)) return null;
+  try { return YAML.parse(readFileSync(path, 'utf8')); } catch { return null; }
+}
 
 const HELP_TEXT = `Usage:
   node community-lookup.mjs --shortlist [--profile chrome-host]
@@ -433,7 +462,7 @@ async function scrapeCommunity(context, target) {
   }
 }
 
-async function lookupTarget(context, target, cacheState) {
+async function lookupTarget(getBrowserContext, target, cacheState, researchContext) {
   const cacheKey = buildCacheKey(target);
 
   if (cacheState?.cache && !cacheState.disabled && !cacheState.refresh && cacheKey) {
@@ -456,6 +485,9 @@ async function lookupTarget(context, target, cacheState) {
         community: cachedCommunity,
         communityUrls: urls,
         status: cachedStatus,
+        resolvedVia: existing?.resolvedVia ?? null,
+        disagreement: Boolean(existing?.disagreement),
+        sourceCoverage: existing?.sourceCoverage ?? [],
         source: 'cache',
       };
       const outputPath = buildOutputPath(target);
@@ -487,19 +519,49 @@ async function lookupTarget(context, target, cacheState) {
     }
   }
 
-  const scraped = await scrapeCommunity(context, target);
-  const urls = buildCommunityUrls(scraped.community, target.city, target.state);
+  const { parcelSidecar, listingSidecar, hoaSidecar } = loadLocalSidecars(target);
+  let mapdevelopersRaw = '';
+  const mapdevelopersQueryImpl = async (queryTarget) => {
+    try {
+      const context = await getBrowserContext();
+      const scraped = await scrapeCommunity(context, queryTarget);
+      mapdevelopersRaw = scraped.raw ?? '';
+      if (scraped.status === 'input-not-found') {
+        return { ok: false, error: 'mapdevelopers input field not found (selector/timing regression, or the site changed)' };
+      }
+      return { ok: true, value: scraped.community };
+    } catch (error) {
+      return { ok: false, error: String(error?.message ?? error) };
+    }
+  };
+
+  const resolution = await resolveNeighborhood(target, {
+    parcelSidecar,
+    listingSidecar,
+    hoaSidecar,
+    invalidPatterns: invalidCommunityPatterns,
+    arcgisRegistry: researchContext?.arcgisRegistry,
+    arcgisQueryImpl: arcgisQuery,
+    overpassQueryImpl: queryOverpassNeighborhood,
+    mapdevelopersQueryImpl,
+  });
+
+  const status = resolution.community ? 'ok' : 'no-community-match';
+  const urls = buildCommunityUrls(resolution.community, target.city, target.state);
   const output = {
     generatedAt: new Date().toISOString(),
     address: target.address,
     city: target.city,
     state: target.state,
     reportPath: target.relativePath,
-    community: scraped.community,
+    community: resolution.community,
     communityUrls: urls,
-    status: scraped.status,
-    source: 'mapdevelopers.com',
-    rawExcerpt: scraped.raw.slice(0, 600),
+    status,
+    resolvedVia: resolution.resolvedVia,
+    disagreement: resolution.disagreement,
+    sourceCoverage: resolution.candidates,
+    source: resolution.resolvedVia ?? 'unresolved',
+    rawExcerpt: mapdevelopersRaw ? mapdevelopersRaw.slice(0, 600) : '',
   };
   const outputPath = buildOutputPath(target);
   await mkdir(OUTPUT_DIR, { recursive: true });
@@ -511,7 +573,10 @@ async function lookupTarget(context, target, cacheState) {
     expiresAt: expiresInDays(30, output.generatedAt),
     sourceUrls: [LOOKUP_URL, ...Object.values(urls)].filter(Boolean),
     status: output.status,
-    warnings: output.status === 'resolved' ? [] : ['No community match was confirmed.'],
+    warnings: [
+      ...(output.status === 'ok' ? [] : ['No community match was confirmed by any resolver in the chain.']),
+      ...(output.disagreement ? ['Resolvers disagreed on the community name; the highest-priority match was kept, but confidence was lowered.'] : []),
+    ],
   });
   await writeFile(outputPath, `${JSON.stringify(sidecar, null, 2)}\n`, 'utf8');
   recordArtifact({
@@ -530,8 +595,11 @@ async function lookupTarget(context, target, cacheState) {
 
   if (cacheState?.cache && !cacheState.disabled && cacheKey) {
     putCacheEntry(cacheState.cache, cacheKey, {
-      community: scraped.community,
-      status: scraped.status,
+      community: resolution.community,
+      status,
+      resolvedVia: resolution.resolvedVia,
+      disagreement: resolution.disagreement,
+      sourceCoverage: resolution.candidates,
     });
     cacheState.dirty = true;
     cacheState.misses += 1;
@@ -544,9 +612,12 @@ function printSummary(results) {
   console.log('\nCommunity lookup\n');
   for (const result of results) {
     const line = result.community
-      ? `${result.address}, ${result.city}, ${result.state} -> ${result.community}`
+      ? `${result.address}, ${result.city}, ${result.state} -> ${result.community} (via ${result.resolvedVia ?? result.source})`
       : `${result.address}, ${result.city}, ${result.state} -> no community match (${result.status})`;
     console.log(line);
+    if (result.disagreement) {
+      console.log('  NOTE: resolvers disagreed on the community name; confidence was lowered.');
+    }
     if (result.communityUrls?.nextdoor) console.log(`  Nextdoor: ${result.communityUrls.nextdoor}`);
     if (result.communityUrls?.facebook) console.log(`  Facebook: ${result.communityUrls.facebook}`);
     if (result.communityUrls?.twitter) console.log(`  Twitter:  ${result.communityUrls.twitter}`);
@@ -572,8 +643,25 @@ async function main() {
 
   const targets = resolveTargets(config);
   loadResearchConfig(ROOT);
-  const session = await ensureHostedSession(config.profileName);
-  const browser = await chromium.connectOverCDP(session.cdpUrl, { timeout: 30000, isLocal: true });
+  const researchContext = { arcgisRegistry: loadArcgisRegistry() };
+
+  // mapdevelopers is the last resort in the resolution chain (Phase 2), so
+  // the hosted browser is only launched if a target actually falls through
+  // every free and public-network resolver first.
+  let browserHandle = null;
+  let contextPromise = null;
+  const getBrowserContext = async () => {
+    if (!contextPromise) {
+      contextPromise = (async () => {
+        const session = await ensureHostedSession(config.profileName);
+        browserHandle = await chromium.connectOverCDP(session.cdpUrl, { timeout: 30000, isLocal: true });
+        const context = browserHandle.contexts()[0];
+        if (!context) throw new Error('Hosted browser session is running, but no default context was exposed.');
+        return context;
+      })();
+    }
+    return contextPromise;
+  };
 
   const cache = config.noCache ? { entries: {} } : await loadCache(COMMUNITY_CACHE_NAME);
   if (!config.noCache) pruneCache(cache, COMMUNITY_CACHE_TTL_MS * 2);
@@ -587,12 +675,9 @@ async function main() {
   };
 
   try {
-    const context = browser.contexts()[0];
-    if (!context) throw new Error('Hosted browser session is running, but no default context was exposed.');
-
     const results = [];
     for (const target of targets) {
-      results.push(await lookupTarget(context, target, cacheState));
+      results.push(await lookupTarget(getBrowserContext, target, cacheState, researchContext));
     }
 
     if (!config.noCache && cacheState.dirty) {
@@ -614,11 +699,14 @@ async function main() {
       console.log(`Community cache: ${cacheState.hits} hit(s), ${cacheState.misses} miss(es)`);
     }
   } finally {
-    await browser.close().catch(() => {});
+    if (browserHandle) await browserHandle.close().catch(() => {});
   }
 }
 
-main().catch((error) => {
-  console.error(`Fatal: ${error.message}`);
-  process.exit(1);
-});
+const isDirectEntry = process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1];
+if (isDirectEntry) {
+  main().catch((error) => {
+    console.error(`Fatal: ${error.message}`);
+    process.exit(1);
+  });
+}

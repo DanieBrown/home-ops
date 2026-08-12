@@ -19,6 +19,7 @@ import {
 import { readConstructionRecord } from './construction-check.mjs';
 import { readBuilderRecord } from './builder-check.mjs';
 import { slugify } from '../shared/text-utils.mjs';
+import { PROXIMITY_TIER_ORDER } from './sentiment-scoring.mjs';
 
 const OUTPUT_DIR = join(ROOT, 'output', 'deep-packets');
 const SENTIMENT_DIR = join(ROOT, 'output', 'sentiment');
@@ -181,10 +182,19 @@ function inferSourceStatus(queryResults) {
     okQueries: 0,
     blockedQueries: 0,
     emptyQueries: 0,
+    skippedBelowTierQueries: 0,
     errorQueries: 0,
   };
+  // The highest (most specific) tier actually reached by an attempted query
+  // -- distinct from tierNeeded/tierReached on a skipped-below-tier record,
+  // which describe a tier that was never attempted at all.
+  let tier = null;
 
   for (const result of queryResults) {
+    if (result.tier && (!tier || PROXIMITY_TIER_ORDER.indexOf(result.tier) < PROXIMITY_TIER_ORDER.indexOf(tier))) {
+      tier = result.tier;
+    }
+
     if (result.status === 'ok') {
       counts.okQueries += 1;
       continue;
@@ -200,6 +210,15 @@ function inferSourceStatus(queryResults) {
       continue;
     }
 
+    // skipped-below-tier is a deliberate architectural gate (Nextdoor has no
+    // sub-subdivision feed URL to fall back to) -- it must never collapse
+    // into the generic "error" bucket, which would misreport a design
+    // decision as a capture failure.
+    if (result.status === 'skipped-below-tier') {
+      counts.skippedBelowTierQueries += 1;
+      continue;
+    }
+
     counts.errorQueries += 1;
   }
 
@@ -210,12 +229,15 @@ function inferSourceStatus(queryResults) {
     status = 'blocked';
   } else if (counts.emptyQueries > 0) {
     status = 'no-match';
+  } else if (counts.skippedBelowTierQueries > 0) {
+    status = 'skipped-below-tier';
   } else if (counts.errorQueries > 0) {
     status = 'error';
   }
 
   return {
     status,
+    tier,
     ...counts,
   };
 }
@@ -287,9 +309,11 @@ function summarizeSentimentEvidence(sentimentEvidence, weights) {
       key: source.key,
       name: source.name,
       status: coverage.status,
+      tier: coverage.tier,
       okQueries: coverage.okQueries,
       blockedQueries: coverage.blockedQueries,
       emptyQueries: coverage.emptyQueries,
+      skippedBelowTierQueries: coverage.skippedBelowTierQueries,
       errorQueries: coverage.errorQueries,
       lookbackDays: source.lookbackDays ?? null,
     };
@@ -606,8 +630,9 @@ async function buildPacket(target, researchContext) {
     workerRequirements: [
       'Explicitly mark Facebook, Nextdoor, NCDOT, county planning, municipal planning, and school-source coverage as captured, blocked, no-match, or still missing.',
       'Use profileWeights.sentiment when explaining metric importance and deep rerank changes. Facebook and Nextdoor only contribute to crime_safety, community, and livability; traffic_commute must come from Google Maps or the NCDOT construction record.',
-      'Nextdoor must be loaded via communityUrls.nextdoor (built from the mapdevelopers community lookup). If community is null, skip Nextdoor and record nextdoor: { status: "no-community-match" } in sourceCoverage -- do not fall back to a generic Nextdoor search.',
-      'Facebook must be loaded via communityUrls.facebook (the /search/top?q=<community> neighborhood <city> URL). Filter out membership-announcement posts ("X joined the group", "Welcome X to the neighborhood") before scoring.',
+      'Sentiment capture degrades in specificity, never to silence: each source is tagged with the tier its query reached -- subdivision, street, school-zone, or municipal (sourceCoverage[].tier; every snippet also carries its own tier). Score every tier\'s evidence, but discount it by profile.sentiment.proximity_tiers and describe subdivision-tier and municipal-tier evidence differently in prose -- never present city-wide chatter as if it described this street.',
+      'Nextdoor is the one source that may still skip below subdivision tier: its neighborhood-feed URL has no street- or city-scoped fallback. When it does, sourceCoverage records status "skipped-below-tier" with tierNeeded and tierReached -- this is an architectural limit, not a capture failure, and must not be described as an error.',
+      'Facebook and Twitter degrade through the full ladder (subdivision search, then street, then school-zone, then a plain city search) and will nearly always have at least municipal-tier evidence. Filter out membership-announcement posts ("X joined the group", "Welcome X to the neighborhood") before scoring.',
       'Return schoolMetadata as an array of per-school objects matching schoolMetadataPlan.fields. Do not return a schoolMetrics sentiment rollup -- schools are metadata-only.',
       'After the main agent collects schoolMetadata from all workers, write it to output/school-metadata/<slug>.json (slug matches the sentiment and construction sidecars). The briefing PDF reads that file to render the Schools & Metadata table.',
       'Do not claim browser-backed neighborhood sentiment if sentimentEvidence.status is not captured.',

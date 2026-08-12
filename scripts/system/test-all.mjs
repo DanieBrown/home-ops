@@ -243,6 +243,42 @@ for (const script of scripts) {
 }
 
 {
+  const result = run('node scripts/tests/test-sentiment-provenance.mjs');
+  if (result.ok) {
+    pass('sentiment query-provenance and source-coverage diagnostic tests');
+  } else {
+    fail(`sentiment query-provenance and source-coverage diagnostic tests\n${result.output}`);
+  }
+}
+
+{
+  const result = run('node scripts/tests/test-neighborhood-resolution.mjs');
+  if (result.ok) {
+    pass('neighborhood resolution chain tests');
+  } else {
+    fail(`neighborhood resolution chain tests\n${result.output}`);
+  }
+}
+
+{
+  const result = run('node scripts/tests/test-sentiment-tiers.mjs');
+  if (result.ok) {
+    pass('sentiment proximity-tier ladder tests');
+  } else {
+    fail(`sentiment proximity-tier ladder tests\n${result.output}`);
+  }
+}
+
+{
+  const result = run('node scripts/tests/test-sentiment-google-maps.mjs');
+  if (result.ok) {
+    pass('Google Maps POI-query and review dimension-mapping tests');
+  } else {
+    fail(`Google Maps POI-query and review dimension-mapping tests\n${result.output}`);
+  }
+}
+
+{
   const result = run('node scripts/tests/test-contract-gates.mjs');
   if (result.ok) {
     pass('contract gate --help bypass tests');

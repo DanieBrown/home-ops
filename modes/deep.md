@@ -241,7 +241,7 @@ All steps use `--shortlist`. Every one of them is a `deep-shortlist` contract re
 - **4a:** `node scripts/research/research-source-plan.mjs --shortlist --type all`
 - **4b:** `node scripts/research/community-lookup.mjs --shortlist --profile chrome-host`
 - **4c:** `node scripts/research/sentiment-browser-extract.mjs --shortlist --profile chrome-host --concurrency 4` (add `--quick` when shortlist has 5+ homes)
-- **4d:** `node scripts/research/sentiment-public-extract.mjs --shortlist`
+- **4d:** `node scripts/research/sentiment-public-extract.mjs --shortlist --profile chrome-host` (routes Google Maps through the hosted session so it can open the Reviews tab; falls back to crawl4ai/fetch when no session is available)
 - **4e:** `node scripts/research/construction-check.mjs --shortlist` (add `--quick` when requested)
 - **4f:** `node scripts/research/county-permits-check.mjs --shortlist`
 - **4g:** `node scripts/research/school-metadata-fetch.mjs --shortlist --profile chrome-host`

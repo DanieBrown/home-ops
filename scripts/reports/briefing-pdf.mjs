@@ -225,6 +225,28 @@ function buildGapList(report, finalist, profile) {
   if (finalist.sentimentMismatch) {
     gaps.push(finalist.sentimentMismatch);
   }
+  {
+    const axisSentiment = finalist.axis?.sentiment;
+    const coverage = Object.entries(axisSentiment?.sourceCoverage ?? {});
+    const skippedBelowTier = coverage.filter(([, status]) => status === 'skipped-below-tier').map(([key]) => key);
+    if (skippedBelowTier.length > 0) {
+      gaps.push(`${skippedBelowTier.join(', ')} could not reach subdivision-tier evidence for this home (no resolved neighborhood name) -- an architectural limit, not a null result; treat it as an open question.`);
+    }
+    const blockedSentimentSources = coverage.filter(([, status]) => status === 'blocked').map(([key]) => key);
+    if (blockedSentimentSources.length > 0) {
+      gaps.push(`${blockedSentimentSources.join(', ')} sentiment source(s) were blocked or unreachable; treat affected sentiment dimensions as unconfirmed, not clear.`);
+    }
+    const municipalOnlyDimensions = Object.entries(axisSentiment?.sentimentScores ?? {})
+      .filter(([, entry]) => {
+        const mix = entry?.proximityMix;
+        if (!mix || Number(mix.municipal ?? 0) === 0) return false;
+        return !['subdivision', 'street', 'school-zone'].some((tier) => Number(mix[tier] ?? 0) > 0);
+      })
+      .map(([dimension]) => dimension.replace(/_/g, ' '));
+    if (municipalOnlyDimensions.length > 0) {
+      gaps.push(`${municipalOnlyDimensions.join(', ')} sentiment is built only from city-wide chatter, not evidence about this specific subdivision or street.`);
+    }
+  }
   if (finalist.constructionMismatch) {
     gaps.push(finalist.constructionMismatch);
   }
@@ -1808,6 +1830,39 @@ function divergingBarSvg(score) {
   return `<svg class="diverge" width="${width}" height="12" viewBox="0 0 ${width} 12"><rect x="0" y="3" width="${width}" height="6" rx="3" fill="#f3f4f6"></rect><line x1="${half}" y1="0" x2="${half}" y2="12" stroke="#9ca3af" stroke-width="1"></line><rect x="${x}" y="3" width="${Math.max(2, barWidth)}" height="6" rx="3" fill="${fill}"></rect></svg>`;
 }
 
+const PROXIMITY_TIER_LABELS = {
+  subdivision: 'subdivision', street: 'street', 'school-zone': 'school-zone', municipal: 'city-wide',
+};
+
+// The specificity ladder (Phase 3/5 of the sentiment-capture goal prompt): a
+// buyer reading "Community: neutral" is entitled to know whether that
+// describes their cul-de-sac or the whole town. Named after the
+// highest-priority tier that actually contributed evidence, with the full
+// breakdown so a mostly-municipal score doesn't read as street-level.
+function describeProximityMix(mix) {
+  if (!mix || typeof mix !== 'object') return '';
+  const order = ['subdivision', 'street', 'school-zone', 'municipal'];
+  const withCounts = order
+    .map((tier) => [tier, Number(mix[tier] ?? 0)])
+    .filter(([, count]) => count > 0);
+  if (withCounts.length === 0) return '';
+  const dominant = withCounts[0][0];
+  const breakdown = withCounts.map(([tier, count]) => `${PROXIMITY_TIER_LABELS[tier] ?? tier} ×${count}`).join(', ');
+  return `tier: ${PROXIMITY_TIER_LABELS[dominant] ?? dominant} (${breakdown})`;
+}
+
+// Source-coverage statuses that describe a genuine, checked-but-quiet source
+// vs. one that never got the chance to speak render as different chip
+// colors -- collapsing them to one look would misreport a quiet
+// neighborhood as an unconfirmed one, or vice versa.
+function coverageChipClass(status) {
+  if (status === 'captured') return 'coverage-chip-captured';
+  if (status === 'no-match') return 'coverage-chip-quiet';
+  if (status === 'blocked') return 'coverage-chip-blocked';
+  if (status === 'skipped-below-tier') return 'coverage-chip-skipped';
+  return 'coverage-chip-missing';
+}
+
 function buildSentimentAxisSection(finalist) {
   const axisSentiment = finalist.axis?.sentiment;
   if (!axisSentiment?.sentimentScores) return '';
@@ -1815,9 +1870,10 @@ function buildSentimentAxisSection(finalist) {
     const quotes = (entry?.quotes ?? []).slice(0, 3)
       .map((quote) => `<li class="quote">&ldquo;${escapeHtml(summarizeSection(quote, 200))}&rdquo;</li>`)
       .join('');
+    const evidenceCount = Number(entry?.evidenceCount ?? 0);
     const meta = [
-      `${Number(entry?.evidenceCount ?? 0)} signal${Number(entry?.evidenceCount ?? 0) === 1 ? '' : 's'}`,
-      entry?.proximityMix ? String(entry.proximityMix) : '',
+      `${evidenceCount} signal${evidenceCount === 1 ? '' : 's'}`,
+      describeProximityMix(entry?.proximityMix),
       entry?.source ? String(entry.source) : '',
     ].filter(Boolean).join(' · ');
     return `
@@ -1834,7 +1890,7 @@ function buildSentimentAxisSection(finalist) {
   const redFlags = (axisSentiment.redFlagsTriggered ?? [])
     .map((flag) => `<li>${escapeHtml(flag)}</li>`).join('');
   const coverage = Object.entries(axisSentiment.sourceCoverage ?? {})
-    .map(([key, status]) => `<span class="coverage-chip">${escapeHtml(key)}: ${escapeHtml(String(status))}</span>`)
+    .map(([key, status]) => `<span class="coverage-chip ${coverageChipClass(status)}">${escapeHtml(key)}: ${escapeHtml(String(status))}</span>`)
     .join(' ');
   return `
     <div class="panel wide sentiment-axis">
@@ -2739,6 +2795,10 @@ export function buildHtml(finalists, profile, mode = 'batch', context = {}) {
     display: inline-block; padding: 2px 8px; margin-right: 4px;
     border: 1px solid #e5e7eb; border-radius: 999px; font-size: 7.6pt; color: #475569;
   }
+  /* captured (even with zero evidence -- a quiet area is a finding) reads
+     neutral; blocked/skipped (never reached) read as an open question. */
+  .coverage-chip-captured, .coverage-chip-quiet { background: #f8fafc; color: #475569; border-color: #e5e7eb; }
+  .coverage-chip-blocked, .coverage-chip-skipped, .coverage-chip-missing { background: #fef3c7; color: #92400e; border-color: #fde68a; }
   /* Risk distance-ring map (styled via companion classes; see briefing-pdf.mjs
      comment above buildRiskRingMap for why the CSS selectors are renamed) */
   .riskmap-wrap { display: flex; gap: 14px; align-items: flex-start; margin: 8px 0 10px; }

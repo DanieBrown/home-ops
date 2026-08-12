@@ -188,6 +188,8 @@ Rules:
 - If you only have city-level evidence, say so explicitly.
 - For Facebook and Nextdoor, prioritize the most recent 7 days of posts or comments and extract recurring themes rather than isolated anecdotes.
 - Treat Facebook group access as a manual, user-authenticated browser workflow. Nextdoor has approved developer APIs for public `anyone` content, but private neighborhood-feed access still needs manual browser research unless an approved integration is added later.
+- Sentiment capture degrades in specificity, never to silence: every snippet carries a proximity tier -- `subdivision`, `street`, `school-zone`, or `municipal` (city-wide) -- and `municipal` is always reachable, so a run never scores on pure silence. Score every tier, but discount it by `config/profile.yml` `sentiment.proximity_tiers` and describe the tier in prose. Never present municipal-tier evidence as if it described this street.
+- `evidenceCount: 0` on a source that was actually captured is a genuine finding -- a quiet neighborhood with little online chatter -- not a gap. A source that came back `blocked` (unreachable) or `skipped-below-tier` (Nextdoor has no feed URL below subdivision tier) is an open question instead. These are different findings and must render differently in the report: a quiet, captured dimension reads as low-signal-but-checked; a blocked or skipped one reads as unconfirmed. Neither collapses to a bare "unknown."
 
 ---
 

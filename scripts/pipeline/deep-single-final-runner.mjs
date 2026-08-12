@@ -165,7 +165,7 @@ function main() {
       contractId: 'sentiment-public-extract-single',
       label: 'Public sentiment capture (Google Maps)',
       cmd: NODE,
-      args: ['scripts/research/sentiment-public-extract.mjs', reportArg],
+      args: ['scripts/research/sentiment-public-extract.mjs', reportArg, '--profile', config.profileName],
     },
     {
       contractId: 'construction-check-single',

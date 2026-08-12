@@ -3,6 +3,7 @@
 import { existsSync, readFileSync } from 'fs';
 import { mkdir, writeFile } from 'fs/promises';
 import { join } from 'path';
+import { fileURLToPath } from 'url';
 import { chromium } from 'playwright';
 import { readSessionState } from '../browser/browser-session.mjs';
 import { ROOT } from '../shared/paths.mjs';
@@ -14,6 +15,7 @@ import {
 } from './research-utils.mjs';
 import {
   buildProfileRedFlagPatterns,
+  PROXIMITY_TIER_ORDER,
   scoreProfileRedFlags,
 } from './sentiment-scoring.mjs';
 import {
@@ -34,7 +36,14 @@ const SENTIMENT_CACHE_NAME = 'sentiment';
 const DEFAULT_PROFILE = 'chrome-host';
 const OUTPUT_DIR = join(ROOT, 'output', 'sentiment');
 const COMMUNITY_DIR = join(ROOT, 'output', 'communities');
-const SUPPORTED_BROWSER_SOURCES = new Set(['facebook', 'nextdoor', 'twitter']);
+export const SUPPORTED_BROWSER_SOURCES = new Set(['facebook', 'nextdoor', 'twitter']);
+
+// Every profile-enabled, browser-supported source must reach the capture loop
+// so it can emit at least a skip record. A source that is silently excluded
+// here is indistinguishable from a source that was never configured.
+export function selectBrowserSourceEntries(entries) {
+  return (entries ?? []).filter((entry) => entry.browserSupported && SUPPORTED_BROWSER_SOURCES.has(entry.key));
+}
 const invalidCommunityPatterns = compileConfiguredPatterns(readResearchDefaults().community?.invalid_patterns ?? []);
 // Browser-backed sources (Facebook / Nextdoor) only populate these sentiment
 // dimensions. Traffic-commute is sourced from the public extractor and NCDOT
@@ -462,16 +471,44 @@ async function ensureHostedSession(profileName) {
   return session.data;
 }
 
-function buildBrowserSourceUrl(sourceKey, communityData) {
-  if (!communityData?.community) return null;
-  if (sourceKey === 'nextdoor') {
-    return buildNextdoorNeighborhoodUrl(communityData.community, communityData.city, communityData.state);
+// The specificity ladder: subdivision-tagged evidence counts at full weight,
+// municipal (city-wide) evidence is heavily discounted but always
+// available, so a run degrades in precision and never falls back to
+// silence (see sentiment-scoring.mjs PROXIMITY_TIER_ORDER).
+export function buildTierTerms(communityData, sentimentPlan, target) {
+  return {
+    subdivision: communityData?.community || null,
+    street: sentimentPlan?.roadHints?.[0] || null,
+    'school-zone': sentimentPlan?.schoolNames?.[0] || null,
+    municipal: target.city || null,
+  };
+}
+
+// Nextdoor's neighborhood-feed URL structurally requires a resolved
+// subdivision -- there is no street- or city-scoped Nextdoor feed URL to
+// fall back to, so it is the one source that may still skip below the
+// subdivision tier (recorded as skipped-below-tier, never a bare
+// no-community-match).
+export function selectTier(tierTerms, { requireSubdivision = false } = {}) {
+  for (const tier of PROXIMITY_TIER_ORDER) {
+    if (requireSubdivision && tier !== 'subdivision') break;
+    const term = tierTerms[tier];
+    if (term) return { tier, term };
   }
+  return null;
+}
+
+export function buildBrowserSourceUrl(sourceKey, tier, term, city, state) {
+  if (sourceKey === 'nextdoor') {
+    return tier === 'subdivision' ? buildNextdoorNeighborhoodUrl(term, city, state) : null;
+  }
+  // At the municipal tier the term IS the city -- avoid "Apex neighborhood
+  // Apex" by not repeating it.
   if (sourceKey === 'facebook') {
-    return buildFacebookSearchUrl(communityData.community, communityData.city);
+    return tier === 'municipal' ? buildFacebookSearchUrl('', city) : buildFacebookSearchUrl(term, city);
   }
   if (sourceKey === 'twitter') {
-    return buildTwitterSearchUrl(communityData.community, communityData.city);
+    return tier === 'municipal' ? buildTwitterSearchUrl('', city) : buildTwitterSearchUrl(term, city);
   }
   return null;
 }
@@ -924,11 +961,13 @@ async function extractTarget(context, target, researchContext, cacheState, optio
   const runFreshExtraction = async () => {
     const sourceResults = [];
     const communityData = loadCommunityData(target);
+    const tierTerms = buildTierTerms(communityData, sentimentPlan, target);
+    const bestReachableTier = selectTier(tierTerms);
 
-    for (const source of sentimentPlan.entries.filter((entry) => entry.browserSupported && SUPPORTED_BROWSER_SOURCES.has(entry.key))) {
-      const communityUrl = buildBrowserSourceUrl(source.key, communityData);
+    for (const source of selectBrowserSourceEntries(sentimentPlan.entries)) {
+      const selection = selectTier(tierTerms, { requireSubdivision: source.key === 'nextdoor' });
 
-      if (!communityUrl) {
+      if (!selection) {
         sourceResults.push({
           key: source.key,
           name: source.name,
@@ -936,32 +975,35 @@ async function extractTarget(context, target, researchContext, cacheState, optio
           note: source.note,
           lookbackDays: source.lookbackDays,
           queryResults: [{
-            status: communityData?.status === 'no-community-match' ? 'no-community-match' : source.key === 'nextdoor' ? 'no-community-match' : 'no-community-url',
+            status: 'skipped-below-tier',
             query: '',
             searchUrl: '',
             finalUrl: '',
             pageTitle: '',
             snippets: [],
             themes: [],
-            reason: communityData
-              ? communityData.status === 'no-community-match'
-                ? 'community lookup did not produce a valid neighborhood; browser searches skipped'
-                : 'no community URL available for this source'
-              : 'no community lookup found; run community-lookup.mjs first',
+            tier: null,
+            tierNeeded: 'subdivision',
+            tierReached: bestReachableTier?.tier ?? null,
+            reason: `Nextdoor's neighborhood-feed URL structurally requires a resolved subdivision name; the best tier reachable for this home was ${bestReachableTier?.tier ?? 'none'}.`,
           }],
         });
         continue;
       }
 
-      const queryLabel = communityData.community
-        ? `${communityData.community} neighborhood ${target.city}`
-        : `${target.city} neighborhood`;
+      const { tier, term } = selection;
+      const communityUrl = buildBrowserSourceUrl(source.key, tier, term, target.city, target.state);
+      const queryLabel = tier === 'municipal' ? `${target.city} neighborhood` : `${term} neighborhood ${target.city}`;
       const result = await extractCommunityPage(context, source, communityUrl, queryLabel, {
         quick,
         allowedCategories: BROWSER_ALLOWED_CATEGORIES,
         redFlagPatterns,
         ...(source.key === 'twitter' && { waitSelector: 'article[data-testid="tweet"]' }),
       });
+      // Every snippet carries its own tier, not just the parent query result,
+      // so downstream readers (axis agent, briefing PDF) never have to infer
+      // specificity from context.
+      const taggedSnippets = (result.snippets ?? []).map((snippet) => ({ ...snippet, tier }));
 
       sourceResults.push({
         key: source.key,
@@ -969,9 +1011,9 @@ async function extractTarget(context, target, researchContext, cacheState, optio
         url: source.url,
         note: source.note,
         lookbackDays: source.lookbackDays,
-        community: communityData.community,
+        community: communityData?.community ?? null,
         communityUrl,
-        queryResults: [result],
+        queryResults: [{ ...result, snippets: taggedSnippets, tier, tierTerm: term }],
       });
 
       await randomDelay(QUERY_PAUSE_MIN_MS, QUERY_PAUSE_MAX_MS);
@@ -1148,7 +1190,10 @@ async function main() {
   }
 }
 
-main().catch((error) => {
-  console.error(`Fatal: ${error.message}`);
-  process.exit(1);
-});
+const isDirectEntry = process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1];
+if (isDirectEntry) {
+  main().catch((error) => {
+    console.error(`Fatal: ${error.message}`);
+    process.exit(1);
+  });
+}

@@ -87,11 +87,12 @@ const axisFixture = {
   state: 'NC',
   sentiment: {
     sentimentScores: {
-      community: { score: 0.4, signalDirection: 'positive', evidenceCount: 5, proximityMix: 'near', quotes: ['Lovely block parties'], source: 'sidecar' },
-      traffic_commute: { score: -0.3, signalDirection: 'negative', evidenceCount: 3, proximityMix: 'adjacent', quotes: ['Backups on the collector'], source: 'sidecar' },
+      community: { score: 0.4, signalDirection: 'positive', evidenceCount: 5, proximityMix: { subdivision: 3, street: 0, 'school-zone': 0, municipal: 2 }, quotes: ['Lovely block parties'], source: 'sidecar' },
+      // Municipal-only: this must read as city-wide chatter, not street-level evidence.
+      traffic_commute: { score: -0.3, signalDirection: 'negative', evidenceCount: 3, proximityMix: { subdivision: 0, street: 0, 'school-zone': 0, municipal: 3 }, quotes: ['Backups on the collector'], source: 'sidecar' },
     },
     redFlagsTriggered: ['busy road'],
-    sourceCoverage: { google_maps: 'captured', facebook: 'blocked' },
+    sourceCoverage: { google_maps: 'captured', facebook: 'blocked', nextdoor: 'skipped-below-tier', twitter: 'no-match' },
     confidence: 'medium',
   },
   riskBuilder: {
@@ -153,6 +154,41 @@ assert.ok(richHtml.includes('Deal-breaker red flags'), 'red flag callout renders
 assert.ok(richHtml.includes('facebook: blocked'), 'source coverage chips render');
 assert.ok(!richHtml.includes('Not yet captured from Facebook or Nextdoor'), 'legacy placeholder replaced when axis data exists');
 assert.ok(bareHtml.includes('Not yet captured from Facebook or Nextdoor'), 'legacy fallback preserved without axis data');
+
+// --- Phase 5 of the sentiment-capture goal prompt: the specificity tier ---
+
+// The dominant tier and its breakdown render next to each dimension, so a
+// buyer can tell whether "Community: positive" describes their subdivision
+// or the whole town.
+assert.ok(/tier: subdivision \(subdivision ×3, city-wide ×2\)/.test(richHtml), 'subdivision-dominant tier and breakdown render');
+assert.ok(/tier: city-wide \(city-wide ×3\)/.test(richHtml), 'a municipal-only dimension is labelled city-wide, not left ambiguous');
+
+// A source that was captured (even at zero evidence), one that was blocked,
+// and one that structurally could not reach subdivision tier all render
+// with distinct chip classes -- none of them collapse into "unknown".
+assert.ok(richHtml.includes('coverage-chip-captured'), 'a captured source gets the captured chip style');
+assert.ok(richHtml.includes('coverage-chip-blocked'), 'a blocked source gets the blocked chip style');
+assert.ok(richHtml.includes('coverage-chip-skipped'), 'a skipped-below-tier source gets its own chip style, distinct from blocked');
+assert.ok(richHtml.includes('coverage-chip-quiet'), 'a captured-but-no-match source gets the quiet chip style, distinct from blocked');
+assert.ok(richHtml.includes('nextdoor: skipped-below-tier'), 'the skipped-below-tier status renders verbatim, not as a generic error');
+
+// The research-gaps collector names the specific sources/dimensions affected.
+assert.ok(
+  richHtml.includes('nextdoor could not reach subdivision-tier evidence'),
+  'skipped-below-tier sources become a named research gap, not a silent omission',
+);
+assert.ok(
+  richHtml.includes('facebook sentiment source(s) were blocked or unreachable'),
+  'blocked sentiment sources become a named research gap',
+);
+assert.ok(
+  richHtml.includes('traffic commute sentiment is built only from city-wide chatter'),
+  'a municipal-only dimension is flagged as a research gap, never presented as street-level',
+);
+assert.ok(
+  !richHtml.includes('community sentiment is built only from city-wide chatter'),
+  'a dimension with subdivision-tier evidence must not be flagged as municipal-only',
+);
 
 // --- Task 7: risk ring map ---
 const { points, legendOnly } = ringMapPoints(axisFixture.riskBuilder.nearbyProjects);
