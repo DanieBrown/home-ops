@@ -37,29 +37,54 @@ Rule:
 | `reports/` | Listing evaluation reports |
 | `output/knowledge/` | Learned artifact index and command memory |
 | `output/areas/` | Reusable area facts and source references |
+| `output/hazards/`, `output/parcel/`, `output/access/` | Per-home Property Snapshot sidecars |
+| `docs/COMMANDS.md` | Reference for every npm script and its flags |
+| `config/radon-zones.yml` | EPA county radon zones (NC) |
+| `config/property-tax-rates.yml` | County and municipal tax rates for the estimate |
 | `modes/*` | Prompt-driven workflows |
 | `templates/states.yml` | Canonical listing states |
 | `templates/research-defaults.yml` | Reusable source seed catalog for generated output inventories |
 
 ## OpenCode Commands
 
-| Command | Purpose |
-|---------|---------|
-| `/home-ops` | Show the menu or route from a listing URL |
-| `/home-ops-profile` | Interview the buyer and update buyer profile files |
-| `/home-ops-afford` | Estimate conservative affordability and optionally update buyer price range |
-| `/home-ops-init` | Launch or confirm the hosted browser session for portal login |
-| `/home-ops init --relator --refresh-site-data` | Clear one portal's client-side browser state and open a clean homepage |
-| `/home-ops-hunt` | Run reset, scan, evaluate, and the deep shortlist branch sequentially against a live hosted session |
-| `/home-ops-evaluate` | Evaluate one listing or batch-evaluate pending pipeline homes |
-| `/home-ops-compare` | Compare multiple homes |
-| `/home-ops-scan` | Scan configured portal searches |
-| `/home-ops-skim` | Open pre-filtered search tabs in the hosted browser for all configured portals |
-| `/home-ops-reset` | Clear generated reports, tracker rows, pipeline items, and scan history |
-| `/home-ops-tracker` | Show or update listing status |
-| `/home-ops-deep` | Deep dive on a property or area |
+| Command | Options | Purpose |
+|---------|---------|---------|
+| `/home-ops` | -- | Show the menu or route from a listing URL |
+| `/home-ops-profile` | -- | Interview the buyer and update buyer profile files |
+| `/home-ops-afford` | -- | Estimate conservative affordability and optionally update buyer price range |
+| `/home-ops-init` | `--zillow` `--redfin` `--relator` `--homes` | Launch or confirm the hosted browser session for portal login |
+| `/home-ops init --relator --refresh-site-data` | -- | Clear one portal's client-side browser state and open a clean homepage |
+| `/home-ops-hunt` | platform selectors | Run reset, scan, evaluate, and the deep shortlist branch sequentially against a live hosted session |
+| `/home-ops-evaluate` | `{url\|address}`, or none for the pending pipeline | Evaluate one listing or batch-evaluate pending pipeline homes |
+| `/home-ops-compare` | `{url1} {url2} …`, or none for the shortlist | Compare multiple homes |
+| `/home-ops-scan` | `--zillow` `--redfin` `--relator` `--homes` `--no-zillow` | Scan configured portal searches |
+| `/home-ops-skim` | platform selectors | Open pre-filtered search tabs in the hosted browser for all configured portals |
+| `/home-ops-reset` | -- | Clear generated reports, tracker rows, pipeline items, and scan history |
+| `/home-ops-tracker` | -- | Show or update listing status |
+| `/home-ops-deep` | `{url}`, `{url1} {url2} …`, or none for the shortlist batch | Deep dive on a property or area |
 
 The OpenCode command wrappers call `.claude/skills/home-ops/SKILL.md`.
+
+Every `npm run` script is documented in `docs/COMMANDS.md` with its flags.
+`node scripts/system/doctor.mjs` warns when a script is missing from it, and
+fails on it under `--strict`.
+
+## Property Snapshot
+
+Every deep run captures a per-home Property Snapshot from authoritative
+sources, so the scoring model in `modes/_shared.md` reads measurements instead
+of listing marketing copy:
+
+| Sidecar | Covers |
+|---------|--------|
+| `output/hazards/{slug}.json` | FEMA flood zone and Special Flood Hazard Area flag, wetlands, county radon zone, EPA superfund/brownfield sites, septic soil suitability, RDU airport noise contours |
+| `output/parcel/{slug}.json` | Parcel ID, deeded acreage, assessed land and improvement value, last recorded sale, estimated annual tax, zoning, guided future-land-use link |
+| `output/access/{slug}.json` | Nearest NCDOT AADT count station with route, volume, and distance; busy-road exposure; measured drive times; guided sex-offender and school-redistricting checks |
+
+Each dimension carries a provenance of `captured`, `unconfirmed`, `blocked`,
+`unsupported`, or `not-applicable`. **Only `captured` supports a factual claim.
+`blocked` means the source could not be reached, which is never the same as
+"nothing found"** -- it lowers confidence and becomes an open question instead.
 
 ## First Run -- Onboarding
 
@@ -202,6 +227,7 @@ If verification is blocked, mark it as unconfirmed rather than claiming it is ac
 - Report filenames: `{###}-{address-slug}-{YYYY-MM-DD}.md`
 - Tracker rows keyed by normalized address + city
 - Niche school metadata uses an optional Python sidecar (crawl4ai) when available; falls back to `fetch()` otherwise. Setup: `scripts/research/python/README.md`.
+- Spatial capture queries public ArcGIS REST services through the shared `arcgisQuery` client in `scripts/research/research-utils.mjs`. Sources with no public API (the NC SBI sex-offender registry, municipal future-land-use maps, district assignment changes) get an official link plus buyer-facing instructions -- they are never scraped.
 
 ## Tracker Rules
 

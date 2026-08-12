@@ -49,15 +49,28 @@ npm run verify
 ```
 
 ## Core commands
+- `/home-ops`: show the command menu
+- `/home-ops profile`: interview the buyer and update the profile files
+- `/home-ops afford`: estimate conservative affordability and optionally update price range
 - `/home-ops init`: refresh portal browser sessions
 - `/home-ops init --relator --refresh-site-data`: clear one portal's cookies/cache/site data and open a clean homepage for manual verification
-- `/home-ops afford`: estimate conservative affordability and optionally update price range
 - `/home-ops scan`: find new listings from saved searches
+- `/home-ops skim`: open pre-filtered search tabs for every configured portal
 - `/home-ops evaluate`: review pending listings or one target
-- `/home-ops deep`: research a home, school, or area
 - `/home-ops {listing-url}`: evaluate one listing
-- `/home-ops hunt`: reset, scan, and evaluate sequentially
+- `/home-ops compare`: compare and rank multiple homes
+- `/home-ops deep`: research a home, school, or area — one URL, several URLs, or the whole shortlist
+- `/home-ops hunt`: reset, scan, batch-evaluate, then run the deep shortlist branch (rerank, finalist gate, top-3 briefing PDF) in one pass
 - `/home-ops tracker`: review and update listing statuses
+- `/home-ops reset`: clear generated search state while keeping the buyer profile
+
+Platform selectors (`--zillow`, `--redfin`, `--relator`, `--homes`) work on
+`init`, `scan`, and `skim`.
+
+Every underlying `npm run` script is listed in
+[`docs/COMMANDS.md`](docs/COMMANDS.md) with its flags — including the
+update/rollback subsystem, the cache utilities, and the individual research
+capture scripts.
 
 
 ## Tips
