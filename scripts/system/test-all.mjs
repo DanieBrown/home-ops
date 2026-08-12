@@ -122,6 +122,9 @@ const scripts = [
   'scripts/research/sentiment-browser-extract.mjs --help',
   'scripts/research/construction-check.mjs --help',
   'scripts/research/utility-options-check.mjs --help',
+  'scripts/research/site-hazards-check.mjs --help',
+  'scripts/research/parcel-tax-check.mjs --help',
+  'scripts/research/access-check.mjs --help',
   'scripts/reports/briefing-pdf.mjs --help',
   'scripts/research/axis-sidecar-write.mjs --help',
   'scripts/system/cache-utils.mjs --help',
@@ -209,6 +212,33 @@ for (const script of scripts) {
     pass('utility estimate calculation and sidecar tests');
   } else {
     fail(`utility estimate calculation and sidecar tests\n${result.output}`);
+  }
+}
+
+{
+  const result = run('node scripts/tests/test-site-hazards.mjs');
+  if (result.ok) {
+    pass('site hazard source parsing tests');
+  } else {
+    fail(`site hazard source parsing tests\n${result.output}`);
+  }
+}
+
+{
+  const result = run('node scripts/tests/test-parcel-tax.mjs');
+  if (result.ok) {
+    pass('parcel, assessment, and tax estimate tests');
+  } else {
+    fail(`parcel, assessment, and tax estimate tests\n${result.output}`);
+  }
+}
+
+{
+  const result = run('node scripts/tests/test-access.mjs');
+  if (result.ok) {
+    pass('road access, AADT, and drive time tests');
+  } else {
+    fail(`road access, AADT, and drive time tests\n${result.output}`);
   }
 }
 

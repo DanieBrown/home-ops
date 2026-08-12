@@ -1,0 +1,147 @@
+{
+  "objectIdFieldName": "FID",
+  "uniqueIdField": {
+    "name": "FID",
+    "isSystemMaintained": true
+  },
+  "globalIdFieldName": "",
+  "geometryProperties": {
+    "shapeLengthFieldName": "Shape__Length",
+    "units": "esriFeet"
+  },
+  "geometryType": "esriGeometryPolyline",
+  "spatialReference": {
+    "wkid": 102719,
+    "latestWkid": 2264,
+    "vcsWkid": 105703,
+    "latestVcsWkid": 6360
+  },
+  "fields": [
+    {
+      "name": "FID",
+      "type": "esriFieldTypeOID",
+      "alias": "FID",
+      "sqlType": "sqlTypeOther",
+      "domain": null,
+      "defaultValue": null
+    },
+    {
+      "name": "RouteID",
+      "type": "esriFieldTypeString",
+      "alias": "RouteID",
+      "sqlType": "sqlTypeOther",
+      "length": 254,
+      "domain": null,
+      "defaultValue": null
+    },
+    {
+      "name": "BeginMP",
+      "type": "esriFieldTypeDouble",
+      "alias": "BeginMp",
+      "sqlType": "sqlTypeOther",
+      "domain": null,
+      "defaultValue": null
+    },
+    {
+      "name": "EndMP",
+      "type": "esriFieldTypeDouble",
+      "alias": "EndMp",
+      "sqlType": "sqlTypeOther",
+      "domain": null,
+      "defaultValue": null
+    },
+    {
+      "name": "SU_PCT",
+      "type": "esriFieldTypeDouble",
+      "alias": "SU_PCT",
+      "sqlType": "sqlTypeOther",
+      "domain": null,
+      "defaultValue": null
+    },
+    {
+      "name": "MU_PCT",
+      "type": "esriFieldTypeDouble",
+      "alias": "MU_PCT",
+      "sqlType": "sqlTypeOther",
+      "domain": null,
+      "defaultValue": null
+    },
+    {
+      "name": "SU_AADT",
+      "type": "esriFieldTypeInteger",
+      "alias": "SU_AADT",
+      "sqlType": "sqlTypeOther",
+      "domain": null,
+      "defaultValue": null
+    },
+    {
+      "name": "MU_AADT",
+      "type": "esriFieldTypeInteger",
+      "alias": "MU_AADT",
+      "sqlType": "sqlTypeOther",
+      "domain": null,
+      "defaultValue": null
+    },
+    {
+      "name": "SOURCE",
+      "type": "esriFieldTypeString",
+      "alias": "SOURCE",
+      "sqlType": "sqlTypeOther",
+      "length": 254,
+      "domain": null,
+      "defaultValue": null
+    },
+    {
+      "name": "AADT",
+      "type": "esriFieldTypeInteger",
+      "alias": "AADT",
+      "sqlType": "sqlTypeOther",
+      "domain": null,
+      "defaultValue": null
+    },
+    {
+      "name": "AADTT",
+      "type": "esriFieldTypeInteger",
+      "alias": "AADTT",
+      "sqlType": "sqlTypeOther",
+      "domain": null,
+      "defaultValue": null
+    },
+    {
+      "name": "TMS_ID",
+      "type": "esriFieldTypeString",
+      "alias": "TMS_ID",
+      "sqlType": "sqlTypeOther",
+      "length": 254,
+      "domain": null,
+      "defaultValue": null
+    },
+    {
+      "name": "Shape__Length",
+      "type": "esriFieldTypeDouble",
+      "alias": "Shape__Length",
+      "sqlType": "sqlTypeDouble",
+      "domain": null,
+      "defaultValue": null
+    }
+  ],
+  "features": [
+    {
+      "attributes": {
+        "FID": 7814,
+        "RouteID": "30000055092",
+        "BeginMP": 15.253095,
+        "EndMP": 16.364395,
+        "SU_PCT": 0.047,
+        "MU_PCT": 0.026,
+        "SU_AADT": 2250,
+        "MU_AADT": 1250,
+        "SOURCE": "Maintenance",
+        "AADT": 48000,
+        "AADTT": 3500,
+        "TMS_ID": "0920000875",
+        "Shape__Length": 5869.437884920486
+      }
+    }
+  ]
+}

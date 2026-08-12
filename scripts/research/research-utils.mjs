@@ -430,6 +430,89 @@ export function loadResearchConfig(projectRoot = ROOT) {
   };
 }
 
+// ── ArcGIS REST client ──────────────────────────────────────────────
+//
+// Shared by every spatial capture script (county-permits-check,
+// site-hazards-check, parcel-tax-check, access-check) so radius handling,
+// timeouts, and error shape stay identical across sources.
+
+export const ARCGIS_TIMEOUT_MS = 25000;
+export const ARCGIS_USER_AGENT = 'home-ops/spatial-check (+https://github.com/)';
+
+/**
+ * Query an ArcGIS REST feature/map layer.
+ *
+ * Pass `point: {lat, lng}` for a spatial query (optionally with
+ * `radiusMeters`), or `where` alone for an attribute query. Never throws: a
+ * dead source comes back as `{ ok: false, error }` so the caller can record
+ * `blocked` rather than imply "no hazard found".
+ */
+export async function arcgisQuery(serviceUrl, options = {}) {
+  const {
+    point = null,
+    radiusMeters = null,
+    where = '1=1',
+    outFields = '*',
+    returnGeometry = false,
+    outSR = 4326,
+    inSR = 4326,
+    resultRecordCount = null,
+    timeoutMs = ARCGIS_TIMEOUT_MS,
+    fetchImpl = fetch,
+  } = options;
+
+  const params = new URLSearchParams({
+    f: 'json',
+    where,
+    outFields,
+    returnGeometry: String(Boolean(returnGeometry)),
+  });
+
+  if (point && Number.isFinite(point.lat) && Number.isFinite(point.lng)) {
+    params.set('geometry', `${point.lng},${point.lat}`);
+    params.set('geometryType', 'esriGeometryPoint');
+    params.set('inSR', String(inSR));
+    params.set('spatialRel', 'esriSpatialRelIntersects');
+    if (Number.isFinite(radiusMeters) && radiusMeters > 0) {
+      params.set('distance', String(radiusMeters));
+      params.set('units', 'esriSRUnit_Meter');
+    }
+  }
+  if (returnGeometry) params.set('outSR', String(outSR));
+  if (Number.isFinite(resultRecordCount)) params.set('resultRecordCount', String(resultRecordCount));
+
+  const url = `${serviceUrl}/query?${params.toString()}`;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const response = await fetchImpl(url, {
+      signal: controller.signal,
+      headers: { 'User-Agent': ARCGIS_USER_AGENT },
+    });
+    if (!response.ok) {
+      return { ok: false, status: response.status, features: [], error: `HTTP ${response.status}`, url };
+    }
+    const body = await response.json();
+    if (body?.error) {
+      return { ok: false, status: response.status, features: [], error: body.error.message || 'service error', url };
+    }
+    return { ok: true, status: response.status, features: body.features ?? [], url };
+  } catch (error) {
+    return { ok: false, status: 0, features: [], error: String(error?.message ?? error), url };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
+ * Escapes a value for an ArcGIS `where` string literal. ArcGIS uses SQL-92
+ * quoting, so a single quote is doubled.
+ */
+export function arcgisLiteral(value) {
+  return `'${String(value ?? '').replace(/'/g, "''")}'`;
+}
+
 export function resolveAreaContext(report, context) {
   const areas = context.profile.search?.areas ?? [];
   const cityLookup = normalizeLookupValue(report.city);

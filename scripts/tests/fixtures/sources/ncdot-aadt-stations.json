@@ -1,0 +1,433 @@
+{
+  "objectIdFieldName": "FID",
+  "uniqueIdField": {
+    "name": "FID",
+    "isSystemMaintained": true
+  },
+  "globalIdFieldName": "",
+  "geometryType": "esriGeometryPoint",
+  "spatialReference": {
+    "wkid": 4326,
+    "latestWkid": 4326
+  },
+  "fields": [
+    {
+      "name": "FID",
+      "type": "esriFieldTypeOID",
+      "alias": "FID",
+      "sqlType": "sqlTypeOther",
+      "domain": null,
+      "defaultValue": null
+    },
+    {
+      "name": "LocationID",
+      "type": "esriFieldTypeString",
+      "alias": "LocationID",
+      "sqlType": "sqlTypeOther",
+      "length": 254,
+      "domain": null,
+      "defaultValue": null
+    },
+    {
+      "name": "COUNTY",
+      "type": "esriFieldTypeString",
+      "alias": "COUNTY",
+      "sqlType": "sqlTypeOther",
+      "length": 254,
+      "domain": null,
+      "defaultValue": null
+    },
+    {
+      "name": "RTE_CLS",
+      "type": "esriFieldTypeDouble",
+      "alias": "RTE_CLS",
+      "sqlType": "sqlTypeOther",
+      "domain": null,
+      "defaultValue": null
+    },
+    {
+      "name": "ROUTE",
+      "type": "esriFieldTypeString",
+      "alias": "ROUTE",
+      "sqlType": "sqlTypeOther",
+      "length": 254,
+      "domain": null,
+      "defaultValue": null
+    },
+    {
+      "name": "LOCATION",
+      "type": "esriFieldTypeString",
+      "alias": "LOCATION",
+      "sqlType": "sqlTypeOther",
+      "length": 254,
+      "domain": null,
+      "defaultValue": null
+    },
+    {
+      "name": "AADT_2002",
+      "type": "esriFieldTypeString",
+      "alias": "AADT_2002",
+      "sqlType": "sqlTypeOther",
+      "length": 254,
+      "domain": null,
+      "defaultValue": null
+    },
+    {
+      "name": "AADT_2003",
+      "type": "esriFieldTypeString",
+      "alias": "AADT_2003",
+      "sqlType": "sqlTypeOther",
+      "length": 254,
+      "domain": null,
+      "defaultValue": null
+    },
+    {
+      "name": "AADT_2004",
+      "type": "esriFieldTypeString",
+      "alias": "AADT_2004",
+      "sqlType": "sqlTypeOther",
+      "length": 254,
+      "domain": null,
+      "defaultValue": null
+    },
+    {
+      "name": "AADT_2005",
+      "type": "esriFieldTypeString",
+      "alias": "AADT_2005",
+      "sqlType": "sqlTypeOther",
+      "length": 254,
+      "domain": null,
+      "defaultValue": null
+    },
+    {
+      "name": "AADT_2006",
+      "type": "esriFieldTypeString",
+      "alias": "AADT_2006",
+      "sqlType": "sqlTypeOther",
+      "length": 254,
+      "domain": null,
+      "defaultValue": null
+    },
+    {
+      "name": "AADT_2007",
+      "type": "esriFieldTypeString",
+      "alias": "AADT_2007",
+      "sqlType": "sqlTypeOther",
+      "length": 254,
+      "domain": null,
+      "defaultValue": null
+    },
+    {
+      "name": "AADT_2008",
+      "type": "esriFieldTypeString",
+      "alias": "AADT_2008",
+      "sqlType": "sqlTypeOther",
+      "length": 254,
+      "domain": null,
+      "defaultValue": null
+    },
+    {
+      "name": "AADT_2009",
+      "type": "esriFieldTypeString",
+      "alias": "AADT_2009",
+      "sqlType": "sqlTypeOther",
+      "length": 254,
+      "domain": null,
+      "defaultValue": null
+    },
+    {
+      "name": "AADT_2010",
+      "type": "esriFieldTypeString",
+      "alias": "AADT_2010",
+      "sqlType": "sqlTypeOther",
+      "length": 254,
+      "domain": null,
+      "defaultValue": null
+    },
+    {
+      "name": "AADT_2011",
+      "type": "esriFieldTypeString",
+      "alias": "AADT_2011",
+      "sqlType": "sqlTypeOther",
+      "length": 254,
+      "domain": null,
+      "defaultValue": null
+    },
+    {
+      "name": "AADT_2012",
+      "type": "esriFieldTypeString",
+      "alias": "AADT_2012",
+      "sqlType": "sqlTypeOther",
+      "length": 254,
+      "domain": null,
+      "defaultValue": null
+    },
+    {
+      "name": "AADT_2013",
+      "type": "esriFieldTypeString",
+      "alias": "AADT_2013",
+      "sqlType": "sqlTypeOther",
+      "length": 254,
+      "domain": null,
+      "defaultValue": null
+    },
+    {
+      "name": "AADT_2014",
+      "type": "esriFieldTypeString",
+      "alias": "AADT_2014",
+      "sqlType": "sqlTypeOther",
+      "length": 254,
+      "domain": null,
+      "defaultValue": null
+    },
+    {
+      "name": "AADT_2015",
+      "type": "esriFieldTypeString",
+      "alias": "AADT_2015",
+      "sqlType": "sqlTypeOther",
+      "length": 254,
+      "domain": null,
+      "defaultValue": null
+    },
+    {
+      "name": "AADT_2016",
+      "type": "esriFieldTypeString",
+      "alias": "AADT_2016",
+      "sqlType": "sqlTypeOther",
+      "length": 254,
+      "domain": null,
+      "defaultValue": null
+    },
+    {
+      "name": "AADT_2017",
+      "type": "esriFieldTypeString",
+      "alias": "AADT_2017",
+      "sqlType": "sqlTypeOther",
+      "length": 254,
+      "domain": null,
+      "defaultValue": null
+    },
+    {
+      "name": "AADT_2018",
+      "type": "esriFieldTypeString",
+      "alias": "AADT_2018",
+      "sqlType": "sqlTypeOther",
+      "length": 254,
+      "domain": null,
+      "defaultValue": null
+    },
+    {
+      "name": "AADT_2019",
+      "type": "esriFieldTypeString",
+      "alias": "AADT_2019",
+      "sqlType": "sqlTypeOther",
+      "length": 254,
+      "domain": null,
+      "defaultValue": null
+    },
+    {
+      "name": "AADT_2020",
+      "type": "esriFieldTypeString",
+      "alias": "AADT_2020",
+      "sqlType": "sqlTypeOther",
+      "length": 254,
+      "domain": null,
+      "defaultValue": null
+    },
+    {
+      "name": "AADT_2021",
+      "type": "esriFieldTypeString",
+      "alias": "AADT_2021",
+      "sqlType": "sqlTypeOther",
+      "length": 254,
+      "domain": null,
+      "defaultValue": null
+    },
+    {
+      "name": "AADT_2022",
+      "type": "esriFieldTypeString",
+      "alias": "AADT_2022",
+      "sqlType": "sqlTypeOther",
+      "length": 254,
+      "domain": null,
+      "defaultValue": null
+    }
+  ],
+  "features": [
+    {
+      "attributes": {
+        "FID": 44649,
+        "LocationID": "0920001025",
+        "COUNTY": "WAKE",
+        "RTE_CLS": 4,
+        "ROUTE": "SR 1300",
+        "LOCATION": "SOUTH OF SR 1010",
+        "AADT_2002": " ",
+        "AADT_2003": "15000",
+        "AADT_2004": " ",
+        "AADT_2005": "16000",
+        "AADT_2006": " ",
+        "AADT_2007": " ",
+        "AADT_2008": " ",
+        "AADT_2009": "19000",
+        "AADT_2010": " ",
+        "AADT_2011": "19000",
+        "AADT_2012": " ",
+        "AADT_2013": "20000",
+        "AADT_2014": " ",
+        "AADT_2015": "20000",
+        "AADT_2016": " ",
+        "AADT_2017": "21000",
+        "AADT_2018": " ",
+        "AADT_2019": "21000",
+        "AADT_2020": " ",
+        "AADT_2021": "18000",
+        "AADT_2022": " "
+      },
+      "geometry": {
+        "x": -78.7943763196129,
+        "y": 35.70179026850933
+      }
+    },
+    {
+      "attributes": {
+        "FID": 44778,
+        "LocationID": "0920001165",
+        "COUNTY": "WAKE",
+        "RTE_CLS": 4,
+        "ROUTE": "SR 1300",
+        "LOCATION": "NORTH OF SR 1010",
+        "AADT_2002": " ",
+        "AADT_2003": "19000",
+        "AADT_2004": " ",
+        "AADT_2005": "18000",
+        "AADT_2006": " ",
+        "AADT_2007": "19000",
+        "AADT_2008": " ",
+        "AADT_2009": "18000",
+        "AADT_2010": " ",
+        "AADT_2011": "20000",
+        "AADT_2012": " ",
+        "AADT_2013": "21000",
+        "AADT_2014": " ",
+        "AADT_2015": "27000",
+        "AADT_2016": " ",
+        "AADT_2017": "23000",
+        "AADT_2018": " ",
+        "AADT_2019": "22500",
+        "AADT_2020": " ",
+        "AADT_2021": "19000",
+        "AADT_2022": " "
+      },
+      "geometry": {
+        "x": -78.79458076968817,
+        "y": 35.70496387078921
+      }
+    },
+    {
+      "attributes": {
+        "FID": 44540,
+        "LocationID": "0920000911",
+        "COUNTY": "WAKE",
+        "RTE_CLS": 4,
+        "ROUTE": "SR 1305",
+        "LOCATION": "EAST OF SR 1300",
+        "AADT_2002": " ",
+        "AADT_2003": "2000",
+        "AADT_2004": " ",
+        "AADT_2005": "2200",
+        "AADT_2006": " ",
+        "AADT_2007": "2700",
+        "AADT_2008": " ",
+        "AADT_2009": "2800",
+        "AADT_2010": " ",
+        "AADT_2011": "3100",
+        "AADT_2012": " ",
+        "AADT_2013": "3200",
+        "AADT_2014": " ",
+        "AADT_2015": "3400",
+        "AADT_2016": " ",
+        "AADT_2017": "4500",
+        "AADT_2018": " ",
+        "AADT_2019": " ",
+        "AADT_2020": " ",
+        "AADT_2021": " ",
+        "AADT_2022": " "
+      },
+      "geometry": {
+        "x": -78.79461901605613,
+        "y": 35.69799207357858
+      }
+    },
+    {
+      "attributes": {
+        "FID": 44833,
+        "LocationID": "0920001222",
+        "COUNTY": "WAKE",
+        "RTE_CLS": 4,
+        "ROUTE": "SR 1010",
+        "LOCATION": "EAST OF SR 1300",
+        "AADT_2002": " ",
+        "AADT_2003": "13000",
+        "AADT_2004": " ",
+        "AADT_2005": "14000",
+        "AADT_2006": " ",
+        "AADT_2007": " ",
+        "AADT_2008": " ",
+        "AADT_2009": "15000",
+        "AADT_2010": " ",
+        "AADT_2011": "15000",
+        "AADT_2012": " ",
+        "AADT_2013": "16000",
+        "AADT_2014": " ",
+        "AADT_2015": "16000",
+        "AADT_2016": " ",
+        "AADT_2017": "17000",
+        "AADT_2018": " ",
+        "AADT_2019": "17500",
+        "AADT_2020": " ",
+        "AADT_2021": "15500",
+        "AADT_2022": " "
+      },
+      "geometry": {
+        "x": -78.79251848214363,
+        "y": 35.70300884088848
+      }
+    },
+    {
+      "attributes": {
+        "FID": 44864,
+        "LocationID": "0920001260",
+        "COUNTY": "WAKE",
+        "RTE_CLS": 4,
+        "ROUTE": "SR 1010",
+        "LOCATION": "SOUTH OF SR 1379",
+        "AADT_2002": " ",
+        "AADT_2003": "19000",
+        "AADT_2004": " ",
+        "AADT_2005": "17000",
+        "AADT_2006": " ",
+        "AADT_2007": "19000",
+        "AADT_2008": " ",
+        "AADT_2009": "15000",
+        "AADT_2010": " ",
+        "AADT_2011": "20000",
+        "AADT_2012": " ",
+        "AADT_2013": "20000",
+        "AADT_2014": " ",
+        "AADT_2015": "19000",
+        "AADT_2016": " ",
+        "AADT_2017": "22000",
+        "AADT_2018": " ",
+        "AADT_2019": "25000",
+        "AADT_2020": " ",
+        "AADT_2021": "23000",
+        "AADT_2022": " "
+      },
+      "geometry": {
+        "x": -78.81034862988676,
+        "y": 35.71510930085677
+      }
+    }
+  ]
+}

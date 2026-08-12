@@ -1,0 +1,129 @@
+# EPA Map of Radon Zones -- North Carolina
+#
+# Authority:  https://www.epa.gov/sites/default/files/2014-08/documents/north_carolina.pdf
+#             (the EPA map itself is a map image, not a machine-readable table)
+# Transcribed county-by-county listing of that map: https://radonlevels.org/state/nc
+# State measured data / program:
+#   https://ncdhhs.gov/divisions/health-service-regulation/north-carolina-radon-program/nc-radon-data
+#
+# Verified 2026-08-11. The zone totals below (8 / 31 / 61 across 100 counties)
+# match the EPA distribution reported independently at
+# https://mapscaping.com/radon-zones-north-carolina/ -- scripts/tests/test-site-hazards.mjs
+# asserts those counts so a bad edit to this file fails the suite.
+#
+# Zone meanings (predicted average INDOOR radon screening level for the county):
+#   1  -- at or above 4 pCi/L   (highest potential)   -- 8 counties
+#   2  -- 2 to 4 pCi/L          (moderate potential)  -- 31 counties
+#   3  -- below 2 pCi/L         (low potential)       -- 61 counties
+#
+# This is a county-level screening predictor, not a measurement. Zone 3 does
+# NOT mean a given house is safe, and Zone 1 does not mean a given house is
+# elevated -- only a test of the specific home measures its actual level.
+# site-hazards-check.mjs renders that caveat alongside the zone.
+#
+# Keys are lowercase county names with no "County" suffix, matching the key
+# style of config/county-arcgis-registry.yml. The dataset is stable; this file
+# needs no live query.
+
+state: NC
+counties:
+  alamance: 3
+  alexander: 2
+  alleghany: 1
+  anson: 3
+  ashe: 2
+  avery: 2
+  beaufort: 3
+  bertie: 3
+  bladen: 3
+  brunswick: 3
+  buncombe: 1
+  burke: 2
+  cabarrus: 3
+  caldwell: 2
+  camden: 3
+  carteret: 3
+  caswell: 2
+  catawba: 2
+  chatham: 3
+  cherokee: 1
+  chowan: 3
+  clay: 2
+  cleveland: 2
+  columbus: 3
+  craven: 3
+  cumberland: 3
+  currituck: 3
+  dare: 3
+  davidson: 3
+  davie: 3
+  duplin: 3
+  durham: 3
+  edgecombe: 3
+  forsyth: 2
+  franklin: 2
+  gaston: 2
+  gates: 3
+  graham: 2
+  granville: 3
+  greene: 3
+  guilford: 3
+  halifax: 3
+  harnett: 3
+  haywood: 2
+  henderson: 1
+  hertford: 3
+  hoke: 3
+  hyde: 3
+  iredell: 2
+  jackson: 2
+  johnston: 3
+  jones: 3
+  lee: 3
+  lenoir: 3
+  lincoln: 2
+  macon: 2
+  madison: 2
+  martin: 3
+  mcdowell: 2
+  mecklenburg: 3
+  mitchell: 1
+  montgomery: 3
+  moore: 3
+  nash: 3
+  "new hanover": 3
+  northampton: 3
+  onslow: 3
+  orange: 3
+  pamlico: 3
+  pasquotank: 3
+  pender: 3
+  perquimans: 3
+  person: 3
+  pitt: 3
+  polk: 2
+  randolph: 3
+  richmond: 3
+  robeson: 3
+  rockingham: 1
+  rowan: 3
+  rutherford: 2
+  sampson: 3
+  scotland: 3
+  stanly: 3
+  stokes: 2
+  surry: 2
+  swain: 2
+  transylvania: 1
+  tyrrell: 3
+  union: 3
+  vance: 2
+  wake: 2
+  warren: 2
+  washington: 3
+  watauga: 1
+  wayne: 3
+  wilkes: 2
+  wilson: 3
+  yadkin: 2
+  yancey: 2

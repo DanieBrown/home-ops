@@ -15,6 +15,17 @@
 # discover script) at runtime. If county-sources.json is missing it falls
 # back to the built-in Wake County defaults.
 
+# parcelLayer (used by scripts/research/parcel-tax-check.mjs)
+# ----------------------------------------------------------
+# A county without a parcelLayer entry reports `unsupported` rather than
+# guessing at a service URL -- the same way county-permits-check.mjs reports
+# `unsupported-county`. Find one with:
+#   node scripts/research/county-services-discover.mjs --county <name>
+#
+# Field names differ by county, so each entry maps the county's own columns
+# onto the fields the snapshot needs. Only `url` and `addressField` are
+# required; anything unmapped is simply reported as unavailable.
+
 counties:
   wake:
     label: "Wake County, NC"
@@ -25,6 +36,43 @@ counties:
     folderHints:
       - "Planning"
       - "Infrastructure"
+    parcelLayer:
+      url: "https://maps.wake.gov/arcgis/rest/services/Property/Parcels/FeatureServer/0"
+      addressField: "SITE_ADDRESS"
+      fields:
+        parcelId: "PIN_NUM"
+        realEstateId: "REID"
+        owner: "OWNER"
+        acres: "DEED_ACRES"
+        landValue: "LAND_VAL"
+        improvementValue: "BLDG_VAL"
+        assessedValue: "TOTAL_VALUE_ASSD"
+        lastSalePrice: "TOTSALPRICE"
+        lastSaleDate: "SALE_DATE"
+        yearBuilt: "YEAR_BUILT"
+        heatedArea: "HEATEDAREA"
+        legalDescription: "PROPDESC"
+        jurisdiction: "PLANNING_JURISDICTION"
+    # Zoning is published per municipality on one MapServer; the layer whose
+    # name matches the home's town is queried, with County Zoning as fallback.
+    zoningLayers:
+      base: "https://maps.wake.gov/arcgis/rest/services/Planning/Zoning/MapServer"
+      classField: "CLASS"
+      byJurisdiction:
+        apex: 14
+        angier: 15
+        cary: 16
+        "fuquay-varina": 18
+        garner: 19
+        "holly springs": 20
+        knightdale: 21
+        morrisville: 22
+        raleigh: 23
+        rolesville: 24
+        "wake forest": 25
+        wendell: 26
+        zebulon: 27
+      countyFallback: 17
   harnett:
     label: "Harnett County, NC"
     state: "NC"
@@ -33,3 +81,6 @@ counties:
       - "Development"
       - "Planning"
       - "Trakit"
+    # No parcelLayer yet: the Harnett catalog has not been verified. Run
+    # county-services-discover.mjs against it and add the entry rather than
+    # guessing -- parcel-tax-check.mjs reports `unsupported` until then.

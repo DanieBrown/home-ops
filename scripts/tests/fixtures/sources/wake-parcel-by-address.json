@@ -1,0 +1,408 @@
+{
+  "objectIdFieldName": "OBJECTID",
+  "globalIdFieldName": "",
+  "geometryType": "esriGeometryPolygon",
+  "spatialReference": {
+    "wkid": 102719,
+    "latestWkid": 2264
+  },
+  "fields": [
+    {
+      "name": "OBJECTID",
+      "alias": "OBJECTID",
+      "type": "esriFieldTypeOID"
+    },
+    {
+      "name": "PIN_NUM",
+      "alias": "PIN_NUM",
+      "type": "esriFieldTypeString",
+      "length": 11
+    },
+    {
+      "name": "CALC_AREA",
+      "alias": "CALC_AREA",
+      "type": "esriFieldTypeDouble"
+    },
+    {
+      "name": "REID",
+      "alias": "REID",
+      "type": "esriFieldTypeString",
+      "length": 20
+    },
+    {
+      "name": "MAP_NAME",
+      "alias": "MAP_NAME",
+      "type": "esriFieldTypeString",
+      "length": 10
+    },
+    {
+      "name": "OWNER",
+      "alias": "OWNER",
+      "type": "esriFieldTypeString",
+      "length": 101
+    },
+    {
+      "name": "ADDR1",
+      "alias": "ADDR1",
+      "type": "esriFieldTypeString",
+      "length": 100
+    },
+    {
+      "name": "ADDR2",
+      "alias": "ADDR2",
+      "type": "esriFieldTypeString",
+      "length": 100
+    },
+    {
+      "name": "ADDR3",
+      "alias": "ADDR3",
+      "type": "esriFieldTypeString",
+      "length": 100
+    },
+    {
+      "name": "DEED_BOOK",
+      "alias": "DEED_BOOK",
+      "type": "esriFieldTypeString",
+      "length": 10
+    },
+    {
+      "name": "DEED_PAGE",
+      "alias": "DEED_PAGE",
+      "type": "esriFieldTypeString",
+      "length": 10
+    },
+    {
+      "name": "DEED_DATE",
+      "alias": "DEED_DATE",
+      "type": "esriFieldTypeDate",
+      "length": 8
+    },
+    {
+      "name": "DEED_ACRES",
+      "alias": "DEED_ACRES",
+      "type": "esriFieldTypeDouble"
+    },
+    {
+      "name": "BLDG_VAL",
+      "alias": "BLDG_VAL",
+      "type": "esriFieldTypeDouble"
+    },
+    {
+      "name": "LAND_VAL",
+      "alias": "LAND_VAL",
+      "type": "esriFieldTypeDouble"
+    },
+    {
+      "name": "TOTAL_VALUE_ASSD",
+      "alias": "TOTAL_VALUE_ASSD",
+      "type": "esriFieldTypeDouble"
+    },
+    {
+      "name": "BILLCLASS",
+      "alias": "BILLCLASS",
+      "type": "esriFieldTypeDouble"
+    },
+    {
+      "name": "BILLING_CLASS_DECODE",
+      "alias": "BILLING_CLASS_DECODE",
+      "type": "esriFieldTypeString",
+      "length": 20
+    },
+    {
+      "name": "PROPDESC",
+      "alias": "PROPDESC",
+      "type": "esriFieldTypeString",
+      "length": 250
+    },
+    {
+      "name": "HEATEDAREA",
+      "alias": "HEATEDAREA",
+      "type": "esriFieldTypeDouble"
+    },
+    {
+      "name": "STNAME",
+      "alias": "STNAME",
+      "type": "esriFieldTypeString",
+      "length": 25
+    },
+    {
+      "name": "STYPE",
+      "alias": "STYPE",
+      "type": "esriFieldTypeString",
+      "length": 4
+    },
+    {
+      "name": "STPRE",
+      "alias": "STPRE",
+      "type": "esriFieldTypeString",
+      "length": 2
+    },
+    {
+      "name": "STSUF",
+      "alias": "STSUF",
+      "type": "esriFieldTypeString",
+      "length": 2
+    },
+    {
+      "name": "STNUM",
+      "alias": "STNUM",
+      "type": "esriFieldTypeInteger"
+    },
+    {
+      "name": "STMISC",
+      "alias": "STMISC",
+      "type": "esriFieldTypeString",
+      "length": 6
+    },
+    {
+      "name": "SITE_ADDRESS",
+      "alias": "SITE_ADDRESS",
+      "type": "esriFieldTypeString",
+      "length": 77
+    },
+    {
+      "name": "FULL_STREET_NAME",
+      "alias": "FULL_STREET_NAME",
+      "type": "esriFieldTypeString",
+      "length": 36
+    },
+    {
+      "name": "CITY",
+      "alias": "CITY",
+      "type": "esriFieldTypeString",
+      "length": 8
+    },
+    {
+      "name": "CITY_DECODE",
+      "alias": "CITY_DECODE",
+      "type": "esriFieldTypeString",
+      "length": 50
+    },
+    {
+      "name": "PLANNING_JURISDICTION",
+      "alias": "PLANNING_JURISDICTION",
+      "type": "esriFieldTypeString",
+      "length": 8
+    },
+    {
+      "name": "TOWNSHIP",
+      "alias": "TOWNSHIP",
+      "type": "esriFieldTypeString",
+      "length": 8
+    },
+    {
+      "name": "TOWNSHIP_DECODE",
+      "alias": "TOWNSHIP_DECODE",
+      "type": "esriFieldTypeString",
+      "length": 50
+    },
+    {
+      "name": "FIREDIST",
+      "alias": "FIREDIST",
+      "type": "esriFieldTypeString",
+      "length": 8
+    },
+    {
+      "name": "YEAR_BUILT",
+      "alias": "YEAR_BUILT",
+      "type": "esriFieldTypeSmallInteger"
+    },
+    {
+      "name": "TOTSALPRICE",
+      "alias": "TOTSALPRICE",
+      "type": "esriFieldTypeDouble"
+    },
+    {
+      "name": "SALE_DATE",
+      "alias": "SALE_DATE",
+      "type": "esriFieldTypeDate",
+      "length": 8
+    },
+    {
+      "name": "TYPE_AND_USE",
+      "alias": "TYPE_AND_USE",
+      "type": "esriFieldTypeString",
+      "length": 8
+    },
+    {
+      "name": "TYPE_USE_DECODE",
+      "alias": "TYPE_USE_DECODE",
+      "type": "esriFieldTypeString",
+      "length": 20
+    },
+    {
+      "name": "DESIGNSTYL",
+      "alias": "DESIGNSTYL",
+      "type": "esriFieldTypeString",
+      "length": 8
+    },
+    {
+      "name": "DESIGN_STYLE_DECODE",
+      "alias": "DESIGN_STYLE_DECODE",
+      "type": "esriFieldTypeString",
+      "length": 20
+    },
+    {
+      "name": "UNITS",
+      "alias": "UNITS",
+      "type": "esriFieldTypeDouble"
+    },
+    {
+      "name": "LAND_CLASS",
+      "alias": "LAND_CLASS",
+      "type": "esriFieldTypeString",
+      "length": 3
+    },
+    {
+      "name": "LAND_CLASS_DECODE",
+      "alias": "LAND_CLASS_DECODE",
+      "type": "esriFieldTypeString",
+      "length": 80
+    },
+    {
+      "name": "EXEMPTDESC",
+      "alias": "EXEMPTDESC",
+      "type": "esriFieldTypeString",
+      "length": 20
+    },
+    {
+      "name": "EXEMPTSTAT",
+      "alias": "EXEMPTSTAT",
+      "type": "esriFieldTypeString",
+      "length": 8
+    },
+    {
+      "name": "OWNERSHIP",
+      "alias": "OWNERSHIP",
+      "type": "esriFieldTypeSmallInteger"
+    },
+    {
+      "name": "ACTIVITY",
+      "alias": "ACTIVITY",
+      "type": "esriFieldTypeSmallInteger"
+    },
+    {
+      "name": "FUNCTION",
+      "alias": "FUNCTION",
+      "type": "esriFieldTypeSmallInteger"
+    },
+    {
+      "name": "STRUCTURE",
+      "alias": "STRUCTURE",
+      "type": "esriFieldTypeSmallInteger"
+    },
+    {
+      "name": "SITE",
+      "alias": "SITE",
+      "type": "esriFieldTypeSmallInteger"
+    },
+    {
+      "name": "TOTSTRUCTS",
+      "alias": "TOTSTRUCTS",
+      "type": "esriFieldTypeSmallInteger"
+    },
+    {
+      "name": "TOTUNITS",
+      "alias": "TOTUNITS",
+      "type": "esriFieldTypeSmallInteger"
+    },
+    {
+      "name": "OLD_PARCEL_NUMBER",
+      "alias": "OLD_PARCEL_NUMBER",
+      "type": "esriFieldTypeString",
+      "length": 16
+    },
+    {
+      "name": "ZIPNUM",
+      "alias": "ZIPNUM",
+      "type": "esriFieldTypeString",
+      "length": 5
+    },
+    {
+      "name": "Shape__Area",
+      "alias": "SHAPE.AREA",
+      "type": "esriFieldTypeDouble"
+    },
+    {
+      "name": "Shape__Length",
+      "alias": "SHAPE.LEN",
+      "type": "esriFieldTypeDouble"
+    },
+    {
+      "name": "PARCEL_PK",
+      "alias": "PARCEL_PK",
+      "type": "esriFieldTypeInteger"
+    },
+    {
+      "name": "LAND_CODE",
+      "alias": "LAND_CODE",
+      "type": "esriFieldTypeString",
+      "length": 1
+    }
+  ],
+  "features": [
+    {
+      "attributes": {
+        "OBJECTID": 326001,
+        "PIN_NUM": "0751703521",
+        "CALC_AREA": 0.2106801,
+        "REID": "0433841",
+        "MAP_NAME": "0751 04",
+        "OWNER": "DUKHIN, YOKHAN BUKANOVA, SVETLANA",
+        "ADDR1": "2201 NEWLEAF DR",
+        "ADDR2": "APEX NC 27539-6263",
+        "ADDR3": null,
+        "DEED_BOOK": "017391",
+        "DEED_PAGE": "01487",
+        "DEED_DATE": 1553212800000,
+        "DEED_ACRES": 0.21,
+        "BLDG_VAL": 526411,
+        "LAND_VAL": 120000,
+        "TOTAL_VALUE_ASSD": 646411,
+        "BILLCLASS": 2,
+        "BILLING_CLASS_DECODE": "Individual",
+        "PROPDESC": "LO87 COLVIN PARK PH2&PT3 BM2015 -01808",
+        "HEATEDAREA": 3117,
+        "STNAME": "NEWLEAF",
+        "STYPE": "DR",
+        "STPRE": null,
+        "STSUF": null,
+        "STNUM": 2201,
+        "STMISC": null,
+        "SITE_ADDRESS": "2201 NEWLEAF DR",
+        "FULL_STREET_NAME": "NEWLEAF DR",
+        "CITY": "APE",
+        "CITY_DECODE": "APEX",
+        "PLANNING_JURISDICTION": "AP",
+        "TOWNSHIP": "20",
+        "TOWNSHIP_DECODE": "White Oak",
+        "FIREDIST": null,
+        "YEAR_BUILT": 2016,
+        "TOTSALPRICE": 415000,
+        "SALE_DATE": 1553212800000,
+        "TYPE_AND_USE": "01",
+        "TYPE_USE_DECODE": "SINGLFAM",
+        "DESIGNSTYL": "CVL",
+        "DESIGN_STYLE_DECODE": "Conventional",
+        "UNITS": 1,
+        "LAND_CLASS": "RHS",
+        "LAND_CLASS_DECODE": "Residential Less Than 10 Acres",
+        "EXEMPTDESC": null,
+        "EXEMPTSTAT": null,
+        "OWNERSHIP": 1010,
+        "ACTIVITY": 1100,
+        "FUNCTION": 1100,
+        "STRUCTURE": 1110,
+        "SITE": 6100,
+        "TOTSTRUCTS": 1,
+        "TOTUNITS": 1,
+        "OLD_PARCEL_NUMBER": "--",
+        "ZIPNUM": "27539",
+        "Shape__Area": 9177.22504836432,
+        "Shape__Length": 397.289696762813,
+        "PARCEL_PK": 452845,
+        "LAND_CODE": "R"
+      }
+    }
+  ]
+}

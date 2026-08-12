@@ -1,0 +1,55 @@
+# Property tax rates used to ESTIMATE an annual bill from a county-assessed value.
+#
+# Rates are dollars per $100 of assessed value, the North Carolina convention.
+#
+# What this can and cannot do
+# ---------------------------
+# parcel-tax-check.mjs multiplies (assessed value / 100) by the county rate plus
+# the municipal rate for the home's jurisdiction. That is an ESTIMATE and is
+# always labelled one. It deliberately excludes special district levies -- fire,
+# solid waste, stormwater, downtown/municipal service districts -- which vary by
+# parcel and can add materially to the real bill.
+#
+# It is never a tax quote. The authoritative number is the county's own bill
+# lookup for the specific parcel; the sidecar always carries that link.
+#
+# A jurisdiction with no rate here reports the tax estimate as `unsupported`
+# rather than guessing. Add rates rather than let the script infer them.
+#
+# Verified 2026-08-11.
+
+state: NC
+fiscalYear: "2025-2026"
+
+counties:
+  wake:
+    label: "Wake County, NC"
+    rate: 0.5171
+    source: "https://www.wake.gov/departments-government/tax-administration"
+    note: "County-wide rate. Special district levies are not included."
+
+municipalities:
+  apex:
+    label: "Town of Apex"
+    rate: 0.356
+    county: wake
+    source: "https://www.apexnc.org/"
+  "holly springs":
+    label: "Town of Holly Springs"
+    rate: 0.3435
+    county: wake
+    source: "https://www.hollyspringsnc.gov/186/Taxes"
+  "fuquay-varina":
+    label: "Town of Fuquay-Varina"
+    rate: 0.358
+    county: wake
+    source: "https://www.fuquay-varina.org/"
+
+# Official per-parcel bill lookups. These are always emitted alongside the
+# estimate so the buyer can confirm the real number, including the district
+# levies this file leaves out.
+billLookups:
+  wake:
+    name: "Wake County real estate tax bill search"
+    url: "https://services.wake.gov/realestate/"
+    instructions: "Search by street address or PIN, then open the parcel's Tax Bill tab for the billed amount and every district levy applied to it."

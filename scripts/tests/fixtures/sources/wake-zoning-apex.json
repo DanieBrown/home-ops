@@ -1,0 +1,50 @@
+{
+  "displayFieldName": "CLASS",
+  "fieldAliases": {
+    "OBJECTID": "OBJECTID",
+    "CLASS": "CLASS",
+    "SHAPE.AREA": "SHAPE.AREA",
+    "SHAPE.LEN": "SHAPE.LEN"
+  },
+  "fields": [
+    {
+      "name": "OBJECTID",
+      "type": "esriFieldTypeOID",
+      "alias": "OBJECTID"
+    },
+    {
+      "name": "CLASS",
+      "type": "esriFieldTypeString",
+      "alias": "CLASS",
+      "length": 10
+    },
+    {
+      "name": "SHAPE.AREA",
+      "type": "esriFieldTypeDouble",
+      "alias": "SHAPE.AREA"
+    },
+    {
+      "name": "SHAPE.LEN",
+      "type": "esriFieldTypeDouble",
+      "alias": "SHAPE.LEN"
+    }
+  ],
+  "features": [
+    {
+      "attributes": {
+        "OBJECTID": 12261,
+        "CLASS": "MD-CZ",
+        "SHAPE.AREA": 3063330.49481762,
+        "SHAPE.LEN": 9411.2061890946
+      }
+    },
+    {
+      "attributes": {
+        "OBJECTID": 12306,
+        "CLASS": "RR",
+        "SHAPE.AREA": 185829682.738098,
+        "SHAPE.LEN": 761279.797169881
+      }
+    }
+  ]
+}

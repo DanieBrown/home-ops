@@ -1,0 +1,36 @@
+{
+  "Table": [
+    [
+      "cokey",
+      "compname",
+      "comppct_r",
+      "mrulename",
+      "interphr",
+      "interphrc"
+    ],
+    [
+      "26473974",
+      "Appling",
+      "4",
+      "ENG - Septic Tank Absorption Fields",
+      "0.498",
+      "Somewhat limited"
+    ],
+    [
+      "26473975",
+      "Pacolet",
+      "2",
+      "ENG - Septic Tank Absorption Fields",
+      "0.819",
+      "Somewhat limited"
+    ],
+    [
+      "26473976",
+      "Wedowee",
+      "94",
+      "ENG - Septic Tank Absorption Fields",
+      "0.498",
+      "Somewhat limited"
+    ]
+  ]
+}

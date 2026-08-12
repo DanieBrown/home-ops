@@ -117,3 +117,12 @@ research_sources:
 workflow:
   shortlist:
     preserve_on_reset: true                  # keep data/shortlist.md during recurring reset/hunt runs
+
+access:
+  # What counts as "major road adjacency" for the Resale / Risk cap in
+  # modes/_shared.md. access-check.mjs reads the nearest NCDOT AADT station
+  # and applies these thresholds; they are buyer preferences, not system
+  # constants, which is why they live here and not in modes/_shared.md.
+  busy_road_aadt: 15000                      # annual average daily traffic
+  busy_road_distance_meters: 250             # how close that road has to be
+  aadt_search_radius_meters: 2000            # how far to look for a station
