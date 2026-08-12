@@ -53,8 +53,9 @@ deep-single-runner.mjs        →  extract-listing-details + school-assignments-
         ↓
 deep-single-final-runner.mjs  →  research-source-plan, community-lookup, sentiment-browser-extract,
                                   sentiment-public-extract, construction-check, county-permits-check,
-                                  builder-check, school-metadata-fetch, hoa-docs-check,
-                                  utility-options-check, deep-research-packet
+                                  site-hazards-check, parcel-tax-check, access-check, builder-check,
+                                  school-metadata-fetch, hoa-docs-check, utility-options-check,
+                                  deep-research-packet
         ↓ (gate: deep-research-packet-single)
 [3 axis agents in parallel]   →  Sentiment, Risk & Builder, Schools
         ↓
@@ -72,7 +73,7 @@ briefing-pdf.mjs --report ... →  output/briefings/{slug}-deep-{date}.pdf
 
 Multi-URL flow uses the same gates, repeated per-URL during capture, with one combined `briefing-pdf.mjs --reports …` call at the end. The combined call satisfies the same `briefing-pdf-deep-single` gate — exactly **one** PDF is produced per deep run regardless of single-URL vs. multi-URL input.
 
-Batch flow (`deep-shortlist` contract): see Phase A/B/C below. Every Phase A capture step is a gate — `research-audit`, `research-source-plan`, `community-lookup`, `sentiment-extract`, `sentiment-public-extract`, `construction-check`, `county-permits-check`, `school-metadata-fetch`, `builder-check`, `hoa-docs-check`, `utility-options-check` — and all ten captures are prereqs of `deep-research-packet`, followed by `axis-sidecar`, `promote-finalists`, `finalist-gate`, `review-tabs-top3`, and `briefing-pdf`.
+Batch flow (`deep-shortlist` contract): see Phase A/B/C below. Every Phase A capture step is a gate — `research-audit`, `research-source-plan`, `community-lookup`, `sentiment-extract`, `sentiment-public-extract`, `construction-check`, `county-permits-check`, `school-metadata-fetch`, `builder-check`, `hoa-docs-check`, `utility-options-check`, `site-hazards-check`, `parcel-tax-check`, `access-check` — and all thirteen captures are prereqs of `deep-research-packet`, followed by `axis-sidecar`, `promote-finalists`, `finalist-gate`, `review-tabs-top3`, and `briefing-pdf`.
 
 ## Run-to-Completion Contract
 
@@ -125,7 +126,7 @@ Run the post-eval runner. Pass the report path from Phase 1. This blocks until a
 node scripts/pipeline/deep-single-final-runner.mjs --report reports/{N}-{slug}-{YYYY-MM-DD}.md --profile chrome-host
 ```
 
-This runner sequentially runs: research-source-plan, community-lookup, sentiment-browser-extract, sentiment-public-extract, construction-check, county-permits-check, builder-check, school-metadata-fetch, hoa-docs-check, utility-options-check, and deep-research-packet. All steps produce JSON sidecars under `output/`. The runner exits 0 when the deep-research-packet succeeds (all other failures are soft).
+This runner sequentially runs: research-source-plan, community-lookup, sentiment-browser-extract, sentiment-public-extract, construction-check, county-permits-check, site-hazards-check, parcel-tax-check, access-check, builder-check, school-metadata-fetch, hoa-docs-check, utility-options-check, and deep-research-packet. All steps produce JSON sidecars under `output/`. The runner exits 0 when the deep-research-packet succeeds (all other failures are soft).
 
 ### Phase 3 — Three Axis Agents
 
@@ -233,7 +234,7 @@ Post a final summary: all eval report paths, all brief paths, the combined brief
 
 ### Phase A — Deterministic Capture (no agents)
 
-**Steps 4a–4j run concurrently.** Use `run_in_background` Bash calls or `Start-Job` on Windows PowerShell. Wait for all to finish before Phase B.
+**Steps 4a–4m run concurrently.** Use `run_in_background` Bash calls or `Start-Job` on Windows PowerShell. Wait for all to finish before Phase B.
 
 All steps use `--shortlist`. Every one of them is a `deep-shortlist` contract requirement and a prereq of `deep-research-packet` — skipping one stalls the packet gate.
 
@@ -247,6 +248,9 @@ All steps use `--shortlist`. Every one of them is a `deep-shortlist` contract re
 - **4h:** `node scripts/research/builder-check.mjs --shortlist`
 - **4i:** `node scripts/research/hoa-docs-check.mjs --shortlist`
 - **4j:** `node scripts/research/utility-options-check.mjs --shortlist`
+- **4k:** `node scripts/research/site-hazards-check.mjs --shortlist`
+- **4l:** `node scripts/research/parcel-tax-check.mjs --shortlist`
+- **4m:** `node scripts/research/access-check.mjs --shortlist --profile chrome-host`
 
 5. Wait for all Phase A jobs to finish. Surface any failures in the brief rather than silently proceeding.
 

@@ -1,6 +1,6 @@
 ---
 name: risk-builder-axis
-description: Use during /home-ops deep runs to interpret pre-captured construction, county-permit, and builder JSON sidecars into a structured per-home risk and builder-quality object. Reads JSON-first; may re-run targeted capture scripts against the user's established browser session when a sidecar is missing. Never uses WebFetch or WebSearch.
+description: Use during /home-ops deep runs to interpret pre-captured construction, county-permit, builder, site-hazard, and road-access JSON sidecars into a structured per-home risk and builder-quality object. Reads JSON-first; may re-run targeted capture scripts against the user's established browser session when a sidecar is missing. Never uses WebFetch or WebSearch.
 tools: Read, Grep, Glob, Bash
 model: sonnet
 ---
@@ -19,6 +19,9 @@ For each home (identified by `slug`), expect:
 - `output/construction/{slug}.json` — NCDOT projects within the search radius
 - `output/permits/{slug}.json` — county-permits spatial query results
 - `output/builder/{slug}.json` — builder reputation lookup (may be missing if no builder detected)
+- `output/hazards/{slug}.json` — FEMA flood zone, wetlands, radon zone, EPA sites, septic soil, airport noise
+- `output/access/{slug}.json` — nearest NCDOT AADT count station, busy-road exposure, drive times
+- `output/parcel/{slug}.json` — parcel, assessed value, estimated tax, zoning (context for resale risk)
 - `output/source-plan/{slug}.json` — sources the planner targeted
 - `output/deep-packets/{slug}.json` — includes `sourcePlans.development.propertyPermitGuides` for buyer-facing manual permit lookup links
 - `buyer-profile.md`, `config/profile.yml` — buyer commute destinations, weights
@@ -42,7 +45,49 @@ Also accept any explicit paths the parent agent passes you.
      node scripts/research/builder-check.mjs --address "<address>" --city "<city>" --state "<state>" --profile chrome-host
      ```
    Extract address/city/state from `output/listings/{slug}.json` or the report header. Run at most one script per missing sidecar per home.
+   - Missing `output/hazards/{slug}.json`, `output/access/{slug}.json`, or `output/parcel/{slug}.json`:
+     ```
+     node scripts/research/site-hazards-check.mjs <report-path>
+     node scripts/research/access-check.mjs <report-path> --profile chrome-host
+     node scripts/research/parcel-tax-check.mjs <report-path>
+     ```
 3. **Provenance.** Tag every datapoint with `source: "sidecar"` or `source: "fallback-capture"`.
+
+## Site hazards and road access
+
+These sidecars are deterministic and already carry their own provenance. Each
+dimension has a `provenance` of `captured`, `unconfirmed`, `blocked`,
+`unsupported`, or `not-applicable`. Your job is to interpret them, not to
+re-derive them.
+
+**Only `captured` licenses a factual claim.** The other four states are all
+forms of "we do not know", and they are not interchangeable with "clear":
+
+- `blocked` — the source was unreachable. Report it as an open question and
+  lower confidence. A blocked FEMA query is **not** a home outside the flood
+  zone. A blocked NCDOT query is **not** a quiet street.
+- `unconfirmed` — checked, inconclusive. Same treatment, without the alarm.
+- `unsupported` — nothing queryable exists for this county or jurisdiction.
+- `not-applicable` — the dimension genuinely does not apply (public sewer makes
+  septic suitability moot; a home far from RDU is outside the modelled noise
+  contours, which is not a finding that it is quiet).
+
+Specifics:
+
+- **Flood.** `hazards.dimensions.flood` carries the FEMA zone and
+  `floodIsSFHA`. A home inside a Special Flood Hazard Area is a material risk
+  regardless of what the listing says. Never infer flood status from listing
+  prose — that is exactly what this sidecar replaced.
+- **Road adjacency.** `access.busyRoadExposure.exposed` is computed from the
+  nearest NCDOT count station's AADT and distance against the buyer's
+  thresholds in `config/profile.yml`. Cite the route, the count, the survey
+  year, and the distance. NCDOT does not count subdivision streets, so an
+  uncounted street is unmeasured, not quiet.
+- **Environmental.** Report superfund and brownfield sites separately from
+  routine regulated facilities; `serious: false` records are permits, not
+  contamination findings.
+- **Radon.** A county zone is a screening predictor, never a measurement of
+  this house. Say so whenever you report it.
 
 ## Hard rules
 
@@ -72,10 +117,28 @@ Also accept any explicit paths the parent agent passes you.
     "qualityNote": "one paragraph",
     "riskContribution": -0.2
   },
+  "siteHazards": {
+    "floodZone": "X|AE|VE|...",
+    "inSpecialFloodHazardArea": true,
+    "wetlands": "...",
+    "radonZone": "Zone 1|Zone 2|Zone 3",
+    "environmentalSites": [{ "name": "...", "programLabel": "...", "distanceMiles": 0.0 }],
+    "septicSuitability": "...",
+    "airportNoise": "...",
+    "openQuestions": ["dimensions that came back blocked or unconfirmed"]
+  },
+  "roadAccess": {
+    "nearestRoad": { "route": "...", "aadt": 0, "aadtYear": 2021, "distanceMeters": 0 },
+    "busyRoadExposure": true,
+    "driveTimes": [{ "name": "...", "freeFlowMinutes": 0, "peakMinutes": 0 }],
+    "openQuestions": ["..."]
+  },
   "sourceCoverage": {
     "ncdot":   "captured|missing|fallback-capture|fallback-failed",
     "county":  "...",
     "builder": "captured|not-applicable|missing|fallback-capture|fallback-failed",
+    "hazards": "captured|blocked|missing|fallback-capture|fallback-failed",
+    "access":  "captured|blocked|missing|fallback-capture|fallback-failed",
     "manualPropertyPermits": "provided|missing"
   },
   "manualPropertyPermitLookup": [
@@ -91,9 +154,13 @@ For property permit history on the specific home, do not invent automated result
 
 ## Risk level rubric
 
-- **high**: any active NCDOT project ≤1mi OR ≥3 active county permits ≤0.5mi OR a flagged builder with `overallScore < 3`
-- **moderate**: ≤2 active permits ≤1mi OR builder with `overallScore` 3–4
-- **low**: no nearby pressure OR only completed/long-term-planning projects
+- **high**: the home is in a FEMA Special Flood Hazard Area OR `busyRoadExposure` is true OR any active NCDOT project ≤1mi OR ≥3 active county permits ≤0.5mi OR a flagged builder with `overallScore < 3`
+- **moderate**: ≤2 active permits ≤1mi OR builder with `overallScore` 3–4 OR a superfund/brownfield site within 1 mi
+- **low**: no nearby pressure, no SFHA, no busy-road exposure, and only completed or long-term-planning projects
+
+A `blocked` or `unconfirmed` hazard read does **not** raise the risk level on
+its own — absence of evidence is not evidence. It does lower `confidence` and
+must appear in the relevant `openQuestions` array.
 
 ## When you cannot proceed
 

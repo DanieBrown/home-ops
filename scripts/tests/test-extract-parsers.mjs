@@ -4,7 +4,13 @@
  * Run: node scripts/tests/test-extract-parsers.mjs
  */
 import assert from 'node:assert/strict';
-import { pickJsonLdResidence, fromJsonLdResidence, normalizeListingStatus } from '../research/extract-listing-details.mjs';
+import {
+  pickJsonLdResidence,
+  fromJsonLdResidence,
+  normalizeListingStatus,
+  normalizePriceHistory,
+  derivePriceMovement,
+} from '../research/extract-listing-details.mjs';
 
 let passed = 0;
 let failed = 0;
@@ -186,6 +192,90 @@ test('normalizeListingStatus: in-stock string → active', () => {
 test('normalizeListingStatus: sold body text → sold', () => {
   const result = normalizeListingStatus('', 'This property has been sold.');
   assert.equal(result, 'sold');
+});
+
+// ---------------------------------------------------------------------------
+// normalizePriceHistory — portals disagree on field names and date encoding
+// ---------------------------------------------------------------------------
+
+test('normalizePriceHistory: zillow shape (ISO date, event, price)', () => {
+  const result = normalizePriceHistory([
+    { date: '2026-05-02', event: 'Price change', price: 615000 },
+    { date: '2026-03-14', event: 'Listed for sale', price: 649000 },
+  ]);
+  assert.equal(result.length, 2);
+  assert.deepEqual(result[0], { date: '2026-05-02', event: 'Price change', price: 615000 });
+});
+
+test('normalizePriceHistory: redfin shape (epoch ms, eventDescription)', () => {
+  const result = normalizePriceHistory([
+    { eventDate: Date.UTC(2026, 2, 14), eventDescription: 'Listed', price: 649000 },
+  ]);
+  assert.equal(result[0].date, '2026-03-14');
+  assert.equal(result[0].event, 'Listed');
+  assert.equal(result[0].price, 649000);
+});
+
+test('normalizePriceHistory: sorts newest first regardless of input order', () => {
+  const result = normalizePriceHistory([
+    { date: '2026-01-01', event: 'Listed', price: 700000 },
+    { date: '2026-06-01', event: 'Price change', price: 650000 },
+    { date: '2026-03-01', event: 'Price change', price: 675000 },
+  ]);
+  assert.deepEqual(result.map((e) => e.date), ['2026-06-01', '2026-03-01', '2026-01-01']);
+});
+
+test('normalizePriceHistory: drops entries with neither date nor price', () => {
+  const result = normalizePriceHistory([{ event: 'Nothing useful' }, { date: '2026-01-01', price: 100 }]);
+  assert.equal(result.length, 1);
+});
+
+test('normalizePriceHistory: non-array input is empty, never null', () => {
+  assert.deepEqual(normalizePriceHistory(null), []);
+  assert.deepEqual(normalizePriceHistory(undefined), []);
+  assert.deepEqual(normalizePriceHistory('nope'), []);
+});
+
+// ---------------------------------------------------------------------------
+// derivePriceMovement — the resale signal a day count alone does not carry
+// ---------------------------------------------------------------------------
+
+test('derivePriceMovement: two cuts off the original list', () => {
+  const history = normalizePriceHistory([
+    { date: '2026-03-01', event: 'Listed for sale', price: 700000 },
+    { date: '2026-04-01', event: 'Price change', price: 675000 },
+    { date: '2026-05-01', event: 'Price change', price: 650000 },
+  ]);
+  const movement = derivePriceMovement(history, 650000);
+  assert.equal(movement.originalListPrice, 700000);
+  assert.equal(movement.currentPrice, 650000);
+  assert.equal(movement.totalCutAmount, 50000);
+  assert.equal(movement.totalCutPct, 7.1);
+  assert.equal(movement.cutCount, 2);
+  assert.equal(movement.daysToFirstCut, 31);
+});
+
+test('derivePriceMovement: no cuts reports zero, not null', () => {
+  const history = normalizePriceHistory([{ date: '2026-03-01', event: 'Listed for sale', price: 700000 }]);
+  const movement = derivePriceMovement(history, 700000);
+  assert.equal(movement.cutCount, 0);
+  assert.equal(movement.totalCutAmount, 0);
+  assert.equal(movement.daysToFirstCut, null);
+});
+
+test('derivePriceMovement: a price increase is not counted as a cut', () => {
+  const history = normalizePriceHistory([
+    { date: '2026-03-01', event: 'Listed for sale', price: 650000 },
+    { date: '2026-04-01', event: 'Price change', price: 675000 },
+  ]);
+  const movement = derivePriceMovement(history, 675000);
+  assert.equal(movement.cutCount, 0);
+  assert.equal(movement.totalCutAmount, 0);
+});
+
+test('derivePriceMovement: empty history is null, never a fabricated zero', () => {
+  assert.equal(derivePriceMovement([], 650000), null);
+  assert.equal(derivePriceMovement(null, 650000), null);
 });
 
 // ---------------------------------------------------------------------------

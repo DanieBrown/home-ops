@@ -37,6 +37,9 @@ const PHASE_A = [
   ['builder-check', 'builder-check'],
   ['hoa-docs-check', 'hoa-docs-check'],
   ['utility-options-check', 'utility-options-check'],
+  ['site-hazards-check', 'site-hazards-check'],
+  ['parcel-tax-check', 'parcel-tax-check'],
+  ['access-check', 'access-check'],
 ];
 
 const phaseAStart = deepDoc.indexOf('### Phase A');

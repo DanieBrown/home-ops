@@ -195,12 +195,36 @@ export const CONTRACTS = {
         withTarget(/deep-single-final-runner\.mjs\b/),
         withTarget(/npm(?:\.cmd)?\s+run\s+deep:single-final\b/),
       ], { requires: ['research-source-plan-single'] }),
+      req('site-hazards-check-single', 'Single-home site hazards (flood, wetlands, radon, EPA sites, septic, airport noise)', [
+        withTarget(/site-hazards-check\.mjs\b/),
+        withTarget(/npm(?:\.cmd)?\s+run\s+hazards:check\b/),
+        withTarget(/deep-single-final-runner\.mjs\b/),
+        withTarget(/npm(?:\.cmd)?\s+run\s+deep:single-final\b/),
+      ], { requires: ['research-source-plan-single'] }),
+      req('parcel-tax-check-single', 'Single-home parcel, assessment, tax estimate, and zoning', [
+        withTarget(/parcel-tax-check\.mjs\b/),
+        withTarget(/npm(?:\.cmd)?\s+run\s+parcel:check\b/),
+        withTarget(/deep-single-final-runner\.mjs\b/),
+        withTarget(/npm(?:\.cmd)?\s+run\s+deep:single-final\b/),
+      ], { requires: ['research-source-plan-single'] }),
+      req('access-check-single', 'Single-home road adjacency, AADT, and drive times', [
+        withTarget(/access-check\.mjs\b/),
+        withTarget(/npm(?:\.cmd)?\s+run\s+access:check\b/),
+        withTarget(/deep-single-final-runner\.mjs\b/),
+        withTarget(/npm(?:\.cmd)?\s+run\s+deep:single-final\b/),
+      ], { requires: ['research-source-plan-single'] }),
       req('deep-research-packet-single', 'Single-home deep research packet assembly', [
         withTarget(/deep-research-packet\.mjs\b/),
         withTarget(/deep-single-final-runner\.mjs\b/),
         withTarget(/npm(?:\.cmd)?\s+run\s+deep:single-final\b/),
       ], {
-        requires: ['research-source-plan-single', 'community-lookup-single', 'sentiment-extract-single', 'sentiment-public-extract-single', 'construction-check-single', 'county-permits-check-single', 'school-metadata-fetch-single', 'builder-check-single', 'hoa-docs-check-single', 'utility-options-check-single'],
+        requires: [
+          'research-source-plan-single', 'community-lookup-single', 'sentiment-extract-single',
+          'sentiment-public-extract-single', 'construction-check-single', 'county-permits-check-single',
+          'site-hazards-check-single', 'parcel-tax-check-single', 'access-check-single',
+          'school-metadata-fetch-single', 'builder-check-single', 'hoa-docs-check-single',
+          'utility-options-check-single',
+        ],
         isGate: true,
       }),
       req('axis-sidecar', 'Persist merged axis-agent outputs to output/axis/{slug}.json', [
@@ -265,6 +289,18 @@ export const CONTRACTS = {
         /utility-options-check\.mjs[^\n]*--shortlist/,
         /npm(?:\.cmd)?\s+run\s+utilities:check[^\n]*--shortlist/,
       ], { requires: ['research-audit'], isGate: true }),
+      req('site-hazards-check', 'Shortlist site hazards — flood, wetlands, radon, EPA sites, septic, airport (fan-out 4k)', [
+        /site-hazards-check\.mjs[^\n]*--shortlist/,
+        /npm(?:\.cmd)?\s+run\s+hazards:check[^\n]*--shortlist/,
+      ], { requires: ['research-audit'], isGate: true }),
+      req('parcel-tax-check', 'Shortlist parcel, assessment, tax estimate, and zoning (fan-out 4l)', [
+        /parcel-tax-check\.mjs[^\n]*--shortlist/,
+        /npm(?:\.cmd)?\s+run\s+parcel:check[^\n]*--shortlist/,
+      ], { requires: ['research-audit'], isGate: true }),
+      req('access-check', 'Shortlist road adjacency, AADT, and drive times (fan-out 4m)', [
+        /access-check\.mjs[^\n]*--shortlist/,
+        /npm(?:\.cmd)?\s+run\s+access:check[^\n]*--shortlist/,
+      ], { requires: ['research-audit'], isGate: true }),
       req('deep-research-packet', 'Deep research packets per shortlisted home', [
         /deep-research-packet\.mjs[^\n]*--shortlist/,
         /npm(?:\.cmd)?\s+run\s+prepare:deep[^\n]*--shortlist/,
@@ -273,6 +309,7 @@ export const CONTRACTS = {
           'research-source-plan', 'community-lookup', 'sentiment-extract', 'construction-check',
           'sentiment-public-extract', 'county-permits-check', 'school-metadata-fetch',
           'builder-check', 'hoa-docs-check', 'utility-options-check',
+          'site-hazards-check', 'parcel-tax-check', 'access-check',
         ],
         isGate: true,
       }),
@@ -297,6 +334,7 @@ export const CONTRACTS = {
           'research-audit', 'research-source-plan', 'community-lookup', 'sentiment-extract',
           'construction-check', 'sentiment-public-extract', 'county-permits-check',
           'school-metadata-fetch', 'builder-check', 'hoa-docs-check', 'utility-options-check',
+          'site-hazards-check', 'parcel-tax-check', 'access-check',
           'deep-research-packet', 'promote-finalists', 'finalist-gate',
         ],
       }),

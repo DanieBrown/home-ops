@@ -12,6 +12,7 @@ import {
   buildSentimentSourcePlan,
   getCriticalAuditFindings,
   loadResearchConfig,
+  normalizeKey,
   parseReport,
   parseShortlist,
 } from './research-utils.mjs';
@@ -25,6 +26,9 @@ const COMMUNITY_DIR = join(ROOT, 'output', 'communities');
 const BUILDER_DIR = join(ROOT, 'output', 'builder');
 const HOA_DIR = join(ROOT, 'output', 'hoa');
 const UTILITY_DIR = join(ROOT, 'output', 'utilities');
+const HAZARDS_DIR = join(ROOT, 'output', 'hazards');
+const PARCEL_DIR = join(ROOT, 'output', 'parcel');
+const ACCESS_DIR = join(ROOT, 'output', 'access');
 // Composite weights. construction_pressure is a modifier applied to resale_risk
 // rather than a new top-level slot so the sum still equals 1.0. Schools are no
 // longer a scored dimension -- they are captured as metadata on the report.
@@ -116,12 +120,60 @@ function buildUtilityPath(target) {
   return join(UTILITY_DIR, `${slug}.json`);
 }
 
+function buildSnapshotPath(dir, target) {
+  const slug = slugify(`${target.address}-${target.city}-${target.state || 'NC'}`) || 'deep-target';
+  return join(dir, `${slug}.json`);
+}
+
 function readJsonIfExists(filePath) {
   if (!existsSync(filePath)) {
     return null;
   }
 
   return JSON.parse(readFileSync(filePath, 'utf8'));
+}
+
+/**
+ * Folds one snapshot sidecar (hazards / parcel / access) into the packet.
+ *
+ * The sidecar's address must match the report's before anything is consumed --
+ * the same rule DATA_CONTRACT.md states for utilities. Slugs collide across
+ * similarly named streets, and attaching another home's flood zone or
+ * assessment to this report would be worse than reporting nothing.
+ */
+function summarizeSnapshotSidecar(record, filePath, target, kind) {
+  if (!record) {
+    return {
+      filePath: null,
+      status: 'not-run',
+      confidence: null,
+      dimensions: {},
+      sourceCoverage: [],
+      note: `${kind} capture has not run for this home. Treat every ${kind} dimension as unconfirmed.`,
+    };
+  }
+
+  const sameAddress = normalizeKey(record.address, record.city) === normalizeKey(target.address, target.city);
+  if (!sameAddress) {
+    return {
+      filePath: toWorkspacePath(filePath),
+      status: 'address-mismatch',
+      confidence: null,
+      dimensions: {},
+      sourceCoverage: [],
+      note: `${kind} sidecar is for "${record.address}, ${record.city}" but this report is "${target.address}, ${target.city}". Not consumed.`,
+    };
+  }
+
+  return {
+    filePath: toWorkspacePath(filePath),
+    status: record.status ?? 'reviewed',
+    confidence: record.confidence ?? null,
+    dimensions: record.dimensions ?? {},
+    sourceCoverage: record.sourceCoverage ?? [],
+    warnings: record.warnings ?? [],
+    note: null,
+  };
 }
 
 function inferSourceStatus(queryResults) {
@@ -421,6 +473,13 @@ async function buildPacket(target, researchContext) {
   const utilityPath = buildUtilityPath(target);
   const utilityRecord = readJsonIfExists(utilityPath);
   const utilitySummary = summarizeUtilityOptions(utilityRecord, utilityPath);
+
+  const hazardsPath = buildSnapshotPath(HAZARDS_DIR, target);
+  const parcelPath = buildSnapshotPath(PARCEL_DIR, target);
+  const accessPath = buildSnapshotPath(ACCESS_DIR, target);
+  const hazardsSummary = summarizeSnapshotSidecar(readJsonIfExists(hazardsPath), hazardsPath, target, 'site hazards');
+  const parcelSummary = summarizeSnapshotSidecar(readJsonIfExists(parcelPath), parcelPath, target, 'parcel/tax');
+  const accessSummary = summarizeSnapshotSidecar(readJsonIfExists(accessPath), accessPath, target, 'access');
   const communityPath = buildCommunityPath(target);
   const communityEvidence = readJsonIfExists(communityPath);
   const audit = auditParsedReport(target);
@@ -532,6 +591,11 @@ async function buildPacket(target, researchContext) {
       openQuestions: hoaRecord?.openQuestions ?? [],
     },
     utilityOptionsEvidence: utilitySummary,
+    // The property snapshot: deterministic, cited, provenance-tagged facts
+    // that used to be inferred from listing prose or not captured at all.
+    siteHazardsEvidence: hazardsSummary,
+    parcelTaxEvidence: parcelSummary,
+    accessEvidence: accessSummary,
     reportSections: {
       neighborhoodSentiment: target.sections['Neighborhood Sentiment'],
       schoolReview: target.sections['School Review'],
@@ -555,6 +619,10 @@ async function buildPacket(target, researchContext) {
       'Include builder reputation in the Risk & Builder Quality section when builderEvidence.status is "found". If status is "not-found" or "no-builder-detected", omit the builder section rather than speculating.',
       'Include HOA rules only from hoaRulesEvidence when status is "captured" or "partial"; otherwise mark HOA rules as unconfirmed and request the resale/disclosure packet.',
       'Use utilityOptionsEvidence for utility/provider billing assumptions. Treat blocked, unconfirmed, and address-gated provider data as a gap, never as confirmed availability.',
+      'siteHazardsEvidence, parcelTaxEvidence, and accessEvidence carry one entry per dimension with a provenance of captured, unconfirmed, blocked, unsupported, or not-applicable. Only "captured" licenses a factual claim. A "blocked" dimension means the source could not be reached -- report it as an open question and lower confidence; never write it up as no hazard found, no busy road, or no tax burden.',
+      'Flood exposure comes from siteHazardsEvidence.dimensions.flood (FEMA NFHL), never from listing text. Major road adjacency comes from accessEvidence.dimensions.nearestRoad (NCDOT AADT) with its measured distance, never from the words "busy road" in a listing description.',
+      'Property taxes come from parcelTaxEvidence.dimensions.estimatedTax and are an estimate that excludes special district levies. Always present the county bill lookup alongside it and never state it as the actual bill.',
+      'A snapshot sidecar whose status is "address-mismatch" was written for a different home and must not be used at all.',
     ],
   };
 
@@ -573,6 +641,12 @@ async function buildPacket(target, researchContext) {
     builderStatus: builderRecord?.status ?? 'not-run',
     builderName: builderRecord?.builderName ?? null,
     hoaStatus: hoaRecord?.status ?? 'not-run',
+    hazardsStatus: hazardsSummary.status,
+    floodZone: hazardsSummary.dimensions?.flood?.value ?? null,
+    parcelStatus: parcelSummary.status,
+    estimatedAnnualTax: parcelSummary.dimensions?.estimatedTax?.value ?? null,
+    accessStatus: accessSummary.status,
+    nearestRoad: accessSummary.dimensions?.nearestRoad?.value ?? null,
     utilityStatus: utilitySummary.status,
     utilityEstimateTypical: utilitySummary.monthlyEstimate?.typical ?? null,
     developmentSources: packet.sourcePlans.development.entries.length,

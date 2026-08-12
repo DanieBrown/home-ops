@@ -38,6 +38,9 @@ const LISTING_DIR = join(ROOT, 'output', 'listings');
 const HOA_DIR = join(ROOT, 'output', 'hoa');
 const UTILITIES_DIR = join(ROOT, 'output', 'utilities');
 const AXIS_DIR = join(ROOT, 'output', 'axis');
+const HAZARDS_DIR = join(ROOT, 'output', 'hazards');
+const PARCEL_DIR = join(ROOT, 'output', 'parcel');
+const ACCESS_DIR = join(ROOT, 'output', 'access');
 
 const HELP_TEXT = `Usage:
   node briefing-pdf.mjs [--profile chrome-host] [--no-open]
@@ -243,6 +246,37 @@ function buildGapList(report, finalist, profile) {
   if ((finalist.utilities?.sourceCoverage ?? []).some((entry) => ['blocked', 'error'].includes(entry.status))) {
     gaps.push('One or more utility/provider sources were blocked or unreachable; treat affected availability as unknown.');
   }
+
+  // Property snapshot. A missing sidecar and a blocked source are different
+  // failures and get different lines -- neither may read as "no risk found".
+  if (!finalist.hazards) {
+    gaps.push('Site hazards have not been captured yet: flood zone, wetlands, radon, environmental sites, septic soil, and airport noise are all unknown, not clear.');
+  }
+  if (finalist.hazardsMismatch) {
+    gaps.push(finalist.hazardsMismatch);
+  }
+  if (!finalist.parcel) {
+    gaps.push('The county parcel record has not been captured yet, so assessed value and property tax are unknown.');
+  }
+  if (finalist.parcelMismatch) {
+    gaps.push(finalist.parcelMismatch);
+  }
+  if (!finalist.access) {
+    gaps.push('Road adjacency and drive times have not been captured yet; traffic exposure is unmeasured, not low.');
+  }
+  if (finalist.accessMismatch) {
+    gaps.push(finalist.accessMismatch);
+  }
+
+  for (const [sidecar, label] of [[finalist.hazards, 'site hazard'], [finalist.parcel, 'parcel/tax'], [finalist.access, 'access']]) {
+    const blocked = (sidecar?.sourceCoverage ?? []).filter((entry) => entry.status === 'blocked');
+    if (blocked.length > 0) {
+      gaps.push(`${blocked.length} ${label} source${blocked.length === 1 ? '' : 's'} could not be reached (${blocked.map((entry) => entry.name).join(', ')}). Those dimensions are unknown, not clear.`);
+    }
+  }
+  if (finalist.listing && !finalist.listing.priceMovement) {
+    gaps.push('The listing page published no price history, so price movement — the stronger resale signal — is unconfirmed.');
+  }
   if (finalist.packetMismatch) {
     gaps.push(finalist.packetMismatch);
   }
@@ -347,6 +381,24 @@ function collectSourceLinks(finalist) {
       }
     }
   }
+
+  // Property snapshot sources. Their status is carried through verbatim so a
+  // blocked FEMA or NCDOT query is visible in the ledger rather than absent
+  // from it -- an unreachable source that simply vanishes reads as a clean run.
+  for (const [sidecar, label] of [
+    [finalist.hazards, 'Site hazard source'],
+    [finalist.parcel, 'Parcel/tax source'],
+    [finalist.access, 'Access source'],
+  ]) {
+    for (const source of sidecar?.sourceCoverage ?? []) {
+      addSourceLink(collector, source.name || source.key || label, source.url, source.status);
+    }
+  }
+  for (const guide of finalist.access?.guidedChecks ?? []) {
+    addSourceLink(collector, guide.name || 'Buyer-run check', guide.url, 'buyer-run check');
+  }
+  addSourceLink(collector, finalist.parcel?.billLookup?.name || 'County tax bill lookup', finalist.parcel?.billLookup?.url, 'buyer-run check');
+  addSourceLink(collector, finalist.parcel?.futureLandUseGuide?.name || 'Future land use map', finalist.parcel?.futureLandUseGuide?.url, 'buyer-run check');
 
   const schoolMetadata = loadSchoolMetadata(report);
   for (const source of schoolMetadata?.sourcesChecked ?? []) {
@@ -544,6 +596,162 @@ function buildInternetDisplayRows(utilities) {
     rows,
     omittedCount: Math.max(0, providers.length - rows.length),
   };
+}
+
+// ---------------------------------------------------------------------------
+// Property Snapshot
+//
+// Renders the hazards / parcel / access sidecars. Every dimension shows its
+// value AND how we came to know it, because the states are not
+// interchangeable: a FEMA query that timed out must not look like a home
+// outside the flood zone, and a home outside RDU's modelled noise contours
+// must not look like a measurement of quiet.
+// ---------------------------------------------------------------------------
+
+const PROVENANCE_DISPLAY = {
+  captured: { label: 'captured', className: 'prov-captured', hint: 'Read from the cited source.' },
+  unconfirmed: { label: 'unconfirmed', className: 'prov-unconfirmed', hint: 'Checked, but the answer was inconclusive.' },
+  blocked: { label: 'BLOCKED', className: 'prov-blocked', hint: 'Source unreachable — this is unknown, NOT an all-clear.' },
+  unsupported: { label: 'unsupported', className: 'prov-unsupported', hint: 'No queryable source exists for this jurisdiction.' },
+  'not-applicable': { label: 'n/a', className: 'prov-na', hint: 'Genuinely does not apply to this home.' },
+};
+
+function provenanceBadge(provenance) {
+  const display = PROVENANCE_DISPLAY[provenance] ?? PROVENANCE_DISPLAY.unconfirmed;
+  return `<span class="prov-badge ${display.className}" title="${escapeHtml(display.hint)}">${escapeHtml(display.label)}</span>`;
+}
+
+function snapshotDimensionRows(dimensions) {
+  return Object.values(dimensions ?? {}).map((dim) => {
+    if (!dim || !dim.label) return '';
+    // Only a captured dimension gets to state a value. Everything else shows
+    // an em dash so an unknown can never be skimmed as a finding.
+    const value = dim.provenance === 'captured' && dim.value != null
+      ? escapeHtml(String(dim.value))
+      : '<span class="muted">&mdash;</span>';
+    const detail = dim.detail ? `<div class="snapshot-detail">${escapeHtml(dim.detail)}</div>` : '';
+    const note = dim.note ? `<div class="snapshot-note">${escapeHtml(dim.note)}</div>` : '';
+    const source = dim.sourceUrl
+      ? `<a class="snapshot-source" href="${escapeHtml(dim.sourceUrl)}">source &#8599;</a>`
+      : '';
+    return `
+      <tr class="snapshot-row ${escapeHtml(PROVENANCE_DISPLAY[dim.provenance]?.className ?? 'prov-unconfirmed')}">
+        <th>${escapeHtml(dim.label)}</th>
+        <td class="snapshot-value">${value}${detail}${note}</td>
+        <td class="snapshot-prov">${provenanceBadge(dim.provenance)}${source}</td>
+      </tr>`;
+  }).join('');
+}
+
+function snapshotGroup(title, sidecar, missingMessage) {
+  if (!sidecar) {
+    return `
+      <div class="snapshot-group unreviewed">
+        <h4>${escapeHtml(title)}</h4>
+        <p class="muted">${escapeHtml(missingMessage)}</p>
+      </div>`;
+  }
+  const rows = snapshotDimensionRows(sidecar.dimensions);
+  if (!rows) {
+    return `
+      <div class="snapshot-group unreviewed">
+        <h4>${escapeHtml(title)}</h4>
+        <p class="muted">${escapeHtml(missingMessage)}</p>
+      </div>`;
+  }
+  const blocked = (sidecar.sourceCoverage ?? []).filter((entry) => entry.status === 'blocked');
+  const banner = blocked.length > 0
+    ? `<p class="snapshot-blocked-banner">${blocked.length} source${blocked.length === 1 ? '' : 's'} could not be reached (${escapeHtml(blocked.map((entry) => entry.name).join(', '))}). Those dimensions are unknown, not clear.</p>`
+    : '';
+  const confidence = sidecar.confidence
+    ? `<span class="subtle">confidence ${escapeHtml(sidecar.confidence)}</span>`
+    : '';
+  return `
+    <div class="snapshot-group">
+      <h4>${escapeHtml(title)} ${confidence}</h4>
+      ${banner}
+      <table class="snapshot-table">
+        <tbody>${rows}</tbody>
+      </table>
+    </div>`;
+}
+
+function buildPriceMovementRow(finalist) {
+  const movement = finalist.listing?.priceMovement;
+  if (!movement) {
+    return `
+      <div class="snapshot-group unreviewed">
+        <h4>Price history</h4>
+        <p class="muted">The listing page published no price history, so price movement is unconfirmed. Days on market alone does not show whether the ask has moved.</p>
+      </div>`;
+  }
+  const money = (value) => (value == null ? '&mdash;' : `$${Math.round(value).toLocaleString('en-US')}`);
+  const cutLabel = movement.cutCount === 0
+    ? 'No cut since listing'
+    : `${movement.cutCount} cut${movement.cutCount === 1 ? '' : 's'}, ${money(movement.totalCutAmount)} total (${movement.totalCutPct}%)`;
+  return `
+    <div class="snapshot-group">
+      <h4>Price history <span class="subtle">from the portal's own table</span></h4>
+      <table class="snapshot-table">
+        <tbody>
+          <tr class="snapshot-row prov-captured">
+            <th>Original list</th>
+            <td class="snapshot-value">${money(movement.originalListPrice)}</td>
+            <td class="snapshot-prov">${provenanceBadge('captured')}</td>
+          </tr>
+          <tr class="snapshot-row prov-captured">
+            <th>Movement</th>
+            <td class="snapshot-value">${escapeHtml(cutLabel)}${movement.daysToFirstCut != null ? `<div class="snapshot-detail">First cut after ${movement.daysToFirstCut} days on market</div>` : ''}</td>
+            <td class="snapshot-prov">${provenanceBadge('captured')}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>`;
+}
+
+function buildGuidedChecksBlock(finalist) {
+  const guides = [
+    ...(finalist.access?.guidedChecks ?? []),
+    finalist.parcel?.futureLandUseGuide,
+    finalist.parcel?.billLookup,
+  ].filter((guide) => guide && guide.url);
+  if (guides.length === 0) return '';
+  const items = guides.map((guide) => `
+    <li>
+      <a href="${escapeHtml(guide.url)}">${escapeHtml(guide.name)} &#8599;</a>
+      <div class="snapshot-detail">${escapeHtml(guide.instructions ?? '')}</div>
+    </li>`).join('');
+  return `
+    <div class="snapshot-group">
+      <h4>Check these yourself <span class="subtle">no public API — nothing was scraped</span></h4>
+      <ul class="guided-list">${items}</ul>
+    </div>`;
+}
+
+function buildPropertySnapshotCard(finalist) {
+  const groups = [
+    snapshotGroup('Site hazards', finalist.hazards,
+      'Site hazards have not been captured for this home. Flood zone, wetlands, radon, environmental sites, septic soil, and airport noise are all unknown — not clear.'),
+    snapshotGroup('Parcel, assessment & tax', finalist.parcel,
+      'The county parcel record has not been captured for this home. Assessed value and property tax are unknown.'),
+    snapshotGroup('Access & traffic', finalist.access,
+      'Road adjacency and drive times have not been captured for this home. Traffic exposure is unmeasured, not low.'),
+    buildPriceMovementRow(finalist),
+    buildGuidedChecksBlock(finalist),
+  ].filter(Boolean).join('');
+
+  return `
+    <div class="panel wide snapshot">
+      <h3>Property Snapshot</h3>
+      <p class="snapshot-legend">
+        ${provenanceBadge('captured')} read from the cited source &nbsp;
+        ${provenanceBadge('unconfirmed')} checked, inconclusive &nbsp;
+        ${provenanceBadge('blocked')} source unreachable &mdash; unknown, not clear &nbsp;
+        ${provenanceBadge('unsupported')} nothing queryable here &nbsp;
+        ${provenanceBadge('not-applicable')} does not apply
+      </p>
+      ${groups}
+    </div>`;
 }
 
 function buildUtilitiesOptionsCard(finalist) {
@@ -1770,6 +1978,7 @@ function buildFinalistSection(finalist, profile, options = {}) {
   const builderBlock = buildBuilderReputationCard(finalist);
   const schoolsBlock = buildSchoolsCard(report, finalist);
   const commuteBlock = buildCommuteCard(report, profile);
+  const snapshotBlock = buildPropertySnapshotCard(finalist);
   const sourceLedgerBlock = buildSourceLedger(finalist);
 
   const topKpi = (sentiment?.kpiRollup ?? []).slice(0, 5).map((row) => `
@@ -1844,6 +2053,9 @@ function buildFinalistSection(finalist, profile, options = {}) {
   }
   const reportPages = [
     overviewPage,
+    // The snapshot sits right after the dashboard: it is the deterministic,
+    // cited layer the rest of the brief interprets.
+    wrapReportPage(snapshotBlock, 'report-page-snapshot'),
     wrapReportPage(sentimentBlock, 'report-page-sentiment'),
     wrapReportPage(infrastructureBlock, 'report-page-infrastructure'),
     wrapReportPage(schoolsBlock, 'report-page-schools'),
@@ -2108,6 +2320,62 @@ export function buildHtml(finalists, profile, mode = 'batch', context = {}) {
   .stat { font-size: 9.5pt; color: #4b5563; margin-bottom: 2px; }
   .stat strong { color: #111827; }
   .muted { color: #9ca3af; font-size: 8.5pt; }
+
+  /* Property Snapshot
+     The provenance states must stay visually distinct in print: a blocked
+     source has to be impossible to skim as a clean reading. Colour alone is
+     not enough for that, so blocked also carries an uppercase label and a
+     heavy left rule that survives greyscale printing. */
+  .snapshot-legend {
+    font-size: 8pt; color: #6b7280; margin: 0 0 10px;
+    padding-bottom: 8px; border-bottom: 1px solid #e5e7eb; line-height: 1.9;
+  }
+  .snapshot-group { margin-bottom: 14px; break-inside: avoid; }
+  .snapshot-group h4 {
+    font-size: 9pt; text-transform: uppercase; letter-spacing: 0.06em;
+    color: #374151; margin: 0 0 6px;
+  }
+  .snapshot-group.unreviewed { border-left: 3px solid #d1d5db; padding-left: 10px; }
+  .snapshot-table { width: 100%; border-collapse: collapse; font-size: 9pt; }
+  .snapshot-table th {
+    width: 27%; vertical-align: top; text-transform: none;
+    letter-spacing: 0; font-size: 8.5pt; background: #f9fafb;
+  }
+  .snapshot-table td { vertical-align: top; }
+  .snapshot-value { font-size: 9.5pt; color: #111827; }
+  .snapshot-prov { width: 20%; text-align: right; white-space: nowrap; }
+  .snapshot-detail { font-size: 8pt; color: #4b5563; margin-top: 2px; }
+  .snapshot-note { font-size: 7.5pt; color: #6b7280; margin-top: 3px; font-style: italic; }
+  .snapshot-source { font-size: 7.5pt; color: #6366f1; display: block; margin-top: 3px; }
+  .snapshot-blocked-banner {
+    font-size: 8pt; color: #991b1b; background: #fef2f2;
+    border: 1px solid #fecaca; border-radius: 4px;
+    padding: 5px 8px; margin: 0 0 6px;
+  }
+
+  .prov-badge {
+    display: inline-block; font-size: 7pt; font-weight: 700;
+    text-transform: uppercase; letter-spacing: 0.04em;
+    padding: 1px 5px; border-radius: 3px; border: 1px solid transparent;
+  }
+  .prov-badge.prov-captured    { background: #ecfdf5; color: #065f46; border-color: #a7f3d0; }
+  .prov-badge.prov-unconfirmed { background: #fffbeb; color: #92400e; border-color: #fde68a; }
+  .prov-badge.prov-blocked     { background: #fef2f2; color: #991b1b; border-color: #fca5a5; }
+  .prov-badge.prov-unsupported { background: #f3f4f6; color: #4b5563; border-color: #d1d5db; }
+  .prov-badge.prov-na          { background: #f5f3ff; color: #5b21b6; border-color: #ddd6fe; }
+
+  /* Row-level rules repeat the state so it reads down the page, not just in
+     the badge column, and survives a black-and-white print. */
+  tr.snapshot-row > th { border-left: 3px solid transparent; }
+  tr.snapshot-row.prov-captured    > th { border-left-color: #34d399; }
+  tr.snapshot-row.prov-unconfirmed > th { border-left-color: #fbbf24; }
+  tr.snapshot-row.prov-blocked     > th { border-left-color: #dc2626; }
+  tr.snapshot-row.prov-blocked     > td { background: #fffafa; }
+  tr.snapshot-row.prov-unsupported > th { border-left-color: #9ca3af; }
+  tr.snapshot-row.prov-na          > th { border-left-color: #a78bfa; }
+
+  .guided-list { margin: 0; padding-left: 16px; font-size: 9pt; }
+  .guided-list li { margin-bottom: 6px; }
 
   /* Tables */
   table { width: 100%; border-collapse: collapse; font-size: 9pt; }
@@ -2516,7 +2784,7 @@ function buildCoverList(finalists) {
     </div>`;
 }
 
-function loadFinalist(reportPath, rank = 1) {
+export function loadFinalist(reportPath, rank = 1) {
   const report = parseReport(ROOT, reportPath);
   const constructionCompanion = loadCompanionForReport(report, CONSTRUCTION_DIR, 'Construction');
   const permitsCompanion = loadCompanionForReport(report, PERMITS_DIR, 'Permits');
@@ -2525,6 +2793,9 @@ function loadFinalist(reportPath, rank = 1) {
   const builderCompanion = loadCompanionForReport(report, BUILDER_DIR, 'Builder');
   const hoaCompanion = loadCompanionForReport(report, HOA_DIR, 'HOA');
   const utilitiesCompanion = loadUtilityOptionsForReport(report);
+  const hazardsCompanion = loadCompanionForReport(report, HAZARDS_DIR, 'Site hazards');
+  const parcelCompanion = loadCompanionForReport(report, PARCEL_DIR, 'Parcel/tax');
+  const accessCompanion = loadCompanionForReport(report, ACCESS_DIR, 'Access');
   const axisCompanion = loadCompanionForReport(report, AXIS_DIR, 'Axis');
   const listing = loadListingFacts(report);
   const communityPayload = findCompanionJson(report, COMMUNITY_DIR);
@@ -2541,6 +2812,9 @@ function loadFinalist(reportPath, rank = 1) {
     builder: builderCompanion.data,
     hoaRules: hoaCompanion.data,
     utilities: utilitiesCompanion.data,
+    hazards: hazardsCompanion.data,
+    parcel: parcelCompanion.data,
+    access: accessCompanion.data,
     packet: packetCompanion.data,
     listing,
     community,
@@ -2551,6 +2825,9 @@ function loadFinalist(reportPath, rank = 1) {
     builderMismatch: builderCompanion.mismatchMessage,
     hoaMismatch: hoaCompanion.mismatchMessage,
     utilitiesMismatch: utilitiesCompanion.mismatchMessage,
+    hazardsMismatch: hazardsCompanion.mismatchMessage,
+    parcelMismatch: parcelCompanion.mismatchMessage,
+    accessMismatch: accessCompanion.mismatchMessage,
     packetMismatch: packetCompanion.mismatchMessage,
     axisMismatch: axisCompanion.mismatchMessage,
   };

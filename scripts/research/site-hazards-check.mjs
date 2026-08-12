@@ -286,7 +286,8 @@ async function run() {
       expiresAt: expiresInDays(180, record.generatedAt),
       sourceUrls: (record.sourceCoverage ?? []).map((entry) => entry.url).filter(Boolean),
       status: record.status,
-      warnings: record.warnings ?? [],
+      // withSidecarMetadata already merges record.warnings; passing them again duplicates each line.
+      warnings: [],
     });
     sidecar.confidence = coverageConfidence(record.sourceCoverage);
     await writeFile(outputPath, `${JSON.stringify(sidecar, null, 2)}\n`, 'utf8');

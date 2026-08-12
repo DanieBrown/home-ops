@@ -97,6 +97,24 @@ const PHASES = [
     args: ['scripts/research/utility-options-check.mjs', '--shortlist'],
   },
   {
+    contractId: 'site-hazards-check',
+    label: 'Shortlist site hazards (flood, wetlands, radon, EPA sites, septic, airport noise)',
+    cmd: NODE,
+    args: ['scripts/research/site-hazards-check.mjs', '--shortlist'],
+  },
+  {
+    contractId: 'parcel-tax-check',
+    label: 'Shortlist parcel, assessment, tax estimate, and zoning',
+    cmd: NODE,
+    args: ['scripts/research/parcel-tax-check.mjs', '--shortlist'],
+  },
+  {
+    contractId: 'access-check',
+    label: 'Shortlist road adjacency, AADT, and drive times',
+    cmd: NODE,
+    args: ['scripts/research/access-check.mjs', '--shortlist', '--profile', 'chrome-host'],
+  },
+  {
     contractId: 'deep-research-packet',
     label: 'Deep research packets per shortlisted home',
     cmd: NODE,
