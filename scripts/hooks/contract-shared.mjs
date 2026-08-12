@@ -2,7 +2,32 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 
 const ROOT = resolve(process.cwd());
-export const STATE_PATH = resolve(ROOT, '.home-ops', 'command-contract.json');
+export const STATE_PATH = resolve(
+  ROOT,
+  process.env.HOME_OPS_CONTRACT_PATH || '.home-ops/command-contract.json',
+);
+
+/**
+ * A `--help` run exits 0 without doing any work, so it must never satisfy a
+ * requirement. This is the universal guard -- it covers scripts that take no
+ * required argument at all, which no pattern can distinguish from real work.
+ */
+const HELP_TOKEN = /(?:^|\s)(?:--help|-h|-\?)(?=\s|$)/;
+
+export function isHelpInvocation(commandString) {
+  if (typeof commandString !== 'string' || !commandString) return false;
+  return HELP_TOKEN.test(commandString);
+}
+
+/**
+ * Defense in depth for gates whose script genuinely requires an argument: a
+ * real run names its target (a report path, a batch selector, or a target
+ * flag). Appending this to a script pattern makes the bare `--help` form fail
+ * to match at the pattern level too.
+ */
+const WORK_ARG = String.raw`[^\n]*(?:--shortlist\b|--top3\b|--reports?\b|--url\b|--address\b|--listing\b|\.md(?=$|[\s"']))`;
+
+const withTarget = (rx) => new RegExp(`${rx.source}${WORK_ARG}`);
 
 const req = (id, description, patterns, opts = {}) => ({
   id,
@@ -107,75 +132,99 @@ export const CONTRACTS = {
     description: '/home-ops deep <url> -- single-home branch',
     required: [
       req('extract-listing-details', 'Listing facts via Playwright (pre-eval)', [
-        /extract-listing-details\.mjs\b/,
-        /npm(?:\.cmd)?\s+run\s+extract:listing\b/,
-        /deep-single-runner\.mjs\b/,
-        /npm(?:\.cmd)?\s+run\s+deep:single\b/,
+        withTarget(/extract-listing-details\.mjs\b/),
+        withTarget(/npm(?:\.cmd)?\s+run\s+extract:listing\b/),
+        withTarget(/deep-single-runner\.mjs\b/),
+        withTarget(/npm(?:\.cmd)?\s+run\s+deep:single\b/),
       ]),
       req('school-assignments-fetch', 'Assigned-school capture via GreatSchools (pre-eval)', [
-        /school-assignments-fetch\.mjs\b/,
-        /npm(?:\.cmd)?\s+run\s+schools:assignments\b/,
-        /deep-single-runner\.mjs\b/,
-        /npm(?:\.cmd)?\s+run\s+deep:single\b/,
+        withTarget(/school-assignments-fetch\.mjs\b/),
+        withTarget(/npm(?:\.cmd)?\s+run\s+schools:assignments\b/),
+        withTarget(/deep-single-runner\.mjs\b/),
+        withTarget(/npm(?:\.cmd)?\s+run\s+deep:single\b/),
       ], { requires: ['extract-listing-details'] }),
       req('research-source-plan-single', 'Single-home source plan from portals.yml', [
-        /research-source-plan\.mjs\b/,
-        /deep-single-final-runner\.mjs\b/,
-        /npm(?:\.cmd)?\s+run\s+deep:single-final\b/,
+        withTarget(/research-source-plan\.mjs\b/),
+        withTarget(/deep-single-final-runner\.mjs\b/),
+        withTarget(/npm(?:\.cmd)?\s+run\s+deep:single-final\b/),
       ], { requires: ['extract-listing-details'], isGate: true }),
       req('community-lookup-single', 'Single-home community resolution (mapdevelopers)', [
-        /community-lookup\.mjs\b/,
-        /deep-single-final-runner\.mjs\b/,
-        /npm(?:\.cmd)?\s+run\s+deep:single-final\b/,
+        withTarget(/community-lookup\.mjs\b/),
+        withTarget(/deep-single-final-runner\.mjs\b/),
+        withTarget(/npm(?:\.cmd)?\s+run\s+deep:single-final\b/),
       ], { requires: ['research-source-plan-single'] }),
       req('sentiment-extract-single', 'Single-home browser sentiment — Facebook/Nextdoor', [
-        /sentiment-browser-extract\.mjs\b/,
-        /deep-single-final-runner\.mjs\b/,
-        /npm(?:\.cmd)?\s+run\s+deep:single-final\b/,
+        withTarget(/sentiment-browser-extract\.mjs\b/),
+        withTarget(/deep-single-final-runner\.mjs\b/),
+        withTarget(/npm(?:\.cmd)?\s+run\s+deep:single-final\b/),
       ], { requires: ['community-lookup-single'] }),
       req('sentiment-public-extract-single', 'Single-home public sentiment — Google Maps', [
-        /sentiment-public-extract\.mjs\b/,
-        /deep-single-final-runner\.mjs\b/,
-        /npm(?:\.cmd)?\s+run\s+deep:single-final\b/,
+        withTarget(/sentiment-public-extract\.mjs\b/),
+        withTarget(/deep-single-final-runner\.mjs\b/),
+        withTarget(/npm(?:\.cmd)?\s+run\s+deep:single-final\b/),
       ], { requires: ['research-source-plan-single'] }),
       req('construction-check-single', 'Single-home NCDOT construction check', [
-        /construction-check\.mjs\b/,
-        /deep-single-final-runner\.mjs\b/,
-        /npm(?:\.cmd)?\s+run\s+deep:single-final\b/,
+        withTarget(/construction-check\.mjs\b/),
+        withTarget(/deep-single-final-runner\.mjs\b/),
+        withTarget(/npm(?:\.cmd)?\s+run\s+deep:single-final\b/),
       ], { requires: ['research-source-plan-single'] }),
       req('county-permits-check-single', 'Single-home county permits spatial query', [
-        /county-permits-check\.mjs\b/,
-        /deep-single-final-runner\.mjs\b/,
-        /npm(?:\.cmd)?\s+run\s+deep:single-final\b/,
+        withTarget(/county-permits-check\.mjs\b/),
+        withTarget(/deep-single-final-runner\.mjs\b/),
+        withTarget(/npm(?:\.cmd)?\s+run\s+deep:single-final\b/),
       ], { requires: ['research-source-plan-single'] }),
       req('school-metadata-fetch-single', 'Single-home school metadata details', [
-        /school-metadata-fetch\.mjs\b/,
-        /deep-single-final-runner\.mjs\b/,
-        /npm(?:\.cmd)?\s+run\s+deep:single-final\b/,
+        withTarget(/school-metadata-fetch\.mjs\b/),
+        withTarget(/deep-single-final-runner\.mjs\b/),
+        withTarget(/npm(?:\.cmd)?\s+run\s+deep:single-final\b/),
       ], { requires: ['research-source-plan-single'] }),
       req('builder-check-single', 'Single-home builder reputation lookup', [
-        /builder-check\.mjs\b/,
-        /deep-single-final-runner\.mjs\b/,
-        /npm(?:\.cmd)?\s+run\s+deep:single-final\b/,
+        withTarget(/builder-check\.mjs\b/),
+        withTarget(/deep-single-final-runner\.mjs\b/),
+        withTarget(/npm(?:\.cmd)?\s+run\s+deep:single-final\b/),
       ], { requires: ['research-source-plan-single'] }),
       req('hoa-docs-check-single', 'Single-home HOA document and rules lookup', [
-        /hoa-docs-check\.mjs\b/,
-        /npm(?:\.cmd)?\s+run\s+hoa:docs\b/,
-        /deep-single-final-runner\.mjs\b/,
-        /npm(?:\.cmd)?\s+run\s+deep:single-final\b/,
+        withTarget(/hoa-docs-check\.mjs\b/),
+        withTarget(/npm(?:\.cmd)?\s+run\s+hoa:docs\b/),
+        withTarget(/deep-single-final-runner\.mjs\b/),
+        withTarget(/npm(?:\.cmd)?\s+run\s+deep:single-final\b/),
       ], { requires: ['research-source-plan-single'] }),
       req('utility-options-check-single', 'Single-home utilities/provider billing options', [
-        /utility-options-check\.mjs\b/,
-        /npm(?:\.cmd)?\s+run\s+utilities:check\b/,
-        /deep-single-final-runner\.mjs\b/,
-        /npm(?:\.cmd)?\s+run\s+deep:single-final\b/,
+        withTarget(/utility-options-check\.mjs\b/),
+        withTarget(/npm(?:\.cmd)?\s+run\s+utilities:check\b/),
+        withTarget(/deep-single-final-runner\.mjs\b/),
+        withTarget(/npm(?:\.cmd)?\s+run\s+deep:single-final\b/),
+      ], { requires: ['research-source-plan-single'] }),
+      req('site-hazards-check-single', 'Single-home site hazards (flood, wetlands, radon, EPA sites, septic, airport noise)', [
+        withTarget(/site-hazards-check\.mjs\b/),
+        withTarget(/npm(?:\.cmd)?\s+run\s+hazards:check\b/),
+        withTarget(/deep-single-final-runner\.mjs\b/),
+        withTarget(/npm(?:\.cmd)?\s+run\s+deep:single-final\b/),
+      ], { requires: ['research-source-plan-single'] }),
+      req('parcel-tax-check-single', 'Single-home parcel, assessment, tax estimate, and zoning', [
+        withTarget(/parcel-tax-check\.mjs\b/),
+        withTarget(/npm(?:\.cmd)?\s+run\s+parcel:check\b/),
+        withTarget(/deep-single-final-runner\.mjs\b/),
+        withTarget(/npm(?:\.cmd)?\s+run\s+deep:single-final\b/),
+      ], { requires: ['research-source-plan-single'] }),
+      req('access-check-single', 'Single-home road adjacency, AADT, and drive times', [
+        withTarget(/access-check\.mjs\b/),
+        withTarget(/npm(?:\.cmd)?\s+run\s+access:check\b/),
+        withTarget(/deep-single-final-runner\.mjs\b/),
+        withTarget(/npm(?:\.cmd)?\s+run\s+deep:single-final\b/),
       ], { requires: ['research-source-plan-single'] }),
       req('deep-research-packet-single', 'Single-home deep research packet assembly', [
-        /deep-research-packet\.mjs\b/,
-        /deep-single-final-runner\.mjs\b/,
-        /npm(?:\.cmd)?\s+run\s+deep:single-final\b/,
+        withTarget(/deep-research-packet\.mjs\b/),
+        withTarget(/deep-single-final-runner\.mjs\b/),
+        withTarget(/npm(?:\.cmd)?\s+run\s+deep:single-final\b/),
       ], {
-        requires: ['research-source-plan-single', 'community-lookup-single', 'sentiment-extract-single', 'sentiment-public-extract-single', 'construction-check-single', 'county-permits-check-single', 'school-metadata-fetch-single', 'builder-check-single', 'hoa-docs-check-single', 'utility-options-check-single'],
+        requires: [
+          'research-source-plan-single', 'community-lookup-single', 'sentiment-extract-single',
+          'sentiment-public-extract-single', 'construction-check-single', 'county-permits-check-single',
+          'site-hazards-check-single', 'parcel-tax-check-single', 'access-check-single',
+          'school-metadata-fetch-single', 'builder-check-single', 'hoa-docs-check-single',
+          'utility-options-check-single',
+        ],
         isGate: true,
       }),
       req('axis-sidecar', 'Persist merged axis-agent outputs to output/axis/{slug}.json', [
@@ -221,14 +270,49 @@ export const CONTRACTS = {
       req('sentiment-public-extract', 'Shortlist public sentiment — Google Maps/traffic_commute (fan-out 6e)', [
         /sentiment-public-extract\.mjs[^\n]*--shortlist/,
       ], { requires: ['research-audit'], isGate: true }),
-      req('utility-options-check', 'Shortlist utilities/provider billing options', [
+      req('county-permits-check', 'Shortlist county permits spatial query (fan-out 4f)', [
+        /county-permits-check\.mjs[^\n]*--shortlist/,
+        /npm(?:\.cmd)?\s+run\s+permits:check[^\n]*--shortlist/,
+      ], { requires: ['research-audit'], isGate: true }),
+      req('school-metadata-fetch', 'Shortlist school metadata details (fan-out 4g)', [
+        /school-metadata-fetch\.mjs[^\n]*--shortlist/,
+        /npm(?:\.cmd)?\s+run\s+schools:metadata[^\n]*--shortlist/,
+      ], { requires: ['research-audit'], isGate: true }),
+      req('builder-check', 'Shortlist builder reputation lookup (fan-out 4h)', [
+        /builder-check\.mjs[^\n]*--shortlist/,
+      ], { requires: ['research-audit'], isGate: true }),
+      req('hoa-docs-check', 'Shortlist HOA document and rules lookup (fan-out 4i)', [
+        /hoa-docs-check\.mjs[^\n]*--shortlist/,
+        /npm(?:\.cmd)?\s+run\s+hoa:docs[^\n]*--shortlist/,
+      ], { requires: ['research-audit'], isGate: true }),
+      req('utility-options-check', 'Shortlist utilities/provider billing options (fan-out 4j)', [
         /utility-options-check\.mjs[^\n]*--shortlist/,
         /npm(?:\.cmd)?\s+run\s+utilities:check[^\n]*--shortlist/,
+      ], { requires: ['research-audit'], isGate: true }),
+      req('site-hazards-check', 'Shortlist site hazards — flood, wetlands, radon, EPA sites, septic, airport (fan-out 4k)', [
+        /site-hazards-check\.mjs[^\n]*--shortlist/,
+        /npm(?:\.cmd)?\s+run\s+hazards:check[^\n]*--shortlist/,
+      ], { requires: ['research-audit'], isGate: true }),
+      req('parcel-tax-check', 'Shortlist parcel, assessment, tax estimate, and zoning (fan-out 4l)', [
+        /parcel-tax-check\.mjs[^\n]*--shortlist/,
+        /npm(?:\.cmd)?\s+run\s+parcel:check[^\n]*--shortlist/,
+      ], { requires: ['research-audit'], isGate: true }),
+      req('access-check', 'Shortlist road adjacency, AADT, and drive times (fan-out 4m)', [
+        /access-check\.mjs[^\n]*--shortlist/,
+        /npm(?:\.cmd)?\s+run\s+access:check[^\n]*--shortlist/,
       ], { requires: ['research-audit'], isGate: true }),
       req('deep-research-packet', 'Deep research packets per shortlisted home', [
         /deep-research-packet\.mjs[^\n]*--shortlist/,
         /npm(?:\.cmd)?\s+run\s+prepare:deep[^\n]*--shortlist/,
-      ], { requires: ['research-source-plan', 'community-lookup', 'sentiment-extract', 'construction-check', 'sentiment-public-extract', 'utility-options-check'], isGate: true }),
+      ], {
+        requires: [
+          'research-source-plan', 'community-lookup', 'sentiment-extract', 'construction-check',
+          'sentiment-public-extract', 'county-permits-check', 'school-metadata-fetch',
+          'builder-check', 'hoa-docs-check', 'utility-options-check',
+          'site-hazards-check', 'parcel-tax-check', 'access-check',
+        ],
+        isGate: true,
+      }),
       req('axis-sidecar', 'Persist merged axis-agent outputs to output/axis/{slug}.json (per home)', [
         /axis-sidecar-write\.mjs[^\n]*--report\b/,
         /npm(?:\.cmd)?\s+run\s+axis:write[^\n]*--report\b/,
@@ -246,7 +330,13 @@ export const CONTRACTS = {
         /npm(?:\.cmd)?\s+run\s+browser:review[^\n]*shortlist-top3/,
       ], {
         isGate: true,
-        requires: ['research-audit', 'research-source-plan', 'community-lookup', 'sentiment-extract', 'construction-check', 'sentiment-public-extract', 'utility-options-check', 'deep-research-packet', 'promote-finalists', 'finalist-gate'],
+        requires: [
+          'research-audit', 'research-source-plan', 'community-lookup', 'sentiment-extract',
+          'construction-check', 'sentiment-public-extract', 'county-permits-check',
+          'school-metadata-fetch', 'builder-check', 'hoa-docs-check', 'utility-options-check',
+          'site-hazards-check', 'parcel-tax-check', 'access-check',
+          'deep-research-packet', 'promote-finalists', 'finalist-gate',
+        ],
       }),
       req('briefing-pdf', 'Render top-3 briefing PDF', [
         /briefing-pdf\.mjs\b/,

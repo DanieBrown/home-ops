@@ -65,3 +65,14 @@ export function parseArgs(argv, schema, { defaults = {}, allowPositional = false
 export function printHelp(helpText) {
   console.log(helpText);
 }
+
+/**
+ * hasHelpFlag(argv) → boolean
+ *
+ * For scripts that take no other options, where a full parseArgs schema would
+ * add nothing but a new way to reject stray arguments. Every user-facing
+ * script must answer --help so the command reference can be generated from it.
+ */
+export function hasHelpFlag(argv = []) {
+  return argv.some((arg) => arg === '--help' || arg === '-h');
+}

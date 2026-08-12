@@ -9,6 +9,40 @@ import { existsSync, mkdirSync, readFileSync } from 'fs';
 import { spawnSync } from 'child_process';
 import { join } from 'path';
 import { ROOT } from '../shared/paths.mjs';
+import { hasHelpFlag } from '../shared/cli.mjs';
+
+const HELP_TEXT = `Usage:
+  node doctor.mjs
+
+Setup validation for home-ops. Checks the prerequisites for scanning,
+evaluating, and tracking homes:
+  - Node.js >= 18, installed dependencies, Playwright chromium
+  - crawl4ai Python sidecar (optional -- school metadata degrades without it)
+  - a hosted browser binary for the CDP session
+  - the buyer-layer files: buyer-profile.md, config/profile.yml, portals.yml
+  - the mode files and templates/states.yml
+  - the review-tabs extension manifest and bridge
+  - the writable directories: data, reports, output, batch
+  - leftover scratch under .home-ops/tmp/
+  - that portals.yml search URLs cover every configured profile area, and
+    that sentiment, school, and development sources are configured
+
+  - that every package.json script appears in docs/COMMANDS.md
+
+Exits 1 when a check fails; warnings alone exit 0.
+
+Options:
+  --strict     Promote advisory warnings to failures. Currently this makes an
+               undocumented npm script a hard failure instead of a warning.
+  --help, -h   Show this help text.
+`;
+
+if (hasHelpFlag(process.argv.slice(2))) {
+  console.log(HELP_TEXT);
+  process.exit(0);
+}
+
+const STRICT = process.argv.slice(2).includes('--strict');
 
 const isTTY = process.stdout.isTTY;
 const green = (value) => (isTTY ? `\x1b[32m${value}\x1b[0m` : value);
@@ -131,6 +165,47 @@ function checkTempArtifacts() {
     'Temporary artifact cleanup check failed',
     'Move one-off scripts under .home-ops/tmp/{commandId}/ and remove them after use.',
   );
+}
+
+/**
+ * Every package.json script must appear in docs/COMMANDS.md.
+ *
+ * Without this the reference rots within a few features -- which is how 50 of
+ * 78 scripts ended up undocumented, including the entire update/rollback
+ * subsystem. Advisory by default (a warning) so a routine doctor run is not
+ * blocked by a docs gap; `--strict` makes it a hard failure for CI.
+ */
+function checkCommandDocs({ strict = false } = {}) {
+  const docsPath = join(ROOT, 'docs', 'COMMANDS.md');
+  if (!existsSync(docsPath)) {
+    return failResult(
+      'docs/COMMANDS.md is missing',
+      'Restore the command reference; doctor uses it to verify every npm script is documented.',
+    );
+  }
+
+  let scripts;
+  try {
+    scripts = Object.keys(JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')).scripts ?? {});
+  } catch (error) {
+    return warnResult(`Could not read package.json scripts (${error.message})`, 'Fix package.json, then re-run doctor.');
+  }
+
+  const docs = readFileSync(docsPath, 'utf8');
+  // Match the script name as a whole token so `merge` is not satisfied by
+  // `merge-tracker` appearing somewhere in the file.
+  const undocumented = scripts.filter((name) => {
+    const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return !new RegExp(`(^|[^\\w:-])${escaped}([^\\w:-]|$)`).test(docs);
+  });
+
+  if (undocumented.length === 0) {
+    return passResult(`docs/COMMANDS.md covers all ${scripts.length} npm scripts`);
+  }
+
+  const label = `docs/COMMANDS.md is missing ${undocumented.length} npm script${undocumented.length === 1 ? '' : 's'}: ${undocumented.join(', ')}`;
+  const fix = 'Add each one to docs/COMMANDS.md with its underlying script, its flags, and a one-line description.';
+  return strict ? failResult(label, fix) : warnResult(label, fix);
 }
 
 function findAvailableHostedBrowsers() {
@@ -341,6 +416,7 @@ async function main() {
     ensureDir('batch/tracker-additions'),
     ensureDir('batch/tracker-additions/merged'),
     checkTempArtifacts(),
+    checkCommandDocs({ strict: STRICT }),
     ...(await checkProfileAndPortalCoverage(dependencyCheck.level === 'pass')),
   ];
 

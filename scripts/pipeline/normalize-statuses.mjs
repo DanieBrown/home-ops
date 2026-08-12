@@ -11,8 +11,39 @@ import { copyFileSync, existsSync, readFileSync, writeFileSync } from 'fs';
 
 import { buildCanonicalLookup, readCanonicalStatuses, normalizeStatus as resolveStatus } from '../shared/states.mjs';
 import { LISTINGS_FILE, STATES_FILE } from '../shared/paths.mjs';
+import { parseArgs } from '../shared/cli.mjs';
 
-const DRY_RUN = process.argv.includes('--dry-run');
+const HELP_TEXT = `Usage:
+  node normalize-statuses.mjs [--dry-run]
+
+Normalizes the Status column in data/listings.md against templates/states.yml:
+strips markdown bold, drops trailing dates, resolves aliases, and moves
+duplicate/repost labels into Notes. Unknown values are reported, not guessed.
+A backup is written to data/listings.md.bak before any change.
+
+Options:
+  --dry-run    Report the status changes without writing data/listings.md.
+  --help, -h   Show this help text.
+`;
+
+let normalizeConfig;
+try {
+  normalizeConfig = parseArgs(process.argv.slice(2), {
+    '--dry-run': { type: 'flag', key: 'dryRun' },
+  });
+} catch (error) {
+  console.error(error.message);
+  console.error('');
+  console.error(HELP_TEXT);
+  process.exit(1);
+}
+
+if (normalizeConfig.help) {
+  console.log(HELP_TEXT);
+  process.exit(0);
+}
+
+const DRY_RUN = normalizeConfig.dryRun === true;
 
 const canonicalStatuses = readCanonicalStatuses(STATES_FILE);
 const canonicalLookup = buildCanonicalLookup(canonicalStatuses);

@@ -1,0 +1,598 @@
+{
+  "objectIdFieldName": "OBJECTID",
+  "globalIdFieldName": "",
+  "geometryType": "esriGeometryPolygon",
+  "spatialReference": {
+    "wkid": 102719,
+    "latestWkid": 2264
+  },
+  "fields": [
+    {
+      "name": "OBJECTID",
+      "alias": "OBJECTID",
+      "type": "esriFieldTypeOID"
+    },
+    {
+      "name": "PIN_NUM",
+      "alias": "PIN_NUM",
+      "type": "esriFieldTypeString",
+      "length": 11
+    },
+    {
+      "name": "CALC_AREA",
+      "alias": "CALC_AREA",
+      "type": "esriFieldTypeDouble"
+    },
+    {
+      "name": "REID",
+      "alias": "REID",
+      "type": "esriFieldTypeString",
+      "length": 20
+    },
+    {
+      "name": "MAP_NAME",
+      "alias": "MAP_NAME",
+      "type": "esriFieldTypeString",
+      "length": 10
+    },
+    {
+      "name": "OWNER",
+      "alias": "OWNER",
+      "type": "esriFieldTypeString",
+      "length": 101
+    },
+    {
+      "name": "ADDR1",
+      "alias": "ADDR1",
+      "type": "esriFieldTypeString",
+      "length": 100
+    },
+    {
+      "name": "ADDR2",
+      "alias": "ADDR2",
+      "type": "esriFieldTypeString",
+      "length": 100
+    },
+    {
+      "name": "ADDR3",
+      "alias": "ADDR3",
+      "type": "esriFieldTypeString",
+      "length": 100
+    },
+    {
+      "name": "DEED_BOOK",
+      "alias": "DEED_BOOK",
+      "type": "esriFieldTypeString",
+      "length": 10
+    },
+    {
+      "name": "DEED_PAGE",
+      "alias": "DEED_PAGE",
+      "type": "esriFieldTypeString",
+      "length": 10
+    },
+    {
+      "name": "DEED_DATE",
+      "alias": "DEED_DATE",
+      "type": "esriFieldTypeDate",
+      "length": 8
+    },
+    {
+      "name": "DEED_ACRES",
+      "alias": "DEED_ACRES",
+      "type": "esriFieldTypeDouble"
+    },
+    {
+      "name": "BLDG_VAL",
+      "alias": "BLDG_VAL",
+      "type": "esriFieldTypeDouble"
+    },
+    {
+      "name": "LAND_VAL",
+      "alias": "LAND_VAL",
+      "type": "esriFieldTypeDouble"
+    },
+    {
+      "name": "TOTAL_VALUE_ASSD",
+      "alias": "TOTAL_VALUE_ASSD",
+      "type": "esriFieldTypeDouble"
+    },
+    {
+      "name": "BILLCLASS",
+      "alias": "BILLCLASS",
+      "type": "esriFieldTypeDouble"
+    },
+    {
+      "name": "BILLING_CLASS_DECODE",
+      "alias": "BILLING_CLASS_DECODE",
+      "type": "esriFieldTypeString",
+      "length": 20
+    },
+    {
+      "name": "PROPDESC",
+      "alias": "PROPDESC",
+      "type": "esriFieldTypeString",
+      "length": 250
+    },
+    {
+      "name": "HEATEDAREA",
+      "alias": "HEATEDAREA",
+      "type": "esriFieldTypeDouble"
+    },
+    {
+      "name": "STNAME",
+      "alias": "STNAME",
+      "type": "esriFieldTypeString",
+      "length": 25
+    },
+    {
+      "name": "STYPE",
+      "alias": "STYPE",
+      "type": "esriFieldTypeString",
+      "length": 4
+    },
+    {
+      "name": "STPRE",
+      "alias": "STPRE",
+      "type": "esriFieldTypeString",
+      "length": 2
+    },
+    {
+      "name": "STSUF",
+      "alias": "STSUF",
+      "type": "esriFieldTypeString",
+      "length": 2
+    },
+    {
+      "name": "STNUM",
+      "alias": "STNUM",
+      "type": "esriFieldTypeInteger"
+    },
+    {
+      "name": "STMISC",
+      "alias": "STMISC",
+      "type": "esriFieldTypeString",
+      "length": 6
+    },
+    {
+      "name": "SITE_ADDRESS",
+      "alias": "SITE_ADDRESS",
+      "type": "esriFieldTypeString",
+      "length": 77
+    },
+    {
+      "name": "FULL_STREET_NAME",
+      "alias": "FULL_STREET_NAME",
+      "type": "esriFieldTypeString",
+      "length": 36
+    },
+    {
+      "name": "CITY",
+      "alias": "CITY",
+      "type": "esriFieldTypeString",
+      "length": 8
+    },
+    {
+      "name": "CITY_DECODE",
+      "alias": "CITY_DECODE",
+      "type": "esriFieldTypeString",
+      "length": 50
+    },
+    {
+      "name": "PLANNING_JURISDICTION",
+      "alias": "PLANNING_JURISDICTION",
+      "type": "esriFieldTypeString",
+      "length": 8
+    },
+    {
+      "name": "TOWNSHIP",
+      "alias": "TOWNSHIP",
+      "type": "esriFieldTypeString",
+      "length": 8
+    },
+    {
+      "name": "TOWNSHIP_DECODE",
+      "alias": "TOWNSHIP_DECODE",
+      "type": "esriFieldTypeString",
+      "length": 50
+    },
+    {
+      "name": "FIREDIST",
+      "alias": "FIREDIST",
+      "type": "esriFieldTypeString",
+      "length": 8
+    },
+    {
+      "name": "YEAR_BUILT",
+      "alias": "YEAR_BUILT",
+      "type": "esriFieldTypeSmallInteger"
+    },
+    {
+      "name": "TOTSALPRICE",
+      "alias": "TOTSALPRICE",
+      "type": "esriFieldTypeDouble"
+    },
+    {
+      "name": "SALE_DATE",
+      "alias": "SALE_DATE",
+      "type": "esriFieldTypeDate",
+      "length": 8
+    },
+    {
+      "name": "TYPE_AND_USE",
+      "alias": "TYPE_AND_USE",
+      "type": "esriFieldTypeString",
+      "length": 8
+    },
+    {
+      "name": "TYPE_USE_DECODE",
+      "alias": "TYPE_USE_DECODE",
+      "type": "esriFieldTypeString",
+      "length": 20
+    },
+    {
+      "name": "DESIGNSTYL",
+      "alias": "DESIGNSTYL",
+      "type": "esriFieldTypeString",
+      "length": 8
+    },
+    {
+      "name": "DESIGN_STYLE_DECODE",
+      "alias": "DESIGN_STYLE_DECODE",
+      "type": "esriFieldTypeString",
+      "length": 20
+    },
+    {
+      "name": "UNITS",
+      "alias": "UNITS",
+      "type": "esriFieldTypeDouble"
+    },
+    {
+      "name": "LAND_CLASS",
+      "alias": "LAND_CLASS",
+      "type": "esriFieldTypeString",
+      "length": 3
+    },
+    {
+      "name": "LAND_CLASS_DECODE",
+      "alias": "LAND_CLASS_DECODE",
+      "type": "esriFieldTypeString",
+      "length": 80
+    },
+    {
+      "name": "EXEMPTDESC",
+      "alias": "EXEMPTDESC",
+      "type": "esriFieldTypeString",
+      "length": 20
+    },
+    {
+      "name": "EXEMPTSTAT",
+      "alias": "EXEMPTSTAT",
+      "type": "esriFieldTypeString",
+      "length": 8
+    },
+    {
+      "name": "OWNERSHIP",
+      "alias": "OWNERSHIP",
+      "type": "esriFieldTypeSmallInteger"
+    },
+    {
+      "name": "ACTIVITY",
+      "alias": "ACTIVITY",
+      "type": "esriFieldTypeSmallInteger"
+    },
+    {
+      "name": "FUNCTION",
+      "alias": "FUNCTION",
+      "type": "esriFieldTypeSmallInteger"
+    },
+    {
+      "name": "STRUCTURE",
+      "alias": "STRUCTURE",
+      "type": "esriFieldTypeSmallInteger"
+    },
+    {
+      "name": "SITE",
+      "alias": "SITE",
+      "type": "esriFieldTypeSmallInteger"
+    },
+    {
+      "name": "TOTSTRUCTS",
+      "alias": "TOTSTRUCTS",
+      "type": "esriFieldTypeSmallInteger"
+    },
+    {
+      "name": "TOTUNITS",
+      "alias": "TOTUNITS",
+      "type": "esriFieldTypeSmallInteger"
+    },
+    {
+      "name": "OLD_PARCEL_NUMBER",
+      "alias": "OLD_PARCEL_NUMBER",
+      "type": "esriFieldTypeString",
+      "length": 16
+    },
+    {
+      "name": "ZIPNUM",
+      "alias": "ZIPNUM",
+      "type": "esriFieldTypeString",
+      "length": 5
+    },
+    {
+      "name": "Shape__Area",
+      "alias": "SHAPE.AREA",
+      "type": "esriFieldTypeDouble"
+    },
+    {
+      "name": "Shape__Length",
+      "alias": "SHAPE.LEN",
+      "type": "esriFieldTypeDouble"
+    },
+    {
+      "name": "PARCEL_PK",
+      "alias": "PARCEL_PK",
+      "type": "esriFieldTypeInteger"
+    },
+    {
+      "name": "LAND_CODE",
+      "alias": "LAND_CODE",
+      "type": "esriFieldTypeString",
+      "length": 1
+    }
+  ],
+  "features": [
+    {
+      "attributes": {
+        "OBJECTID": 15591,
+        "PIN_NUM": "0751716452",
+        "CALC_AREA": 0.81692838,
+        "REID": "0195089",
+        "MAP_NAME": "0751 04",
+        "OWNER": "NIROULA, SURENDRA SHRESTHA, MANIKA",
+        "ADDR1": "7837 LITTLEMAN LN",
+        "ADDR2": "APEX NC 27539-6305",
+        "ADDR3": null,
+        "DEED_BOOK": "018967",
+        "DEED_PAGE": "00409",
+        "DEED_DATE": 1648166400000,
+        "DEED_ACRES": 0.82,
+        "BLDG_VAL": 186975,
+        "LAND_VAL": 180000,
+        "TOTAL_VALUE_ASSD": 366975,
+        "BILLCLASS": 2,
+        "BILLING_CLASS_DECODE": "Individual",
+        "PROPDESC": "LO8 SUMMERCREST SUBD BM1992 -01032",
+        "HEATEDAREA": 1198,
+        "STNAME": "LITTLEMAN",
+        "STYPE": "LN",
+        "STPRE": null,
+        "STSUF": null,
+        "STNUM": 7837,
+        "STMISC": null,
+        "SITE_ADDRESS": "7837 LITTLEMAN LN",
+        "FULL_STREET_NAME": "LITTLEMAN LN",
+        "CITY": null,
+        "CITY_DECODE": null,
+        "PLANNING_JURISDICTION": "AP",
+        "TOWNSHIP": "20",
+        "TOWNSHIP_DECODE": "White Oak",
+        "FIREDIST": "23",
+        "YEAR_BUILT": 1992,
+        "TOTSALPRICE": 441000,
+        "SALE_DATE": 1648166400000,
+        "TYPE_AND_USE": "01",
+        "TYPE_USE_DECODE": "SINGLFAM",
+        "DESIGNSTYL": "CVL",
+        "DESIGN_STYLE_DECODE": "Conventional",
+        "UNITS": 1,
+        "LAND_CLASS": "RHS",
+        "LAND_CLASS_DECODE": "Residential Less Than 10 Acres",
+        "EXEMPTDESC": null,
+        "EXEMPTSTAT": null,
+        "OWNERSHIP": 1010,
+        "ACTIVITY": 1100,
+        "FUNCTION": 1100,
+        "STRUCTURE": 1110,
+        "SITE": 6100,
+        "TOTSTRUCTS": 1,
+        "TOTUNITS": 1,
+        "OLD_PARCEL_NUMBER": "--",
+        "ZIPNUM": "27539",
+        "Shape__Area": 35585.4000266542,
+        "Shape__Length": 875.345698839253,
+        "PARCEL_PK": 269006,
+        "LAND_CODE": "R"
+      }
+    },
+    {
+      "attributes": {
+        "OBJECTID": 15929,
+        "PIN_NUM": "0751803256",
+        "CALC_AREA": 1.28632578,
+        "REID": "0100220",
+        "MAP_NAME": "0751 04",
+        "OWNER": "MANNING, SANDRA MANNING, NICHOLAS JEROME WARREN",
+        "ADDR1": "7836 STEPHENSON RD",
+        "ADDR2": "APEX NC 27539-7085",
+        "ADDR3": null,
+        "DEED_BOOK": "014996",
+        "DEED_PAGE": "00044",
+        "DEED_DATE": 1351641600000,
+        "DEED_ACRES": 1.3,
+        "BLDG_VAL": 99889,
+        "LAND_VAL": 157000,
+        "TOTAL_VALUE_ASSD": 256889,
+        "BILLCLASS": 2,
+        "BILLING_CLASS_DECODE": "Individual",
+        "PROPDESC": "LO5B A.W. POLLARD EST. ",
+        "HEATEDAREA": 912,
+        "STNAME": "STEPHENSON",
+        "STYPE": "RD",
+        "STPRE": null,
+        "STSUF": null,
+        "STNUM": 7836,
+        "STMISC": null,
+        "SITE_ADDRESS": "7836 STEPHENSON RD",
+        "FULL_STREET_NAME": "STEPHENSON RD",
+        "CITY": null,
+        "CITY_DECODE": null,
+        "PLANNING_JURISDICTION": "AP",
+        "TOWNSHIP": "20",
+        "TOWNSHIP_DECODE": "White Oak",
+        "FIREDIST": "23",
+        "YEAR_BUILT": 1991,
+        "TOTSALPRICE": null,
+        "SALE_DATE": null,
+        "TYPE_AND_USE": "01",
+        "TYPE_USE_DECODE": "SINGLFAM",
+        "DESIGNSTYL": "CVL",
+        "DESIGN_STYLE_DECODE": "Conventional",
+        "UNITS": 1,
+        "LAND_CLASS": "RHS",
+        "LAND_CLASS_DECODE": "Residential Less Than 10 Acres",
+        "EXEMPTDESC": null,
+        "EXEMPTSTAT": null,
+        "OWNERSHIP": 1010,
+        "ACTIVITY": 1100,
+        "FUNCTION": 1100,
+        "STRUCTURE": 1110,
+        "SITE": 6100,
+        "TOTSTRUCTS": 1,
+        "TOTUNITS": 1,
+        "OLD_PARCEL_NUMBER": "--",
+        "ZIPNUM": "27539",
+        "Shape__Area": 56032.3509312576,
+        "Shape__Length": 1059.32619312248,
+        "PARCEL_PK": 431770,
+        "LAND_CODE": "R"
+      }
+    },
+    {
+      "attributes": {
+        "OBJECTID": 18166,
+        "PIN_NUM": "0751718678",
+        "CALC_AREA": 1.12583397,
+        "REID": "0082852",
+        "MAP_NAME": "0751 04",
+        "OWNER": "SMITH, SAMUEL THOMAS ",
+        "ADDR1": "7812 SMITH RD",
+        "ADDR2": "APEX NC 27539-8856",
+        "ADDR3": null,
+        "DEED_BOOK": "15-E",
+        "DEED_PAGE": "539",
+        "DEED_DATE": 1413504000000,
+        "DEED_ACRES": 1.12,
+        "BLDG_VAL": 138709,
+        "LAND_VAL": 140800,
+        "TOTAL_VALUE_ASSD": 279509,
+        "BILLCLASS": 2,
+        "BILLING_CLASS_DECODE": "Individual",
+        "PROPDESC": "APEX RD ",
+        "HEATEDAREA": 1025,
+        "STNAME": "SMITH",
+        "STYPE": "RD",
+        "STPRE": null,
+        "STSUF": null,
+        "STNUM": 7812,
+        "STMISC": null,
+        "SITE_ADDRESS": "7812 SMITH RD",
+        "FULL_STREET_NAME": "SMITH RD",
+        "CITY": null,
+        "CITY_DECODE": null,
+        "PLANNING_JURISDICTION": "AP",
+        "TOWNSHIP": "20",
+        "TOWNSHIP_DECODE": "White Oak",
+        "FIREDIST": "23",
+        "YEAR_BUILT": 1976,
+        "TOTSALPRICE": null,
+        "SALE_DATE": null,
+        "TYPE_AND_USE": "01",
+        "TYPE_USE_DECODE": "SINGLFAM",
+        "DESIGNSTYL": "CVL",
+        "DESIGN_STYLE_DECODE": "Conventional",
+        "UNITS": 1,
+        "LAND_CLASS": "RHS",
+        "LAND_CLASS_DECODE": "Residential Less Than 10 Acres",
+        "EXEMPTDESC": null,
+        "EXEMPTSTAT": null,
+        "OWNERSHIP": 1010,
+        "ACTIVITY": 1100,
+        "FUNCTION": 1100,
+        "STRUCTURE": 1110,
+        "SITE": 6100,
+        "TOTSTRUCTS": 1,
+        "TOTUNITS": 1,
+        "OLD_PARCEL_NUMBER": " 673-00000-0025",
+        "ZIPNUM": "27539",
+        "Shape__Area": 49041.327532791496,
+        "Shape__Length": 886.728553849098,
+        "PARCEL_PK": 215203,
+        "LAND_CODE": "R"
+      }
+    },
+    {
+      "attributes": {
+        "OBJECTID": 18554,
+        "PIN_NUM": "0751704351",
+        "CALC_AREA": 0.15949492,
+        "REID": "0433837",
+        "MAP_NAME": "0751 04",
+        "OWNER": "MA, JING CHEN, TAO",
+        "ADDR1": "332 KINELLAN LN",
+        "ADDR2": "CARY NC 27519-8642",
+        "ADDR3": null,
+        "DEED_BOOK": "016472",
+        "DEED_PAGE": "00776",
+        "DEED_DATE": 1469664000000,
+        "DEED_ACRES": 0.16,
+        "BLDG_VAL": 499891,
+        "LAND_VAL": 120000,
+        "TOTAL_VALUE_ASSD": 619891,
+        "BILLCLASS": 2,
+        "BILLING_CLASS_DECODE": "Individual",
+        "PROPDESC": "LO83 COLVIN PARK PH2&PT3 BM2015 -01808",
+        "HEATEDAREA": 2996,
+        "STNAME": "NEWLEAF",
+        "STYPE": "DR",
+        "STPRE": null,
+        "STSUF": null,
+        "STNUM": 2217,
+        "STMISC": null,
+        "SITE_ADDRESS": "2217 NEWLEAF DR",
+        "FULL_STREET_NAME": "NEWLEAF DR",
+        "CITY": "APE",
+        "CITY_DECODE": "APEX",
+        "PLANNING_JURISDICTION": "AP",
+        "TOWNSHIP": "20",
+        "TOWNSHIP_DECODE": "White Oak",
+        "FIREDIST": null,
+        "YEAR_BUILT": 2016,
+        "TOTSALPRICE": 397000,
+        "SALE_DATE": 1469664000000,
+        "TYPE_AND_USE": "01",
+        "TYPE_USE_DECODE": "SINGLFAM",
+        "DESIGNSTYL": "CVL",
+        "DESIGN_STYLE_DECODE": "Conventional",
+        "UNITS": 1,
+        "LAND_CLASS": "RHS",
+        "LAND_CLASS_DECODE": "Residential Less Than 10 Acres",
+        "EXEMPTDESC": null,
+        "EXEMPTSTAT": null,
+        "OWNERSHIP": 1010,
+        "ACTIVITY": 1100,
+        "FUNCTION": 1100,
+        "STRUCTURE": 1110,
+        "SITE": 6100,
+        "TOTSTRUCTS": 1,
+        "TOTUNITS": 1,
+        "OLD_PARCEL_NUMBER": "--",
+        "ZIPNUM": "27539",
+        "Shape__Area": 6947.59850462168,
+        "Shape__Length": 359.007731198028,
+        "PARCEL_PK": 452841,
+        "LAND_CODE": "R"
+      }
+    }
+  ],
+  "exceededTransferLimit": true
+}

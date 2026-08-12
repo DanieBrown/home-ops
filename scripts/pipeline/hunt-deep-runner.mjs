@@ -27,9 +27,37 @@
 import { spawnSync } from 'node:child_process';
 import { resolve } from 'node:path';
 import { loadContract, saveContract } from '../hooks/contract-shared.mjs';
+import { hasHelpFlag } from '../shared/cli.mjs';
 
 const ROOT = resolve(process.cwd());
 const NODE = process.execPath;
+
+const HELP_TEXT = `Usage:
+  node hunt-deep-runner.mjs
+
+Deep shortlist data-collection runner (phases 1-4). Runs the deterministic
+prep scripts that build a research packet for every shortlisted home, each
+against --shortlist:
+  1. research-source-plan        2. community-lookup
+  3. sentiment-browser-extract   4. construction-check
+  5. sentiment-public-extract    6. utility-options-check
+  7. deep-research-packet
+
+Aborts on the first failing phase. On success the main agent reads
+output/deep-packets/, fans out the axis agents, then calls
+"npm run hunt:deep-final".
+
+Takes no options -- the shortlist and the hosted chrome-host profile are both
+implied. Exits 1 if any phase fails.
+
+Options:
+  --help, -h   Show this help text.
+`;
+
+if (hasHelpFlag(process.argv.slice(2))) {
+  console.log(HELP_TEXT);
+  process.exit(0);
+}
 
 const PHASES = [
   {
@@ -67,6 +95,24 @@ const PHASES = [
     label: 'Shortlist utility/provider billing options',
     cmd: NODE,
     args: ['scripts/research/utility-options-check.mjs', '--shortlist'],
+  },
+  {
+    contractId: 'site-hazards-check',
+    label: 'Shortlist site hazards (flood, wetlands, radon, EPA sites, septic, airport noise)',
+    cmd: NODE,
+    args: ['scripts/research/site-hazards-check.mjs', '--shortlist'],
+  },
+  {
+    contractId: 'parcel-tax-check',
+    label: 'Shortlist parcel, assessment, tax estimate, and zoning',
+    cmd: NODE,
+    args: ['scripts/research/parcel-tax-check.mjs', '--shortlist'],
+  },
+  {
+    contractId: 'access-check',
+    label: 'Shortlist road adjacency, AADT, and drive times',
+    cmd: NODE,
+    args: ['scripts/research/access-check.mjs', '--shortlist', '--profile', 'chrome-host'],
   },
   {
     contractId: 'deep-research-packet',

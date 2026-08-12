@@ -16,6 +16,29 @@ import {
   PIPELINE_FILE as PIPELINE_PATH,
   HOME_OPS_DIR,
 } from '../shared/paths.mjs';
+import { hasHelpFlag } from '../shared/cli.mjs';
+
+const HELP_TEXT = `Usage:
+  node verify-pipeline-write.mjs
+
+Confirms that a scan actually persisted to data/pipeline.md before the hunt
+flow evaluates it. If a scan is still running it waits on the recorded PID for
+up to 10 minutes; if that PID is already dead with no completion marker it
+fails immediately rather than let a stale pipeline through.
+
+Then checks that data/pipeline.md exists, carries "## Pending" and
+"## Processed" sections, and was modified within the last 60 minutes.
+
+Takes no options. Exits 1 on any of those failures.
+
+Options:
+  --help, -h   Show this help text.
+`;
+
+if (hasHelpFlag(process.argv.slice(2))) {
+  console.log(HELP_TEXT);
+  process.exit(0);
+}
 
 const SCAN_RUNNING_PATH = join(HOME_OPS_DIR, 'scan-running.json');
 const SCAN_COMPLETE_PATH = join(HOME_OPS_DIR, 'scan-complete.json');

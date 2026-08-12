@@ -27,6 +27,33 @@ import {
   withSidecarMetadata,
 } from '../shared/knowledge-store.mjs';
 import { RESEARCH_DEFAULTS_PATH, stateResearchDefaults } from '../shared/research-defaults.mjs';
+import { hasHelpFlag } from '../shared/cli.mjs';
+
+const HELP_TEXT = `Usage:
+  node generate-portals.mjs
+
+Regenerates portals.yml from config/profile.yml and config/city-registry.yml.
+Each search area becomes a platform-specific search URL; unknown cities fall
+back to a zipcode URL (Redfin) or a derived slug (Zillow, Realtor.com,
+Homes.com) and a warning naming the city is printed.
+
+Only the portals and sentiment/school/development/utility sources the buyer
+opted into under research_sources are written.
+
+Also writes these generated source inventories:
+  output/development-sources.json
+  output/state-sources.json
+  output/utility-sources.json
+
+portals.yml is generated -- rerun this after any change to search areas or
+research sources rather than editing it by hand.
+
+Takes no options. Exits 1 when config/profile.yml is missing or has no
+search.areas entries.
+
+Options:
+  --help, -h   Show this help text.
+`;
 
 const REGISTRY_PATH = join(ROOT, 'config', 'city-registry.yml');
 const DEVELOPMENT_SOURCES_OUTPUT = join(OUTPUT_DIR, 'development-sources.json');
@@ -711,6 +738,10 @@ function main() {
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  if (hasHelpFlag(process.argv.slice(2))) {
+    console.log(HELP_TEXT);
+    process.exit(0);
+  }
   try {
     main();
   } catch (error) {

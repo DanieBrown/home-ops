@@ -25,6 +25,31 @@ import {
   STATES_FILE,
   BATCH_DIR as ADDITIONS_DIR,
 } from '../shared/paths.mjs';
+import { hasHelpFlag } from '../shared/cli.mjs';
+
+const HELP_TEXT = `Usage:
+  node verify-pipeline.mjs
+
+Health check for the listing pipeline. Reads data/listings.md, data/pipeline.md,
+and batch/tracker-additions/ and reports:
+  - listing rows that are not in the expected 11-column format
+  - statuses outside templates/states.yml, or wrapped in markdown bold
+  - duplicate address + city rows
+  - report links that do not resolve to a file
+  - scores that are not X.X/5 or N/A
+  - staged TSV additions still waiting to be merged
+
+Takes no options. Exits 1 when errors were found, 0 for a clean or
+warnings-only pipeline.
+
+Options:
+  --help, -h   Show this help text.
+`;
+
+if (hasHelpFlag(process.argv.slice(2))) {
+  console.log(HELP_TEXT);
+  process.exit(0);
+}
 
 let errors = 0;
 let warnings = 0;

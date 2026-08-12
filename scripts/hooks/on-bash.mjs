@@ -5,6 +5,7 @@ import {
   saveContract,
   matchRequirement,
   normalizeBashPayload,
+  isHelpInvocation,
 } from './contract-shared.mjs';
 
 function trimForBlock(text, max = 800) {
@@ -17,6 +18,11 @@ async function main() {
   const payload = await readStdinJson();
   const norm = normalizeBashPayload(payload);
   if (!norm || !norm.isShell || !norm.command) process.exit(0);
+
+  // A `--help` run exits 0 without doing any work. Leave the requirement
+  // untouched: satisfying it would open a gate the pipeline never walked
+  // through, and failing it would block on a harmless lookup.
+  if (isHelpInvocation(norm.command)) process.exit(0);
 
   const contract = loadContract();
   if (!contract || !Array.isArray(contract.required)) process.exit(0);

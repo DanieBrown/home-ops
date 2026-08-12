@@ -20,7 +20,39 @@ import {
   serializeListing,
 } from '../shared/listings.mjs';
 import { LISTINGS_FILE } from '../shared/paths.mjs';
-const DRY_RUN = process.argv.includes('--dry-run');
+import { parseArgs } from '../shared/cli.mjs';
+
+const HELP_TEXT = `Usage:
+  node dedup-tracker.mjs [--dry-run]
+
+Removes duplicate rows from data/listings.md. Duplicate identity is normalized
+address + city. The keeper row takes the most advanced status, the highest
+score, and the merged notes of its group. A backup is written to
+data/listings.md.bak before any change.
+
+Options:
+  --dry-run    List the duplicates without writing data/listings.md.
+  --help, -h   Show this help text.
+`;
+
+let dedupConfig;
+try {
+  dedupConfig = parseArgs(process.argv.slice(2), {
+    '--dry-run': { type: 'flag', key: 'dryRun' },
+  });
+} catch (error) {
+  console.error(error.message);
+  console.error('');
+  console.error(HELP_TEXT);
+  process.exit(1);
+}
+
+if (dedupConfig.help) {
+  console.log(HELP_TEXT);
+  process.exit(0);
+}
+
+const DRY_RUN = dedupConfig.dryRun === true;
 
 if (!existsSync(LISTINGS_FILE)) {
   console.log('No data/listings.md found. Nothing to deduplicate.');

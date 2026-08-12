@@ -1,0 +1,10 @@
+{
+  "objectIdFieldName": "OBJECTID",
+  "globalIdFieldName": "",
+  "geometryType": "esriGeometryPolygon",
+  "spatialReference": {
+    "wkid": 102719,
+    "latestWkid": 2264
+  },
+  "features": []
+}

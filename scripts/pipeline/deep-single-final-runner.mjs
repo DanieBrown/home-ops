@@ -180,6 +180,24 @@ function main() {
       args: ['scripts/research/county-permits-check.mjs', reportArg],
     },
     {
+      contractId: 'site-hazards-check-single',
+      label: 'Site hazards (flood, wetlands, radon, EPA sites, septic, airport noise)',
+      cmd: NODE,
+      args: ['scripts/research/site-hazards-check.mjs', reportArg],
+    },
+    {
+      contractId: 'parcel-tax-check-single',
+      label: 'Parcel, assessment, tax estimate, and zoning',
+      cmd: NODE,
+      args: ['scripts/research/parcel-tax-check.mjs', reportArg],
+    },
+    {
+      contractId: 'access-check-single',
+      label: 'Road adjacency, AADT, and drive times',
+      cmd: NODE,
+      args: ['scripts/research/access-check.mjs', reportArg, '--profile', config.profileName],
+    },
+    {
       contractId: 'builder-check-single',
       label: 'Builder reputation lookup',
       cmd: NODE,

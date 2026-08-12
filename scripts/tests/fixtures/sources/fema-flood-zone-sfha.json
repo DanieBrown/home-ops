@@ -1,0 +1,189 @@
+{
+  "displayFieldName": "FLD_AR_ID",
+  "fieldAliases": {
+    "OBJECTID": "OBJECTID",
+    "DFIRM_ID": "DFIRM_ID",
+    "FLD_AR_ID": "FLD_AR_ID",
+    "STUDY_TYP": "STUDY_TYP",
+    "FLD_ZONE": "FLD_ZONE",
+    "ZONE_SUBTY": "ZONE_SUBTY",
+    "SFHA_TF": "SFHA_TF",
+    "STATIC_BFE": "STATIC_BFE",
+    "V_DATUM": "V_DATUM",
+    "DEPTH": "DEPTH",
+    "LEN_UNIT": "LEN_UNIT",
+    "VELOCITY": "VELOCITY",
+    "VEL_UNIT": "VEL_UNIT",
+    "AR_REVERT": "AR_REVERT",
+    "AR_SUBTRV": "AR_SUBTRV",
+    "BFE_REVERT": "BFE_REVERT",
+    "DEP_REVERT": "DEP_REVERT",
+    "DUAL_ZONE": "DUAL_ZONE",
+    "SOURCE_CIT": "SOURCE_CIT",
+    "SHAPE.STArea()": "SHAPE.STArea()",
+    "SHAPE.STLength()": "SHAPE.STLength()",
+    "GFID": "GFID",
+    "GlobalID": "GlobalID"
+  },
+  "fields": [
+    {
+      "name": "OBJECTID",
+      "type": "esriFieldTypeOID",
+      "alias": "OBJECTID"
+    },
+    {
+      "name": "DFIRM_ID",
+      "type": "esriFieldTypeString",
+      "alias": "DFIRM_ID",
+      "length": 6
+    },
+    {
+      "name": "FLD_AR_ID",
+      "type": "esriFieldTypeString",
+      "alias": "FLD_AR_ID",
+      "length": 32
+    },
+    {
+      "name": "STUDY_TYP",
+      "type": "esriFieldTypeString",
+      "alias": "STUDY_TYP",
+      "length": 38
+    },
+    {
+      "name": "FLD_ZONE",
+      "type": "esriFieldTypeString",
+      "alias": "FLD_ZONE",
+      "length": 17
+    },
+    {
+      "name": "ZONE_SUBTY",
+      "type": "esriFieldTypeString",
+      "alias": "ZONE_SUBTY",
+      "length": 76
+    },
+    {
+      "name": "SFHA_TF",
+      "type": "esriFieldTypeString",
+      "alias": "SFHA_TF",
+      "length": 1
+    },
+    {
+      "name": "STATIC_BFE",
+      "type": "esriFieldTypeDouble",
+      "alias": "STATIC_BFE"
+    },
+    {
+      "name": "V_DATUM",
+      "type": "esriFieldTypeString",
+      "alias": "V_DATUM",
+      "length": 17
+    },
+    {
+      "name": "DEPTH",
+      "type": "esriFieldTypeDouble",
+      "alias": "DEPTH"
+    },
+    {
+      "name": "LEN_UNIT",
+      "type": "esriFieldTypeString",
+      "alias": "LEN_UNIT",
+      "length": 16
+    },
+    {
+      "name": "VELOCITY",
+      "type": "esriFieldTypeDouble",
+      "alias": "VELOCITY"
+    },
+    {
+      "name": "VEL_UNIT",
+      "type": "esriFieldTypeString",
+      "alias": "VEL_UNIT",
+      "length": 20
+    },
+    {
+      "name": "AR_REVERT",
+      "type": "esriFieldTypeString",
+      "alias": "AR_REVERT",
+      "length": 17
+    },
+    {
+      "name": "AR_SUBTRV",
+      "type": "esriFieldTypeString",
+      "alias": "AR_SUBTRV",
+      "length": 57
+    },
+    {
+      "name": "BFE_REVERT",
+      "type": "esriFieldTypeDouble",
+      "alias": "BFE_REVERT"
+    },
+    {
+      "name": "DEP_REVERT",
+      "type": "esriFieldTypeDouble",
+      "alias": "DEP_REVERT"
+    },
+    {
+      "name": "DUAL_ZONE",
+      "type": "esriFieldTypeString",
+      "alias": "DUAL_ZONE",
+      "length": 1
+    },
+    {
+      "name": "SOURCE_CIT",
+      "type": "esriFieldTypeString",
+      "alias": "SOURCE_CIT",
+      "length": 21
+    },
+    {
+      "name": "SHAPE.STArea()",
+      "type": "esriFieldTypeDouble",
+      "alias": "SHAPE.STArea()"
+    },
+    {
+      "name": "SHAPE.STLength()",
+      "type": "esriFieldTypeDouble",
+      "alias": "SHAPE.STLength()"
+    },
+    {
+      "name": "GFID",
+      "type": "esriFieldTypeString",
+      "alias": "GFID",
+      "length": 36
+    },
+    {
+      "name": "GlobalID",
+      "type": "esriFieldTypeGlobalID",
+      "alias": "GlobalID",
+      "length": 38
+    }
+  ],
+  "features": [
+    {
+      "attributes": {
+        "OBJECTID": 23557107,
+        "DFIRM_ID": "37183C",
+        "FLD_AR_ID": "37183C_2608",
+        "STUDY_TYP": "SFHAs WITH HIGH FLOOD RISK",
+        "FLD_ZONE": "AE",
+        "ZONE_SUBTY": null,
+        "SFHA_TF": "T",
+        "STATIC_BFE": -9999,
+        "V_DATUM": "",
+        "DEPTH": -9999,
+        "LEN_UNIT": "",
+        "VELOCITY": -9999,
+        "VEL_UNIT": "",
+        "AR_REVERT": "",
+        "AR_SUBTRV": "",
+        "BFE_REVERT": -9999,
+        "DEP_REVERT": -9999,
+        "DUAL_ZONE": "",
+        "SOURCE_CIT": "37183C_STUDY146",
+        "SHAPE.STArea()": 0.000028757469014287456,
+        "SHAPE.STLength()": 0.036513608922586246,
+        "GFID": "1ef7e1f8-5a13-4306-943a-395fee2cd3c4",
+        "GlobalID": "{2D7B5CFF-673D-43B7-A096-22E05C82CB06}"
+      }
+    }
+  ]
+}

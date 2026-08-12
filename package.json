@@ -80,6 +80,9 @@
     "schools:metadata": "node scripts/research/school-metadata-fetch.mjs",
     "sentiment:public": "node scripts/research/sentiment-public-extract.mjs",
     "hoa:docs": "node scripts/research/hoa-docs-check.mjs",
+    "hazards:check": "node scripts/research/site-hazards-check.mjs",
+    "parcel:check": "node scripts/research/parcel-tax-check.mjs",
+    "access:check": "node scripts/research/access-check.mjs",
     "skim": "node scripts/browser/skim-portals.mjs"
   },
   "keywords": [

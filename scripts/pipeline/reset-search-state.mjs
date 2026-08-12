@@ -32,14 +32,17 @@ const OUTPUT_CACHE_SUBDIRS = [
 ];
 
 const LEARNED_OUTPUT_SUBDIRS = [
+  'access',
   'areas',
   'builder',
   'communities',
   'construction',
   'geocode',
+  'hazards',
   'hoa',
   'knowledge',
   'listings',
+  'parcel',
   'permits',
   'school-metadata',
   'sentiment',
@@ -153,6 +156,7 @@ Preserves:
   - output/geocode/, output/permits/, output/school-metadata/
   - output/sentiment/, output/construction/, output/communities/
   - output/utilities/, output/listings/, output/builder/, output/hoa/
+  - output/hazards/, output/parcel/, output/access/
   - output/*-sources.json source inventories
   - output/browser-sessions/
   - batch/logs/

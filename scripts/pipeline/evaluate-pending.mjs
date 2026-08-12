@@ -1680,13 +1680,32 @@ function detectAreaMatch(city, areas) {
   return areas.find((entry) => normalizeCity(entry.name) === normalizedCity) ?? null;
 }
 
+/**
+ * Keyword hints from the listing's own marketing copy.
+ *
+ * These are `listing-text-mention` signals and nothing more. They mean "the
+ * agent's description used this word", which is a weak pre-screen for the fast
+ * evaluate path -- not a hazard determination.
+ *
+ * The two that used to masquerade as findings are named accordingly:
+ * `busyRoadMentionedInListing` and `floodMentionedInListing`. Authoritative
+ * answers come from the capture scripts, and modes/_shared.md scores from
+ * those sidecars, never from these:
+ *   - flood zone      -> output/hazards/{slug}.json (FEMA NFHL)
+ *   - road adjacency  -> output/access/{slug}.json  (NCDOT AADT)
+ *
+ * Silence here is not evidence of safety: most listings never mention a flood
+ * zone even when the home sits inside one. Anything reading these must treat
+ * them as a hint.
+ */
 function detectSignals(facts) {
   const text = String(facts.rawText ?? '').toLowerCase();
   return {
+    signalKind: 'listing-text-mention',
     fencedYard: /fenced yard|fenced backyard|fenced in yard|fenced/i.test(text),
     usableYard: /backyard|yard|patio|deck|screened porch|fire pit|play/i.test(text),
-    busyRoadRisk: /busy road|cut-through|high traffic|traffic noise|backs to .*road|backs to .*highway|adjacent to .*road/i.test(text),
-    floodRisk: /flood zone|floodplain|drainage/i.test(text),
+    busyRoadMentionedInListing: /busy road|cut-through|high traffic|traffic noise|backs to .*road|backs to .*highway|adjacent to .*road/i.test(text),
+    floodMentionedInListing: /flood zone|floodplain|drainage/i.test(text),
     commercialRisk: /backs to commercial|backs to retail|backs to highway/i.test(text),
     newConstruction: /new construction|to be built|proposed construction|under construction/i.test(text),
   };
@@ -1882,11 +1901,13 @@ function scoreHome(facts, profile, areaMatch, verificationStatus) {
     score -= 0.25;
   }
 
-  if (signals.busyRoadRisk) {
+  // A listing-text mention is a weak triage nudge, not the _shared.md 2.2 cap.
+  // The cap belongs to the deep flow, which reads FEMA and NCDOT directly.
+  if (signals.busyRoadMentionedInListing) {
     score -= 0.25;
   }
 
-  if (signals.floodRisk) {
+  if (signals.floodMentionedInListing) {
     score -= 0.25;
   }
 
@@ -2046,10 +2067,10 @@ function buildNeighborhoodSection(facts, result) {
   const lines = [];
   lines.push(`This deterministic batch pass did not run a fresh Facebook or Nextdoor neighborhood read, so treat the sentiment view as preliminary.`);
   lines.push(`If this home survives triage, use the hosted browser to check recent Facebook groups, Nextdoor posts, and a map-level street read for ${city}.`);
-  if (result.signals.busyRoadRisk) {
+  if (result.signals.busyRoadMentionedInListing) {
     lines.push('The listing language itself raises a traffic or busy-road question, so street noise and cut-through patterns should be part of the next review pass.');
   } else {
-    lines.push('Nothing in the extracted listing text alone creates a major neighborhood red flag, but that is not a substitute for real local-source validation.');
+    lines.push('Nothing in the extracted listing text alone creates a major neighborhood red flag, but listing silence is not a measurement — traffic exposure stays unmeasured until access-check.mjs reads NCDOT counts in the deep pass.');
   }
   return lines.join(' ');
 }
@@ -2105,11 +2126,19 @@ function buildRisksAndQuestions(facts, result) {
   if (result.unknownCritical > 0) {
     lines.push('- Several critical fields are still unverified, so this remains a triage-grade call rather than a full diligence pass.');
   }
-  if (result.signals.busyRoadRisk) {
-    lines.push('- Validate traffic, cut-through, and street-noise exposure at real travel times.');
+  if (result.signals.busyRoadMentionedInListing) {
+    lines.push('- The listing text mentions traffic or a busy road. Validate exposure at real travel times, and run the deep pass for the NCDOT traffic count.');
   }
-  if (result.signals.floodRisk) {
-    lines.push('- Confirm floodplain and drainage conditions before escalation.');
+  if (result.signals.floodMentionedInListing) {
+    lines.push('- The listing text mentions flooding or drainage. Confirm the FEMA flood zone before escalation.');
+  }
+  // Listing silence is not an all-clear on either dimension, so both stay open
+  // questions until the deep flow queries FEMA and NCDOT directly.
+  if (!result.signals.floodMentionedInListing) {
+    lines.push('- FEMA flood zone has not been checked in this triage pass. Run the deep pass (site-hazards-check) before treating flood risk as low.');
+  }
+  if (!result.signals.busyRoadMentionedInListing) {
+    lines.push('- Road adjacency has not been measured in this triage pass. Run the deep pass (access-check) for the nearest counted road and its traffic volume.');
   }
   if (facts.schoolRatings.length === 0) {
     lines.push((facts.assignedSchools?.length ?? 0) > 0

@@ -29,9 +29,42 @@ import {
 } from '../shared/listings.mjs';
 import { buildCanonicalLookup, readCanonicalStatuses, normalizeStatus as resolveStatus } from '../shared/states.mjs';
 import { ROOT, LISTINGS_FILE, BATCH_DIR, MERGED_BATCH_DIR, STATES_FILE } from '../shared/paths.mjs';
+import { parseArgs } from '../shared/cli.mjs';
 
-const DRY_RUN = process.argv.includes('--dry-run');
-const VERIFY = process.argv.includes('--verify');
+const HELP_TEXT = `Usage:
+  node merge-tracker.mjs [--dry-run] [--verify]
+
+Merges every staged TSV in batch/tracker-additions/ into data/listings.md,
+deduplicating by report number, row number, then normalized address + city.
+Merged TSVs are moved to batch/tracker-additions/merged/.
+
+Options:
+  --dry-run    Report the merge plan without writing data/listings.md or
+               moving any staged TSV.
+  --verify     Run verify-pipeline.mjs after a successful merge.
+  --help, -h   Show this help text.
+`;
+
+let mergeConfig;
+try {
+  mergeConfig = parseArgs(process.argv.slice(2), {
+    '--dry-run': { type: 'flag', key: 'dryRun' },
+    '--verify': { type: 'flag', key: 'verify' },
+  });
+} catch (error) {
+  console.error(error.message);
+  console.error('');
+  console.error(HELP_TEXT);
+  process.exit(1);
+}
+
+if (mergeConfig.help) {
+  console.log(HELP_TEXT);
+  process.exit(0);
+}
+
+const DRY_RUN = mergeConfig.dryRun === true;
+const VERIFY = mergeConfig.verify === true;
 
 const CANONICAL_STATUSES = readCanonicalStatuses(STATES_FILE);
 const CANONICAL_LOOKUP = buildCanonicalLookup(CANONICAL_STATUSES);

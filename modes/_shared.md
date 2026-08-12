@@ -127,6 +127,18 @@ Score every listing from 1.0 to 5.0 using five dimensions.
 | Financial Fit | 0.10 | Price fit, estimated monthly cost, HOA, taxes, affordability margin |
 | Resale / Risk | 0.15 | Busy-road exposure, flood risk, future development, marketability |
 
+**Where these dimensions get their facts.** Each one reads from a captured, cited sidecar, not from listing marketing copy:
+
+| Input | Source of truth |
+|-------|-----------------|
+| Property taxes and assessed value (Financial Fit) | `output/parcel/{slug}.json` — `dimensions.estimatedTax`, `dimensions.assessedValue`. The tax figure is an estimate that excludes special district levies; present the county bill lookup alongside it and never state it as the actual bill. |
+| Flood exposure (Resale / Risk) | `output/hazards/{slug}.json` — `dimensions.flood` and `floodIsSFHA`, from the FEMA National Flood Hazard Layer. |
+| Busy-road exposure (Resale / Risk) | `output/access/{slug}.json` — `busyRoadExposure` and `dimensions.nearestRoad`, from NCDOT AADT count stations measured against the buyer's thresholds in `config/profile.yml`. |
+| Price movement (Resale / Risk) | `output/listings/{slug}.json` — `priceMovement`: original list price, total cut, cut count, and days to first cut. Movement is a stronger resale signal than days-on-market alone. |
+| Future development (Resale / Risk) | `output/construction/{slug}.json` and `output/permits/{slug}.json`. |
+
+Every dimension in those sidecars carries a `provenance` of `captured`, `unconfirmed`, `blocked`, `unsupported`, or `not-applicable`. **Only `captured` supports a factual claim in the report.** The rest all mean "not known", and none of them means "clear".
+
 Schools are enforced at the hard-requirement gate via `schools_min_rating` and are surfaced as metadata (ratings, enrollment, demographics) in the final report. They are not a weighted scoring dimension.
 
 ### Score Interpretation
@@ -141,7 +153,11 @@ Schools are enforced at the hard-requirement gate via `schools_min_rating` and a
 
 - Any hard fail on price, beds, garage, or square footage caps the overall score at 2.4.
 - Any assigned school below the buyer's `schools_min_rating` caps at 2.9.
-- Flood-zone exposure, major road adjacency, or HOA above the configured ceiling caps at 2.2 unless disproven.
+- Flood-zone exposure, major road adjacency, or HOA above the configured ceiling caps at 2.2.
+  - **Flood-zone exposure** means `floodIsSFHA: true` in `output/hazards/{slug}.json` — the home sits in a FEMA Special Flood Hazard Area.
+  - **Major road adjacency** means `busyRoadExposure.exposed: true` in `output/access/{slug}.json` — a counted road at or above `access.busy_road_aadt` within `access.busy_road_distance_meters` of the home, both set in `config/profile.yml`.
+  - **A `blocked` or `unconfirmed` read does NOT trigger the cap.** A source that could not be reached is not evidence of a hazard, just as it is not evidence of safety. It does two other things instead: it **lowers confidence**, and it **must appear in the report's "Risks and Open Questions" section** naming the source and what remains unchecked.
+  - Neither cap may be applied — or withheld — on the basis of listing text. If the sidecar is absent, the honest report says the check has not been run.
 - New construction is allowed, but only as a fallback path. Penalize it when an established resale alternative would clearly be preferable.
 - A listing can never receive a strong recommendation when confidence is low and multiple required facts remain unknown.
 

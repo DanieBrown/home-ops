@@ -1,0 +1,482 @@
+{
+  "displayFieldName": "Wetlands.ATTRIBUTE",
+  "fieldAliases": {
+    "Wetlands.OBJECTID": "OBJECTID",
+    "Wetlands.ATTRIBUTE": "ATTRIBUTE",
+    "Wetlands.WETLAND_TYPE": "WETLAND_TYPE",
+    "Wetlands.ACRES": "ACRES",
+    "Wetlands.GLOBALID": "GLOBALID",
+    "Wetlands.Shape_Length": "Shape_Length",
+    "Wetlands.Shape_Area": "Shape_Area",
+    "NWI_Wetland_Codes.OBJECTID": "OBJECTID",
+    "NWI_Wetland_Codes.ATTRIBUTE": "ATTRIBUTE",
+    "NWI_Wetland_Codes.SYSTEM": "SYSTEM",
+    "NWI_Wetland_Codes.SYSTEM_NAME": "SYSTEM_NAME",
+    "NWI_Wetland_Codes.SYSTEM_DEFINITION": "SYSTEM_DEFINITION",
+    "NWI_Wetland_Codes.SUBSYSTEM": "SUBSYSTEM",
+    "NWI_Wetland_Codes.SUBSYSTEM_NAME": "SUBSYSTEM_NAME",
+    "NWI_Wetland_Codes.SUBSYSTEM_DEFINITION": "SUBSYSTEM_DEFINITION",
+    "NWI_Wetland_Codes.CLASS": "CLASS",
+    "NWI_Wetland_Codes.CLASS_NAME": "CLASS_NAME",
+    "NWI_Wetland_Codes.CLASS_DEFINITION": "CLASS_DEFINITION",
+    "NWI_Wetland_Codes.SUBCLASS": "SUBCLASS",
+    "NWI_Wetland_Codes.SUBCLASS_NAME": "SUBCLASS_NAME",
+    "NWI_Wetland_Codes.SUBCLASS_DEFINITION": "SUBCLASS_DEFINITION",
+    "NWI_Wetland_Codes.SPLIT_CLASS": "SPLIT_CLASS",
+    "NWI_Wetland_Codes.SPLIT_CLASS_NAME": "SPLIT_CLASS_NAME",
+    "NWI_Wetland_Codes.SPLIT_CLASS_DEFINITION": "SPLIT_CLASS_DEFINITION",
+    "NWI_Wetland_Codes.SPLIT_SUBCLASS": "SPLIT_SUBCLASS",
+    "NWI_Wetland_Codes.SPLIT_SUBCLASS_NAME": "SPLIT_SUBCLASS_NAME",
+    "NWI_Wetland_Codes.SPLIT_SUBCLASS_DEFINITION": "SPLIT_SUBCLASS_DEFINITION",
+    "NWI_Wetland_Codes.WATER_REGIME": "WATER_REGIME",
+    "NWI_Wetland_Codes.WATER_REGIME_NAME": "WATER_REGIME_NAME",
+    "NWI_Wetland_Codes.WATER_REGIME_SUBGROUP": "WATER_REGIME_SUBGROUP",
+    "NWI_Wetland_Codes.WATER_REGIME_DEFINITION": "WATER_REGIME_DEFINITION",
+    "NWI_Wetland_Codes.MODIFIER1": "MODIFIER1",
+    "NWI_Wetland_Codes.MODIFIER1_NAME": "MODIFIER1_NAME",
+    "NWI_Wetland_Codes.MODIFIER1_GROUP": "MODIFIER1_GROUP",
+    "NWI_Wetland_Codes.MODIFIER1_SUBGROUP": "MODIFIER1_SUBGROUP",
+    "NWI_Wetland_Codes.MODIFIER1_DEFINITION": "MODIFIER1_DEFINITION",
+    "NWI_Wetland_Codes.MODIFIER2": "MODIFIER2",
+    "NWI_Wetland_Codes.MODIFIER2_NAME": "MODIFIER2_NAME",
+    "NWI_Wetland_Codes.MODIFIER2_GROUP": "MODIFIER2_GROUP",
+    "NWI_Wetland_Codes.MODIFIER2_SUBGROUP": "MODIFIER2_SUBGROUP",
+    "NWI_Wetland_Codes.MODIFIER2_DEFINITION": "MODIFIER2_DEFINITION",
+    "NWI_Wetland_Codes.Field1": "Field1"
+  },
+  "fields": [
+    {
+      "name": "Wetlands.OBJECTID",
+      "type": "esriFieldTypeOID",
+      "alias": "OBJECTID"
+    },
+    {
+      "name": "Wetlands.ATTRIBUTE",
+      "type": "esriFieldTypeString",
+      "alias": "ATTRIBUTE",
+      "length": 15
+    },
+    {
+      "name": "Wetlands.WETLAND_TYPE",
+      "type": "esriFieldTypeString",
+      "alias": "WETLAND_TYPE",
+      "length": 50
+    },
+    {
+      "name": "Wetlands.ACRES",
+      "type": "esriFieldTypeDouble",
+      "alias": "ACRES"
+    },
+    {
+      "name": "Wetlands.GLOBALID",
+      "type": "esriFieldTypeGUID",
+      "alias": "GLOBALID",
+      "length": 38
+    },
+    {
+      "name": "Wetlands.Shape_Length",
+      "type": "esriFieldTypeDouble",
+      "alias": "Shape_Length"
+    },
+    {
+      "name": "Wetlands.Shape_Area",
+      "type": "esriFieldTypeDouble",
+      "alias": "Shape_Area"
+    },
+    {
+      "name": "NWI_Wetland_Codes.OBJECTID",
+      "type": "esriFieldTypeInteger",
+      "alias": "OBJECTID"
+    },
+    {
+      "name": "NWI_Wetland_Codes.ATTRIBUTE",
+      "type": "esriFieldTypeString",
+      "alias": "ATTRIBUTE",
+      "length": 14
+    },
+    {
+      "name": "NWI_Wetland_Codes.SYSTEM",
+      "type": "esriFieldTypeString",
+      "alias": "SYSTEM",
+      "length": 1
+    },
+    {
+      "name": "NWI_Wetland_Codes.SYSTEM_NAME",
+      "type": "esriFieldTypeString",
+      "alias": "SYSTEM_NAME",
+      "length": 50
+    },
+    {
+      "name": "NWI_Wetland_Codes.SYSTEM_DEFINITION",
+      "type": "esriFieldTypeString",
+      "alias": "SYSTEM_DEFINITION",
+      "length": 1000
+    },
+    {
+      "name": "NWI_Wetland_Codes.SUBSYSTEM",
+      "type": "esriFieldTypeString",
+      "alias": "SUBSYSTEM",
+      "length": 1
+    },
+    {
+      "name": "NWI_Wetland_Codes.SUBSYSTEM_NAME",
+      "type": "esriFieldTypeString",
+      "alias": "SUBSYSTEM_NAME",
+      "length": 50
+    },
+    {
+      "name": "NWI_Wetland_Codes.SUBSYSTEM_DEFINITION",
+      "type": "esriFieldTypeString",
+      "alias": "SUBSYSTEM_DEFINITION",
+      "length": 1000
+    },
+    {
+      "name": "NWI_Wetland_Codes.CLASS",
+      "type": "esriFieldTypeString",
+      "alias": "CLASS",
+      "length": 2
+    },
+    {
+      "name": "NWI_Wetland_Codes.CLASS_NAME",
+      "type": "esriFieldTypeString",
+      "alias": "CLASS_NAME",
+      "length": 50
+    },
+    {
+      "name": "NWI_Wetland_Codes.CLASS_DEFINITION",
+      "type": "esriFieldTypeString",
+      "alias": "CLASS_DEFINITION",
+      "length": 1000
+    },
+    {
+      "name": "NWI_Wetland_Codes.SUBCLASS",
+      "type": "esriFieldTypeString",
+      "alias": "SUBCLASS",
+      "length": 1
+    },
+    {
+      "name": "NWI_Wetland_Codes.SUBCLASS_NAME",
+      "type": "esriFieldTypeString",
+      "alias": "SUBCLASS_NAME",
+      "length": 50
+    },
+    {
+      "name": "NWI_Wetland_Codes.SUBCLASS_DEFINITION",
+      "type": "esriFieldTypeString",
+      "alias": "SUBCLASS_DEFINITION",
+      "length": 1000
+    },
+    {
+      "name": "NWI_Wetland_Codes.SPLIT_CLASS",
+      "type": "esriFieldTypeString",
+      "alias": "SPLIT_CLASS",
+      "length": 2
+    },
+    {
+      "name": "NWI_Wetland_Codes.SPLIT_CLASS_NAME",
+      "type": "esriFieldTypeString",
+      "alias": "SPLIT_CLASS_NAME",
+      "length": 50
+    },
+    {
+      "name": "NWI_Wetland_Codes.SPLIT_CLASS_DEFINITION",
+      "type": "esriFieldTypeString",
+      "alias": "SPLIT_CLASS_DEFINITION",
+      "length": 1000
+    },
+    {
+      "name": "NWI_Wetland_Codes.SPLIT_SUBCLASS",
+      "type": "esriFieldTypeString",
+      "alias": "SPLIT_SUBCLASS",
+      "length": 1
+    },
+    {
+      "name": "NWI_Wetland_Codes.SPLIT_SUBCLASS_NAME",
+      "type": "esriFieldTypeString",
+      "alias": "SPLIT_SUBCLASS_NAME",
+      "length": 50
+    },
+    {
+      "name": "NWI_Wetland_Codes.SPLIT_SUBCLASS_DEFINITION",
+      "type": "esriFieldTypeString",
+      "alias": "SPLIT_SUBCLASS_DEFINITION",
+      "length": 1000
+    },
+    {
+      "name": "NWI_Wetland_Codes.WATER_REGIME",
+      "type": "esriFieldTypeString",
+      "alias": "WATER_REGIME",
+      "length": 1
+    },
+    {
+      "name": "NWI_Wetland_Codes.WATER_REGIME_NAME",
+      "type": "esriFieldTypeString",
+      "alias": "WATER_REGIME_NAME",
+      "length": 50
+    },
+    {
+      "name": "NWI_Wetland_Codes.WATER_REGIME_SUBGROUP",
+      "type": "esriFieldTypeString",
+      "alias": "WATER_REGIME_SUBGROUP",
+      "length": 50
+    },
+    {
+      "name": "NWI_Wetland_Codes.WATER_REGIME_DEFINITION",
+      "type": "esriFieldTypeString",
+      "alias": "WATER_REGIME_DEFINITION",
+      "length": 1000
+    },
+    {
+      "name": "NWI_Wetland_Codes.MODIFIER1",
+      "type": "esriFieldTypeString",
+      "alias": "MODIFIER1",
+      "length": 1
+    },
+    {
+      "name": "NWI_Wetland_Codes.MODIFIER1_NAME",
+      "type": "esriFieldTypeString",
+      "alias": "MODIFIER1_NAME",
+      "length": 50
+    },
+    {
+      "name": "NWI_Wetland_Codes.MODIFIER1_GROUP",
+      "type": "esriFieldTypeString",
+      "alias": "MODIFIER1_GROUP",
+      "length": 50
+    },
+    {
+      "name": "NWI_Wetland_Codes.MODIFIER1_SUBGROUP",
+      "type": "esriFieldTypeString",
+      "alias": "MODIFIER1_SUBGROUP",
+      "length": 50
+    },
+    {
+      "name": "NWI_Wetland_Codes.MODIFIER1_DEFINITION",
+      "type": "esriFieldTypeString",
+      "alias": "MODIFIER1_DEFINITION",
+      "length": 1000
+    },
+    {
+      "name": "NWI_Wetland_Codes.MODIFIER2",
+      "type": "esriFieldTypeString",
+      "alias": "MODIFIER2",
+      "length": 1
+    },
+    {
+      "name": "NWI_Wetland_Codes.MODIFIER2_NAME",
+      "type": "esriFieldTypeString",
+      "alias": "MODIFIER2_NAME",
+      "length": 50
+    },
+    {
+      "name": "NWI_Wetland_Codes.MODIFIER2_GROUP",
+      "type": "esriFieldTypeString",
+      "alias": "MODIFIER2_GROUP",
+      "length": 50
+    },
+    {
+      "name": "NWI_Wetland_Codes.MODIFIER2_SUBGROUP",
+      "type": "esriFieldTypeString",
+      "alias": "MODIFIER2_SUBGROUP",
+      "length": 50
+    },
+    {
+      "name": "NWI_Wetland_Codes.MODIFIER2_DEFINITION",
+      "type": "esriFieldTypeString",
+      "alias": "MODIFIER2_DEFINITION",
+      "length": 1000
+    },
+    {
+      "name": "NWI_Wetland_Codes.Field1",
+      "type": "esriFieldTypeString",
+      "alias": "Field1",
+      "length": 8000
+    }
+  ],
+  "features": [
+    {
+      "attributes": {
+        "Wetlands.OBJECTID": 6089874,
+        "Wetlands.ATTRIBUTE": "PUBHh",
+        "Wetlands.WETLAND_TYPE": "Freshwater Pond",
+        "Wetlands.ACRES": 2.0114797265708497,
+        "Wetlands.GLOBALID": "{1EBFEF68-CD74-48D8-B020-ED8C3F9CC9B4}",
+        "Wetlands.Shape_Length": 444.1288485653519,
+        "Wetlands.Shape_Area": 12369.649655151457,
+        "NWI_Wetland_Codes.OBJECTID": 5472,
+        "NWI_Wetland_Codes.ATTRIBUTE": "PUBHh",
+        "NWI_Wetland_Codes.SYSTEM": "P",
+        "NWI_Wetland_Codes.SYSTEM_NAME": "Palustrine",
+        "NWI_Wetland_Codes.SYSTEM_DEFINITION": "The Palustrine System includes all nontidal wetlands dominated by trees, shrubs, persistent emergents, emergent mosses or lichens, and all such wetlands that occur in tidal areas where salinity due to ocean-derived salts is below 0.5 ppt. It also includes wetlands lacking such vegetation, but with all of the following four characteristics: (1) area less than 8 ha (20 acres); (2) active wave-formed or bedrock shoreline features lacking; (3) water depth in the deepest part of basin less than 2.5 m (8.2 ft) at low water; and (4) salinity due to ocean-derived salts less than 0.5 ppt.",
+        "NWI_Wetland_Codes.SUBSYSTEM": null,
+        "NWI_Wetland_Codes.SUBSYSTEM_NAME": null,
+        "NWI_Wetland_Codes.SUBSYSTEM_DEFINITION": null,
+        "NWI_Wetland_Codes.CLASS": "UB",
+        "NWI_Wetland_Codes.CLASS_NAME": "Unconsolidated Bottom",
+        "NWI_Wetland_Codes.CLASS_DEFINITION": "Includes all wetlands and deepwater habitats with at least 25% cover of particles smaller than stones (less than 6-7 cm), and a vegetative cover less than 30%.",
+        "NWI_Wetland_Codes.SUBCLASS": null,
+        "NWI_Wetland_Codes.SUBCLASS_NAME": null,
+        "NWI_Wetland_Codes.SUBCLASS_DEFINITION": null,
+        "NWI_Wetland_Codes.SPLIT_CLASS": null,
+        "NWI_Wetland_Codes.SPLIT_CLASS_NAME": null,
+        "NWI_Wetland_Codes.SPLIT_CLASS_DEFINITION": null,
+        "NWI_Wetland_Codes.SPLIT_SUBCLASS": null,
+        "NWI_Wetland_Codes.SPLIT_SUBCLASS_NAME": null,
+        "NWI_Wetland_Codes.SPLIT_SUBCLASS_DEFINITION": null,
+        "NWI_Wetland_Codes.WATER_REGIME": "H",
+        "NWI_Wetland_Codes.WATER_REGIME_NAME": "Permanently Flooded",
+        "NWI_Wetland_Codes.WATER_REGIME_SUBGROUP": "Nontidal",
+        "NWI_Wetland_Codes.WATER_REGIME_DEFINITION": "Water covers the substrate throughout the year in all years.",
+        "NWI_Wetland_Codes.MODIFIER1": "h",
+        "NWI_Wetland_Codes.MODIFIER1_NAME": "Diked/Impounded",
+        "NWI_Wetland_Codes.MODIFIER1_GROUP": "Special Modifier",
+        "NWI_Wetland_Codes.MODIFIER1_SUBGROUP": null,
+        "NWI_Wetland_Codes.MODIFIER1_DEFINITION": "These wetlands have been created or modified by a man-made barrier or dam that obstructs the inflow or outflow of water.",
+        "NWI_Wetland_Codes.MODIFIER2": null,
+        "NWI_Wetland_Codes.MODIFIER2_NAME": null,
+        "NWI_Wetland_Codes.MODIFIER2_GROUP": null,
+        "NWI_Wetland_Codes.MODIFIER2_SUBGROUP": null,
+        "NWI_Wetland_Codes.MODIFIER2_DEFINITION": null,
+        "NWI_Wetland_Codes.Field1": null
+      }
+    },
+    {
+      "attributes": {
+        "Wetlands.OBJECTID": 6089913,
+        "Wetlands.ATTRIBUTE": "PUBHh",
+        "Wetlands.WETLAND_TYPE": "Freshwater Pond",
+        "Wetlands.ACRES": 5.574356729974248,
+        "Wetlands.GLOBALID": "{F2058ADF-620F-42AB-997A-D47F6C8DDC97}",
+        "Wetlands.Shape_Length": 914.9202486048848,
+        "Wetlands.Shape_Area": 34279.15006621144,
+        "NWI_Wetland_Codes.OBJECTID": 5472,
+        "NWI_Wetland_Codes.ATTRIBUTE": "PUBHh",
+        "NWI_Wetland_Codes.SYSTEM": "P",
+        "NWI_Wetland_Codes.SYSTEM_NAME": "Palustrine",
+        "NWI_Wetland_Codes.SYSTEM_DEFINITION": "The Palustrine System includes all nontidal wetlands dominated by trees, shrubs, persistent emergents, emergent mosses or lichens, and all such wetlands that occur in tidal areas where salinity due to ocean-derived salts is below 0.5 ppt. It also includes wetlands lacking such vegetation, but with all of the following four characteristics: (1) area less than 8 ha (20 acres); (2) active wave-formed or bedrock shoreline features lacking; (3) water depth in the deepest part of basin less than 2.5 m (8.2 ft) at low water; and (4) salinity due to ocean-derived salts less than 0.5 ppt.",
+        "NWI_Wetland_Codes.SUBSYSTEM": null,
+        "NWI_Wetland_Codes.SUBSYSTEM_NAME": null,
+        "NWI_Wetland_Codes.SUBSYSTEM_DEFINITION": null,
+        "NWI_Wetland_Codes.CLASS": "UB",
+        "NWI_Wetland_Codes.CLASS_NAME": "Unconsolidated Bottom",
+        "NWI_Wetland_Codes.CLASS_DEFINITION": "Includes all wetlands and deepwater habitats with at least 25% cover of particles smaller than stones (less than 6-7 cm), and a vegetative cover less than 30%.",
+        "NWI_Wetland_Codes.SUBCLASS": null,
+        "NWI_Wetland_Codes.SUBCLASS_NAME": null,
+        "NWI_Wetland_Codes.SUBCLASS_DEFINITION": null,
+        "NWI_Wetland_Codes.SPLIT_CLASS": null,
+        "NWI_Wetland_Codes.SPLIT_CLASS_NAME": null,
+        "NWI_Wetland_Codes.SPLIT_CLASS_DEFINITION": null,
+        "NWI_Wetland_Codes.SPLIT_SUBCLASS": null,
+        "NWI_Wetland_Codes.SPLIT_SUBCLASS_NAME": null,
+        "NWI_Wetland_Codes.SPLIT_SUBCLASS_DEFINITION": null,
+        "NWI_Wetland_Codes.WATER_REGIME": "H",
+        "NWI_Wetland_Codes.WATER_REGIME_NAME": "Permanently Flooded",
+        "NWI_Wetland_Codes.WATER_REGIME_SUBGROUP": "Nontidal",
+        "NWI_Wetland_Codes.WATER_REGIME_DEFINITION": "Water covers the substrate throughout the year in all years.",
+        "NWI_Wetland_Codes.MODIFIER1": "h",
+        "NWI_Wetland_Codes.MODIFIER1_NAME": "Diked/Impounded",
+        "NWI_Wetland_Codes.MODIFIER1_GROUP": "Special Modifier",
+        "NWI_Wetland_Codes.MODIFIER1_SUBGROUP": null,
+        "NWI_Wetland_Codes.MODIFIER1_DEFINITION": "These wetlands have been created or modified by a man-made barrier or dam that obstructs the inflow or outflow of water.",
+        "NWI_Wetland_Codes.MODIFIER2": null,
+        "NWI_Wetland_Codes.MODIFIER2_NAME": null,
+        "NWI_Wetland_Codes.MODIFIER2_GROUP": null,
+        "NWI_Wetland_Codes.MODIFIER2_SUBGROUP": null,
+        "NWI_Wetland_Codes.MODIFIER2_DEFINITION": null,
+        "NWI_Wetland_Codes.Field1": null
+      }
+    },
+    {
+      "attributes": {
+        "Wetlands.OBJECTID": 6218155,
+        "Wetlands.ATTRIBUTE": "R4SBC",
+        "Wetlands.WETLAND_TYPE": "Riverine",
+        "Wetlands.ACRES": 4.057241598955285,
+        "Wetlands.GLOBALID": "{B0747907-71BE-4C66-B3D2-40C8F3FD2921}",
+        "Wetlands.Shape_Length": 6764.29639129464,
+        "Wetlands.Shape_Area": 24953.63487718665,
+        "NWI_Wetland_Codes.OBJECTID": 6016,
+        "NWI_Wetland_Codes.ATTRIBUTE": "R4SBC",
+        "NWI_Wetland_Codes.SYSTEM": "R",
+        "NWI_Wetland_Codes.SYSTEM_NAME": "Riverine",
+        "NWI_Wetland_Codes.SYSTEM_DEFINITION": "The Riverine System includes all wetlands and deepwater habitats contained within a channel, with two exceptions: (1) wetlands dominated by trees, shrubs, persistent emergents, emergent mosses, or lichens, and (2) habitats with water containing ocean-derived salts of 0.5 ppt or greater. A channel is an open conduit either naturally or artificially created which periodically or continuously contains moving water, or which forms a connecting link between two bodies of standing water.",
+        "NWI_Wetland_Codes.SUBSYSTEM": "4",
+        "NWI_Wetland_Codes.SUBSYSTEM_NAME": "Intermittent",
+        "NWI_Wetland_Codes.SUBSYSTEM_DEFINITION": "This Subsystem includes channels that contain flowing water only part of the year. When the water is not flowing, it may remain in isolated pools or surface water may be absent.",
+        "NWI_Wetland_Codes.CLASS": "SB",
+        "NWI_Wetland_Codes.CLASS_NAME": "Streambed",
+        "NWI_Wetland_Codes.CLASS_DEFINITION": "Includes all wetlands contained within the Intermittent Subsystem of the Riverine System and all channels of the Estuarine System or of the Tidal Subsystem of the Riverine System that are completely dewatered at low tide.",
+        "NWI_Wetland_Codes.SUBCLASS": null,
+        "NWI_Wetland_Codes.SUBCLASS_NAME": null,
+        "NWI_Wetland_Codes.SUBCLASS_DEFINITION": null,
+        "NWI_Wetland_Codes.SPLIT_CLASS": null,
+        "NWI_Wetland_Codes.SPLIT_CLASS_NAME": null,
+        "NWI_Wetland_Codes.SPLIT_CLASS_DEFINITION": null,
+        "NWI_Wetland_Codes.SPLIT_SUBCLASS": null,
+        "NWI_Wetland_Codes.SPLIT_SUBCLASS_NAME": null,
+        "NWI_Wetland_Codes.SPLIT_SUBCLASS_DEFINITION": null,
+        "NWI_Wetland_Codes.WATER_REGIME": "C",
+        "NWI_Wetland_Codes.WATER_REGIME_NAME": "Seasonally Flooded",
+        "NWI_Wetland_Codes.WATER_REGIME_SUBGROUP": "Nontidal",
+        "NWI_Wetland_Codes.WATER_REGIME_DEFINITION": "Surface water is present for extended periods especially early in the growing season, but is absent by the end of the growing season in most years.  The water table after flooding ceases is variable, extending from saturated to the surface to a water table well below the ground surface.",
+        "NWI_Wetland_Codes.MODIFIER1": null,
+        "NWI_Wetland_Codes.MODIFIER1_NAME": null,
+        "NWI_Wetland_Codes.MODIFIER1_GROUP": null,
+        "NWI_Wetland_Codes.MODIFIER1_SUBGROUP": null,
+        "NWI_Wetland_Codes.MODIFIER1_DEFINITION": null,
+        "NWI_Wetland_Codes.MODIFIER2": null,
+        "NWI_Wetland_Codes.MODIFIER2_NAME": null,
+        "NWI_Wetland_Codes.MODIFIER2_GROUP": null,
+        "NWI_Wetland_Codes.MODIFIER2_SUBGROUP": null,
+        "NWI_Wetland_Codes.MODIFIER2_DEFINITION": null,
+        "NWI_Wetland_Codes.Field1": null
+      }
+    },
+    {
+      "attributes": {
+        "Wetlands.OBJECTID": 6328169,
+        "Wetlands.ATTRIBUTE": "R5UBH",
+        "Wetlands.WETLAND_TYPE": "Riverine",
+        "Wetlands.ACRES": 0.015681887165993814,
+        "Wetlands.GLOBALID": "{91E9EB0F-59FD-46B8-A7D0-317DA0695441}",
+        "Wetlands.Shape_Length": 37.28555632010877,
+        "Wetlands.Shape_Area": 96.43268449359785,
+        "NWI_Wetland_Codes.OBJECTID": 6031,
+        "NWI_Wetland_Codes.ATTRIBUTE": "R5UBH",
+        "NWI_Wetland_Codes.SYSTEM": "R",
+        "NWI_Wetland_Codes.SYSTEM_NAME": "Riverine",
+        "NWI_Wetland_Codes.SYSTEM_DEFINITION": "The Riverine System includes all wetlands and deepwater habitats contained within a channel, with two exceptions: (1) wetlands dominated by trees, shrubs, persistent emergents, emergent mosses, or lichens, and (2) habitats with water containing ocean-derived salts of 0.5 ppt or greater. A channel is an open conduit either naturally or artificially created which periodically or continuously contains moving water, or which forms a connecting link between two bodies of standing water.",
+        "NWI_Wetland_Codes.SUBSYSTEM": "5",
+        "NWI_Wetland_Codes.SUBSYSTEM_NAME": "Unknown Perennial",
+        "NWI_Wetland_Codes.SUBSYSTEM_DEFINITION": "This Subsystem designation was created specifically for use when the distinction between lower perennial, upper perennial, and tidal cannot be made from aerial photography and no data is available.",
+        "NWI_Wetland_Codes.CLASS": "UB",
+        "NWI_Wetland_Codes.CLASS_NAME": "Unconsolidated Bottom",
+        "NWI_Wetland_Codes.CLASS_DEFINITION": "Includes all wetlands and deepwater habitats with at least 25% cover of particles smaller than stones (less than 6-7 cm), and a vegetative cover less than 30%.",
+        "NWI_Wetland_Codes.SUBCLASS": null,
+        "NWI_Wetland_Codes.SUBCLASS_NAME": null,
+        "NWI_Wetland_Codes.SUBCLASS_DEFINITION": null,
+        "NWI_Wetland_Codes.SPLIT_CLASS": null,
+        "NWI_Wetland_Codes.SPLIT_CLASS_NAME": null,
+        "NWI_Wetland_Codes.SPLIT_CLASS_DEFINITION": null,
+        "NWI_Wetland_Codes.SPLIT_SUBCLASS": null,
+        "NWI_Wetland_Codes.SPLIT_SUBCLASS_NAME": null,
+        "NWI_Wetland_Codes.SPLIT_SUBCLASS_DEFINITION": null,
+        "NWI_Wetland_Codes.WATER_REGIME": "H",
+        "NWI_Wetland_Codes.WATER_REGIME_NAME": "Permanently Flooded",
+        "NWI_Wetland_Codes.WATER_REGIME_SUBGROUP": "Nontidal",
+        "NWI_Wetland_Codes.WATER_REGIME_DEFINITION": "Water covers the substrate throughout the year in all years.",
+        "NWI_Wetland_Codes.MODIFIER1": null,
+        "NWI_Wetland_Codes.MODIFIER1_NAME": null,
+        "NWI_Wetland_Codes.MODIFIER1_GROUP": null,
+        "NWI_Wetland_Codes.MODIFIER1_SUBGROUP": null,
+        "NWI_Wetland_Codes.MODIFIER1_DEFINITION": null,
+        "NWI_Wetland_Codes.MODIFIER2": null,
+        "NWI_Wetland_Codes.MODIFIER2_NAME": null,
+        "NWI_Wetland_Codes.MODIFIER2_GROUP": null,
+        "NWI_Wetland_Codes.MODIFIER2_SUBGROUP": null,
+        "NWI_Wetland_Codes.MODIFIER2_DEFINITION": null,
+        "NWI_Wetland_Codes.Field1": null
+      }
+    }
+  ]
+}

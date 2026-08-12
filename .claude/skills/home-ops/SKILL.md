@@ -61,15 +61,26 @@ Available commands:
   /home-ops hunt            -> Reset, scan, batch-evaluate the refreshed pipeline, then run the deep shortlist flow (rerank, finalist gate, top-3 briefing PDF)
   /home-ops init --zillow --redfin --relator -> Initialize only those platform sessions in the hosted browser
   /home-ops init --relator --refresh-site-data -> Clear Realtor.com site data and open a clean homepage for manual verification
-  /home-ops evaluate        -> Evaluate one address or listing URL, or batch-evaluate pending pipeline homes when no target is supplied
-  /home-ops compare         -> Compare and rank multiple homes
+  /home-ops evaluate        -> Batch-evaluate every pending pipeline home
+  /home-ops evaluate {url|address} -> Evaluate one specific target
+  /home-ops compare         -> Compare and rank the current shortlist
+  /home-ops compare {url1} {url2} ... -> Compare specific homes
   /home-ops scan            -> Scan configured portals for new listings
   /home-ops scan --zillow --redfin --relator -> Scan only those platforms using the existing session
   /home-ops reset           -> Clear generated reports, tracker rows, pipeline items, and scan history while keeping profiles
   /home-ops tracker         -> Listings tracker overview and status updates
-  /home-ops deep            -> Deep dive on a property, neighborhood, or school area
+  /home-ops deep {url}      -> Deep dive on one home: capture, 3 axis agents, briefing PDF
+  /home-ops deep {url1} {url2} ... -> Deep dive several homes into one combined briefing PDF
+  /home-ops deep            -> Deep dive the whole top-10 shortlist, then promote a refined top 3
   /home-ops skim            -> Open pre-filtered search tabs in the hosted browser for all configured portals
   /home-ops skim --zillow --redfin --relator -> Skim only those platforms
+
+Every deep run captures a Property Snapshot per home -- FEMA flood zone, wetlands,
+radon, EPA sites, septic soil, airport noise, parcel and assessed value, an
+estimated tax, zoning, nearest counted road with its traffic volume, and drive
+times -- each tagged captured / unconfirmed / blocked / unsupported / not-applicable.
+
+Full npm script reference: docs/COMMANDS.md
 
 Pipeline inbox: data/pipeline.md
 Tracker: data/listings.md
@@ -114,11 +125,11 @@ Prefer a subagent for `scan` because it can involve multiple pages and platform-
 
 `afford` should use the affordability wizard from `modes/afford.md`, calculate affordability through the checked-in scripts, and update buyer-layer price and financial assumptions only after explicit user confirmation.
 
-`hunt` should orchestrate `reset`, then `scan`, then `evaluate`, then the `deep` shortlist batch branch sequentially without terminating any running jobs.. Do not overlap those four phases. The deep phase's internal step-6 fan-out is allowed and expected. If subagents are used outside the deep phase, keep them inside the scan or evaluate phases rather than across the full hunt flow. The contract hook in `scripts/hooks/contract-shared.mjs` enforces that every deep-shortlist script (`research-source-plan`, `sentiment-browser-extract`, `construction-check`, `deep-research-packet`, `shortlist-finalist-gate`, `review-tabs shortlist-top3`, `briefing-pdf`) actually runs before the turn ends.
+`hunt` should orchestrate `reset`, then `scan`, then `evaluate`, then the `deep` shortlist batch branch sequentially without terminating any running jobs.. Do not overlap those four phases. The deep phase's internal step-6 fan-out is allowed and expected. If subagents are used outside the deep phase, keep them inside the scan or evaluate phases rather than across the full hunt flow. The contract hook in `scripts/hooks/contract-shared.mjs` enforces that every deep-shortlist capture actually runs before the turn ends: `research-source-plan`, `community-lookup`, `sentiment-browser-extract`, `sentiment-public-extract`, `construction-check`, `county-permits-check`, `school-metadata-fetch`, `builder-check`, `hoa-docs-check`, `utility-options-check`, `site-hazards-check`, `parcel-tax-check`, and `access-check`, followed by `deep-research-packet`, `axis-sidecar-write`, `promote-finalists`, `shortlist-finalist-gate`, `review-tabs shortlist-top3`, and `briefing-pdf`. Running a gated script with `--help` does not satisfy its requirement — the hook ignores help invocations, because they exit 0 without doing the work.
 
 When multiple listings are being evaluated, the main agent should own the final tracker merge, pipeline edits, and summary. Workers should return full report drafts plus structured evaluation results or other staged output rather than racing to edit `data/listings.md` directly, and browser-backed verification should stay serialized across the run.
 
-`deep` with a populated top-10 shortlist in `data/shortlist.md` should launch one subagent per shortlisted home. Each worker should return structured deep-dive findings and a tentative verdict for one home, while the main agent owns the combined batch brief, shortlist rewrite, final top-3 rerank, and finalist-tab replacement in the hosted browser.
+`deep` uses **exactly three axis agents plus the main agent for every run** — single home, multi-URL, and shortlist batch alike (4 agents total, never one per home). The axis agents are `sentiment-axis`, `risk-builder-axis`, and `schools-axis`; in a batch run each one covers every shortlisted home at once, so interpretation happens in a single pass. They read pre-captured JSON sidecars first and may only re-run a capture script against the established hosted session as a fallback — never `WebFetch`, `WebSearch`, or a new browser. `modes/deep.md` is authoritative on this architecture. The main agent owns the combined batch brief, shortlist rewrite, final top-3 rerank, and finalist-tab replacement in the hosted browser.
 
 `skim` should run the checked-in skim script exactly once per user command. If a direct wrapper such as `/home-ops-skim` loaded this skill, treat the mode as `skim` and treat any wrapper arguments as skim flags. Do not also route through `/home-ops skim` or run a second skim pass after the script returns.
 

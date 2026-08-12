@@ -268,6 +268,94 @@ function normalizeSchools(rawSchools = []) {
   }).filter(Boolean);
 }
 
+/**
+ * Normalizes a portal's own price-history table into one shape.
+ *
+ * Portals disagree on field names (`event`/`eventDescription`, `date`/
+ * `eventDate`) and on date encoding (ISO string vs. epoch ms), so this maps
+ * all of them onto {date, event, price} sorted newest-first. Entries with
+ * neither a date nor a price are dropped rather than guessed at.
+ */
+export function normalizePriceHistory(entries) {
+  if (!Array.isArray(entries)) return [];
+
+  const normalized = [];
+  for (const entry of entries) {
+    if (!entry || typeof entry !== 'object') continue;
+
+    const rawDate = entry.date ?? entry.eventDate ?? entry.time ?? null;
+    let date = null;
+    if (typeof rawDate === 'number' && Number.isFinite(rawDate)) {
+      const parsed = new Date(rawDate);
+      if (!Number.isNaN(parsed.getTime())) date = parsed.toISOString().slice(0, 10);
+    } else if (typeof rawDate === 'string' && rawDate.trim()) {
+      const parsed = new Date(rawDate);
+      date = Number.isNaN(parsed.getTime()) ? rawDate.trim() : parsed.toISOString().slice(0, 10);
+    }
+
+    const price = toNumber(entry.price ?? entry.priceValue ?? entry.amount);
+    const event = String(entry.event ?? entry.eventDescription ?? entry.eventType ?? '').trim() || null;
+    if (!date && price == null) continue;
+
+    normalized.push({ date, event, price: price ?? null });
+  }
+
+  return normalized.sort((left, right) => String(right.date ?? '').localeCompare(String(left.date ?? '')));
+}
+
+/**
+ * Price movement from the portal's own history: how far the ask has fallen
+ * from its original list, how many cuts it took, and how long it sat before
+ * the first one.
+ *
+ * `daysOnMarket` is already captured elsewhere, but movement is the stronger
+ * resale signal -- a home that has cut twice in six weeks is telling you
+ * something a day count alone does not.
+ */
+export function derivePriceMovement(history, currentPrice = null) {
+  const entries = Array.isArray(history) ? history.filter((entry) => entry && entry.price != null) : [];
+  if (entries.length === 0) return null;
+
+  const oldestFirst = [...entries].reverse();
+  const listings = oldestFirst.filter((entry) => /list|for sale|price/i.test(entry.event ?? ''));
+  const originalEntry = listings[0] ?? oldestFirst[0];
+  const originalListPrice = originalEntry?.price ?? null;
+  const latestPrice = currentPrice ?? entries[0]?.price ?? null;
+
+  const cuts = [];
+  for (let i = 1; i < oldestFirst.length; i += 1) {
+    const previous = oldestFirst[i - 1];
+    const current = oldestFirst[i];
+    if (previous.price != null && current.price != null && current.price < previous.price) {
+      cuts.push({ date: current.date, from: previous.price, to: current.price, amount: previous.price - current.price });
+    }
+  }
+
+  const totalCut = originalListPrice != null && latestPrice != null ? originalListPrice - latestPrice : null;
+  const firstCut = cuts[0] ?? null;
+  let daysToFirstCut = null;
+  if (firstCut?.date && originalEntry?.date) {
+    const from = new Date(originalEntry.date).getTime();
+    const to = new Date(firstCut.date).getTime();
+    if (Number.isFinite(from) && Number.isFinite(to) && to >= from) {
+      daysToFirstCut = Math.round((to - from) / (1000 * 60 * 60 * 24));
+    }
+  }
+
+  return {
+    originalListPrice,
+    currentPrice: latestPrice,
+    totalCutAmount: totalCut != null && totalCut > 0 ? totalCut : (totalCut != null ? 0 : null),
+    totalCutPct: totalCut != null && totalCut > 0 && originalListPrice
+      ? Math.round((totalCut / originalListPrice) * 1000) / 10
+      : (totalCut != null ? 0 : null),
+    cutCount: cuts.length,
+    cuts: cuts.slice(-5),
+    daysToFirstCut,
+    eventCount: entries.length,
+  };
+}
+
 function buildEmptyListing(url) {
   return {
     address: null,
@@ -286,6 +374,7 @@ function buildEmptyListing(url) {
     hoaMonthly: null,
     hoaAnnual: null,
     listingStatus: 'unconfirmed',
+    priceMovement: null,
     daysOnMarket: null,
     propertyType: null,
     homeStyle: null,
@@ -422,6 +511,7 @@ async function extractZillow(page) {
         findings.homeStyle = pickFirst(listing.architecturalStyle);
         findings.description = pickFirst(listing.description);
         findings.listingStatus = normalizeListingStatus(listing.homeStatus);
+        findings.priceHistory = normalizePriceHistory(listing.priceHistory);
         if (Array.isArray(listing.schools)) {
           findings.assignedSchools = normalizeSchools(listing.schools.map((s) => ({
             name: s.name,
@@ -475,6 +565,9 @@ async function extractRedfin(page) {
       findings.yearBuilt = toNumber(main.yearBuilt?.value);
       findings.daysOnMarket = toNumber(main.daysOnMarket);
       findings.listingStatus = normalizeListingStatus(main.searchStatus || main.mlsStatus);
+      findings.priceHistory = normalizePriceHistory(
+        below.propertyHistoryInfo?.events ?? above.propertyHistoryInfo?.events,
+      );
       const schools = below.schoolsAndDistrictsInfo?.servingThisHomeSchools
         ?? below.schoolsInfo?.servingThisHomeSchools
         ?? null;
@@ -974,6 +1067,14 @@ export async function extractListing(url, opts = {}) {
     } catch (error) {
       listing.coverageNotes.push(`crawl4ai detail extractor error: ${error.message}`);
     }
+  }
+
+  // Price movement is derived, not scraped: it comes from whichever portal's
+  // own history table we managed to read. Resale / Risk in modes/_shared.md
+  // reads it -- a home that has cut twice says more than a day count alone.
+  listing.priceMovement = derivePriceMovement(listing.priceHistory, listing.price);
+  if (!listing.priceMovement) {
+    listing.coverageNotes.push('No price history was published on the listing page; price movement is unconfirmed.');
   }
 
   listing.confidence = scoreConfidence(listing);
