@@ -13,6 +13,28 @@
 import { existsSync, readFileSync } from 'fs';
 import { join } from 'path';
 import { ROOT } from '../shared/paths.mjs';
+import { hasHelpFlag } from '../shared/cli.mjs';
+
+const HELP_TEXT = `Usage:
+  node profile-sync-check.mjs
+
+Validates that the buyer-layer setup is internally consistent:
+  - buyer-profile.md exists and is not a stub
+  - config/profile.yml exists and no longer looks like the example file
+  - modes/_shared.md carries no hardcoded buyer criteria (those belong in
+    config/profile.yml, buyer-profile.md, or modes/_profile.md)
+  - portals.yml exists so scan mode has search URLs
+
+Takes no options. Exits 1 when an error was found; warnings alone exit 0.
+
+Options:
+  --help, -h   Show this help text.
+`;
+
+if (hasHelpFlag(process.argv.slice(2))) {
+  console.log(HELP_TEXT);
+  process.exit(0);
+}
 
 const warnings = [];
 const errors = [];

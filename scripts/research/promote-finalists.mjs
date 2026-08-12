@@ -17,6 +17,28 @@ import {
   parseReport,
   parseShortlist,
 } from './research-utils.mjs';
+import { hasHelpFlag } from '../shared/cli.mjs';
+
+const HELP_TEXT = `Usage:
+  node promote-finalists.mjs
+
+Ranks the top-10 rows in data/shortlist.md and writes the best three into the
+"## Refined Top 3 After Deep" section, so shortlist-finalist-gate has rows to
+validate. Ranking is audit-clean first, then score descending; homes with
+research coverage gaps are still listed, marked "(gaps)".
+
+Runs between deep-research-packet and shortlist-finalist-gate.
+
+Takes no options. Exits 1 when data/shortlist.md has no top-10 entries.
+
+Options:
+  --help, -h   Show this help text.
+`;
+
+if (hasHelpFlag(process.argv.slice(2))) {
+  console.log(HELP_TEXT);
+  process.exit(0);
+}
 
 const SECTION_HEADERS = ['## Refined Top 3 After Deep', '## Refined Ranking After Deep'];
 

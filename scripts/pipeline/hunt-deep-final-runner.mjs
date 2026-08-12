@@ -22,9 +22,33 @@
 import { spawnSync } from 'node:child_process';
 import { resolve } from 'node:path';
 import { loadContract, saveContract } from '../hooks/contract-shared.mjs';
+import { hasHelpFlag } from '../shared/cli.mjs';
 
 const ROOT = resolve(process.cwd());
 const NODE = process.execPath;
+
+const HELP_TEXT = `Usage:
+  node hunt-deep-final-runner.mjs
+
+Deep shortlist finalization runner (phases 5-8). Call this after hunt:deep has
+completed and every per-home axis agent has returned:
+  5. promote-finalists         6. shortlist-finalist-gate
+  7. review-tabs shortlist-top3 --replace
+  8. briefing-pdf (top 3)
+
+Aborts on the first failing phase; a finalist-gate failure means the research
+coverage is incomplete, not that the runner broke.
+
+Takes no options. Exits 1 if any phase fails.
+
+Options:
+  --help, -h   Show this help text.
+`;
+
+if (hasHelpFlag(process.argv.slice(2))) {
+  console.log(HELP_TEXT);
+  process.exit(0);
+}
 
 const PHASES = [
   {

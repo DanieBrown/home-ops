@@ -20,12 +20,47 @@
 import { spawnSync } from 'node:child_process';
 import { resolve } from 'node:path';
 import { loadContract, saveContract } from '../hooks/contract-shared.mjs';
+import { hasHelpFlag } from '../shared/cli.mjs';
 
 const ROOT = resolve(process.cwd());
 const isWin = process.platform === 'win32';
 const NPM = isWin ? 'npm.cmd' : 'npm';
 
-const scanFlags = process.argv.slice(2).filter((a) => a.startsWith('--'));
+const HELP_TEXT = `Usage:
+  node hunt-runner.mjs [platform flags]
+
+Runs hunt phases 1-7 sequentially, each as a child process, updating the
+command contract after every phase:
+  1. reset:data        2. verify        3. scan
+  4. scan:verify       5. evaluate:pending
+  6. merge             7. audit:research
+
+Requires the hunt contract's browser-status requirement to be satisfied first
+("npm run browser:status"). Any platform flag is passed straight through to
+scan-listings.mjs.
+
+Platform flags (boolean only -- forwarded verbatim to scan):
+  --zillow                 Scan Zillow only.
+  --redfin                 Scan Redfin only.
+  --realtor, --relator     Scan Realtor.com only.
+  --homes                  Scan Homes.com only.
+  --no-zillow              Exclude Zillow.
+
+Value-taking flags are not forwarded: only tokens beginning with "--" are
+passed on, so a flag's value would be dropped. Run scan-listings.mjs directly
+if you need one.
+
+Options:
+  --help, -h   Show this help text.
+`;
+
+const runnerArgv = process.argv.slice(2);
+if (hasHelpFlag(runnerArgv)) {
+  console.log(HELP_TEXT);
+  process.exit(0);
+}
+
+const scanFlags = runnerArgv.filter((a) => a.startsWith('--'));
 
 const PHASES = [
   {

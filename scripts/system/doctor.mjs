@@ -9,6 +9,34 @@ import { existsSync, mkdirSync, readFileSync } from 'fs';
 import { spawnSync } from 'child_process';
 import { join } from 'path';
 import { ROOT } from '../shared/paths.mjs';
+import { hasHelpFlag } from '../shared/cli.mjs';
+
+const HELP_TEXT = `Usage:
+  node doctor.mjs
+
+Setup validation for home-ops. Checks the prerequisites for scanning,
+evaluating, and tracking homes:
+  - Node.js >= 18, installed dependencies, Playwright chromium
+  - crawl4ai Python sidecar (optional -- school metadata degrades without it)
+  - a hosted browser binary for the CDP session
+  - the buyer-layer files: buyer-profile.md, config/profile.yml, portals.yml
+  - the mode files and templates/states.yml
+  - the review-tabs extension manifest and bridge
+  - the writable directories: data, reports, output, batch
+  - leftover scratch under .home-ops/tmp/
+  - that portals.yml search URLs cover every configured profile area, and
+    that sentiment, school, and development sources are configured
+
+Takes no options. Exits 1 when a check fails; warnings alone exit 0.
+
+Options:
+  --help, -h   Show this help text.
+`;
+
+if (hasHelpFlag(process.argv.slice(2))) {
+  console.log(HELP_TEXT);
+  process.exit(0);
+}
 
 const isTTY = process.stdout.isTTY;
 const green = (value) => (isTTY ? `\x1b[32m${value}\x1b[0m` : value);

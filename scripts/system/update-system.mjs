@@ -8,6 +8,37 @@ import { execSync } from 'child_process';
 import { readFileSync, writeFileSync, existsSync, unlinkSync } from 'fs';
 import { join } from 'path';
 import { ROOT } from '../shared/paths.mjs';
+import { hasHelpFlag } from '../shared/cli.mjs';
+
+const HELP_TEXT = `Usage:
+  node update-system.mjs [check|apply|rollback|dismiss]
+
+Safe system-layer updater. Only system files (modes/, scripts/, templates/,
+docs/, CLAUDE.md, VERSION, package.json, ...) are ever updated; the buyer layer
+(buyer-profile.md, config/profile.yml, modes/_profile.md, portals.yml, data/)
+is never touched, and apply aborts and hard-resets if it detects otherwise.
+
+Commands:
+  check       Compare local VERSION against upstream and print a JSON status:
+              up-to-date, update-available, offline, disabled, or dismissed.
+              This is the default when no command is given.
+  apply       Create a backup branch, fetch upstream, check out the system
+              paths only, verify no user file changed, then report the new
+              version. Clears any dismiss flag on success.
+  rollback    Restore the system files from the most recent
+              backup-pre-update-* branch.
+  dismiss     Write .update-dismissed so check stays quiet until the next
+              apply or an explicit check.
+
+Upstream comes from a git remote named "upstream", or from the
+HOME_OPS_UPSTREAM_FETCH_TARGET and HOME_OPS_UPSTREAM_VERSION_URL environment
+variables.
+
+Options:
+  --help, -h   Show this help text.
+
+npm aliases: update:check, update, rollback.
+`;
 
 // System layer paths — ONLY these files get updated
 const SYSTEM_PATHS = [
@@ -319,12 +350,19 @@ function dismiss() {
 
 const cmd = process.argv[2] || 'check';
 
+if (hasHelpFlag(process.argv.slice(2)) || cmd === 'help') {
+  console.log(HELP_TEXT);
+  process.exit(0);
+}
+
 switch (cmd) {
   case 'check': await check(); break;
   case 'apply': await apply(); break;
   case 'rollback': rollback(); break;
   case 'dismiss': dismiss(); break;
   default:
-    console.log('Usage: node update-system.mjs [check|apply|rollback|dismiss]');
+    console.error(`Unknown command: ${cmd}`);
+    console.error('');
+    console.error(HELP_TEXT);
     process.exit(1);
 }

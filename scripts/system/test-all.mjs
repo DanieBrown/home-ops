@@ -213,6 +213,24 @@ for (const script of scripts) {
 }
 
 {
+  const result = run('node scripts/tests/test-contract-gates.mjs');
+  if (result.ok) {
+    pass('contract gate --help bypass tests');
+  } else {
+    fail(`contract gate --help bypass tests\n${result.output}`);
+  }
+}
+
+{
+  const result = run('node scripts/tests/test-deep-doc-sync.mjs');
+  if (result.ok) {
+    pass('deep.md / deep contract step-list sync tests');
+  } else {
+    fail(`deep.md / deep contract step-list sync tests\n${result.output}`);
+  }
+}
+
+{
   const result = run('node scripts/tests/test-axis-sidecar.mjs');
   if (result.ok) {
     pass('axis sidecar validation and write tests');
